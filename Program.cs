@@ -17,6 +17,7 @@ using Newtonsoft.Json.Linq;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 // using Microsoft.SqlServer.Server;
 using GeFeSLE;
+using SQLitePCL;
 // using Google.Apis.Auth.OAuth2.Flows;
 // using Google.Apis.Auth.OAuth2;
 // using Google.Apis.Util.Store;
@@ -36,25 +37,25 @@ string? configFile = GlobalConfig.CommandLineParse(args);
 string? dbName = null;
 
 var builder = WebApplication.CreateBuilder(args);
-if(string.IsNullOrEmpty(configFile)) {
+if (string.IsNullOrEmpty(configFile))
+{
     DBg.d(LogLevel.Critical, "No configuration specified or file not found. Exiting.");
-    }
-else {
-    if(File.Exists(configFile)) {
-        builder.Configuration.AddJsonFile(configFile, optional: true, reloadOnChange: true);
-        // the ONE thing we insist on from the config file is the database name
-        dbName = GlobalConfig.ParseConfigFile(builder.Configuration);
-        if (dbName == null)
-        {
-            DBg.d(LogLevel.Critical, "Database name not found in configuration file. Exiting.");
-            bailAfterDBContext = true;
-        }
-    
-    }
-    else {
-        DBg.d(LogLevel.Critical, $"Configuration file {configFile} not found. Exiting.");
+}
+else
+{
+    // we don't care if the file isn't found -- if this is a add-migration or update-database
+    // then the file won't be created anyway. 
+    builder.Configuration.AddJsonFile(configFile, optional: true, reloadOnChange: true);
+    // the ONE thing we insist on from the config file is the database name
+    dbName = GlobalConfig.ParseConfigFile(builder.Configuration);
+    if (dbName == null)
+    {
+        DBg.d(LogLevel.Critical, "Database name not found in configuration file. Exiting.");
         bailAfterDBContext = true;
-    } 
+    }
+
+
+
 }
 
 DBg.d(LogLevel.Information, $"GeFeSLE:{GlobalConfig.bldVersion}");
@@ -1171,6 +1172,40 @@ app.MapGet("/regenerate", async (GeFeSLEDb db, UserSessionService sessSvc, HttpC
     Roles = "SuperUser,listowner"
 });
 
+
+app.MapGet("/footest", async (GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
+{
+    DBg.d(LogLevel.Trace, "footest");
+    sessSvc.UpdateSessionAccessTime(httpContext, db);
+
+    // check for the first list we find
+    var list = await db.Lists.FirstOrDefaultAsync();
+    if (list is null) return Results.NotFound();
+    else
+    {
+        //now find the items for that list
+        var items = await db.Items.Where(item => item.ListId == list.Id).ToListAsync();
+        GeListWithItems newList = new GeListWithItems(list, items);
+        var filePath = Path.Combine(GlobalConfig.wwwroot, $"{list.Id}-EXPORT.json");
+        await newList.ExportListJSON(db, filePath);
+
+        DBg.d(LogLevel.Trace, $"Exported list {list.Id} to {filePath}");
+
+        GeListWithItems importLIst = await GeListWithItems.ImportListJSON(db, filePath,true);
+
+        await importLIst.ExportListJSON(db, Path.Combine(GlobalConfig.wwwroot, $"{list.Id}-EXPORT2.json"));
+
+        return Results.Ok($"Found list {list.Id}");
+    }
+
+
+
+    return Results.Ok("footest");
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser,listowner"
+});
 
 // add an endpoint that regenerates the html page for a list
 app.MapGet("/regenerate/{listid}", async (int listid, GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
