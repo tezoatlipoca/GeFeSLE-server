@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <!-- include gefesle.default.css -->
+  <link rel="stylesheet" href="gefesle.default.css">
+  <!-- inclue default icon -->
+  <link rel="icon" href="gefesle.ff.png" type="image/x-icon">  
+  <!-- Include SimpleMDE library -->
+  <!--<link rel="stylesheet" href="https://cdn.jsdelivr.net/simplemde/latest/simplemde.min.css">
+  <script src="https://cdn.jsdelivr.net/simplemde/latest/simplemde.min.js"></script>-->
+  <title>Edit List Page</title>
+</head>
+
+<body>
+  
+  <h1>EDIT LIST:</h1>
+  <a href="../index.html" id="back2list">Back to list view</a>
+  <form id="editlistform">
+    <label for="list.id">ID:</label>
+    <input type="text" id="list.id" name="list.id" readonly><br>
+    <label for="list.name">Name:</label>
+    <input type="text" id="list.name" name="list.name"><br>
+    <label for="list.comment">comment</label>
+    <input type="textarea" id="list.comment" name="list.comment"><br>
+    <input type="submit" value="ADD NEW or UPDATE"><br>
+    <!-- hide the original value of list name-->
+    <input type="hidden" id="list.name.original" name="list.name.original">
+    <span id="result"></span>
+    <!-- Initialize SimpleMDE for the textarea 
+    <script>
+      var simplemde = new SimpleMDE({ element: document.getElementById("list.comment") });
+    </script> -->
+  </form>
+  <script src="_utils.js"></script>
+  <script src="_edit.list.js"></script>
+</body>
+</html>

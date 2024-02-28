@@ -1,0 +1,188 @@
+/* THIS IS THE DEFAULT GEFESLE STYLE SHEET. CUSTOMIZE THIS 
+NOTE: The table img max-width 100% keeps any images 
+in imported items from exploding your table. 
+*/   
+   
+   
+   body {
+        font-family: sans-serif;
+    }
+
+    .debugging {
+        font-size: 50%;
+        color: red;
+    }
+
+    .listcreated {
+        font-size: 50%;
+        color: gray;
+    }
+
+    .byline {
+        font-size: 50%;
+        color: gray;
+        
+    }
+    .owner {
+        font-size: 50%;
+        color: blue;
+    }
+
+    table img {
+        max-width: 100%;
+        height: auto;
+    }
+
+    .status_card::before {
+        content: "Status Card";
+        display: block;
+        font-weight: bold;
+        color: blue;
+        padding: 5px;
+        width: 80%;
+    }
+    .status_card span img {
+        width: 80%;
+        height: 80%;
+    }
+    .status_card {
+        display: block;
+        color: blue;
+        padding: 5px;
+        width: 80%;
+    }
+    .media_attachment::before {
+        content: "Media Attachment";
+        display: block;
+        font-weight: bold;
+        color: green;
+        padding: 5px;
+        width: 80%;
+    }
+      
+    .media_attachment {
+        display: block;
+        color:green;
+        width: 80%;
+    }
+
+
+    tr, td {
+        height: auto;
+        vertical-align: top;
+    }
+    td {
+        vertical-align: top;
+        font-family: sans-serif;
+        overflow: visible;
+    }
+   
+    
+    table {
+        border-collapse: separate;
+        border-spacing: 0 30px;
+
+    }
+
+    td:first-child {
+        background-color: lightgrey;
+        border-radius: 3px;
+        display: block;
+        position: relative;
+        top: -30px;
+        left: 0vw;
+        width: 65vw;
+        padding: 5px;
+    }
+
+
+    /* the body td */
+    td:nth-child(2) {
+        width: 60vw;
+        display: inline;
+        padding: 0;
+        white-space: normal;
+    }
+    
+    /* the tags td */
+    td:nth-child(3) {
+        width: 15vw;
+        padding: 0px;
+    }
+
+    td:nth-child(4) {
+        width: 10vw;
+        padding: 0px;
+    }
+
+    .tag {
+        font-size: 100%;
+        color: white;
+        background-color: gray;
+        border-radius: 3px;
+        padding: 2px;
+        display: block;
+        margin: 2px;
+    }
+
+    .itemmoddate {
+        font-style: italic;
+        display: block;
+    }
+
+    .itemeditlink {
+        border: 1px solid grey;
+        border-radius: 3px;
+        display: block;
+        text-align: right;
+    }
+
+    .itemdeletelink {
+        border: 1px solid grey;
+        border-radius: 3px;
+        display: block;
+        text-align: right;
+    }
+
+    .tagsearch {
+        
+        display: inline-block;
+        border-radius: 3px;
+        right: 0;
+        height: 25px;
+        width: 30vw;
+        padding: 5px;
+        background-color: lightgreen;
+    }
+
+    .result {
+        left: 5vw;
+        width: 65vw;
+        height: 25px;
+        display: inline-block;
+        border-radius: 3px;
+        padding: 5px;
+        background-color: lightblue
+    }
+
+    .indexeditlink, .indexregenlik {
+        border: 1px solid grey;
+        border-radius: 3px;
+        display: inline-block;
+        padding: 5px;
+    }
+
+    /* oposter and opavatar for Mastodon OP poster */
+
+    .oposter {
+        border: 1px solid red;
+        border-radius: 3px;
+        display: inline-block;
+        padding: 5px;
+    }
+
+    .opavatar {
+        width: 30px;
+        height: 30px;
+        
+    }

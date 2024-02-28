@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <!-- include stylesheet and gefesle icon -->
+  <link rel="stylesheet" href="gefesle.default.css">
+  <link rel="icon" href="gefesle.ff.png" type="image/x-icon">
+  <!-- Include SimpleMDE library -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/simplemde/latest/simplemde.min.css">
+  <script src="https://cdn.jsdelivr.net/simplemde/latest/simplemde.min.js"></script>
+  <title>Edit List Page</title>
+</head>
+
+<body>
+  <h1>EDIT ITEM:</h1>
+  <a href="" id="back2list">Back to list view</a>
+  <form id="edititemform">
+    <!--radio button with two values for new or update -->
+    <input type="radio" id="new" name="neworupdate" value="new" checked>
+    <label for="new">New</label>
+    <input type="radio" id="update" name="neworupdate" value="update">
+    <label for="update">Update</label><br>
+    
+
+    <label for="item.id">ID:</label>
+    <input type="text" id="item.id" name="item.id" readonly><br>
+    <label for="item.listid">List ID:</label>
+    <input type="text" id="item.listid" name="item.listid" readonly><br>
+    <label for="item.name">Name:</label>
+    <input type="text" id="item.name" name="item.name"><br>
+    <label for="item.comment">comment</label>
+    <input type="textarea" id="item.comment" name="item.comment"><br>
+    <label for="item.tags">tags</label>
+    <input type="text" id="item.tags" name="item.tags"><br>
+    <input type="submit" value="ADD NEW or UPDATE"><br>
+    <span id="result"></span>
+    <!-- Initialize SimpleMDE for the textarea -->
+    <script>
+      var simplemde = new SimpleMDE({ element: document.getElementById("item.comment") });
+    </script>
+  </form>
+  <script src="_utils.js"></script>
+  <script src="_edit.item.js"></script>
+</body>
+</html>

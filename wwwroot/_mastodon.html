@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mastodon Connect</title>
+    <link rel="stylesheet" type="text/css" href="/gefesle.default.css">
+    <!-- default icon-->
+    <link rel="icon" type="image/png" href="/gefesle.png">
+</head>
+<body>
+    <h1>CONNECT TO MASTODON</h1>
+    <p>Provide yor instance .. don't worry about the http/https:// junk.</p>
+    <p>e.g. mas.to or jorts.horse or infosec.social</p>
+    <form action="/mastoconnect" method="POST">
+        <label for="instance">Mastodon Instance:</label>
+        <input type="text" id="instance" name="instance" value="mas.to">
+        <button type="submit">Connect</button>
+    </form>
+
+</body>
+</html>

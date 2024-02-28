@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+   <!-- include stylesheet and gefesle icon -->
+   <link rel="stylesheet" href="gefesle.default.css">
+   <link rel="icon" href="gefesle.ff.png" type="image/x-icon">
+  <title>Edit User Page</title>
+</head>
+
+<body>
+  <h1>EDIT USERS:</h1>
+  <a href="index.html" id="back2list">Back to list index</a>
+  <span id="userlistgrid"></span>
+  <hr>
+  <form id="edituserform" action="/adduser" method="POST">
+    <!--radio button with two values for new or update -->
+    <input type="radio" id="new" name="neworupdate" value="new" checked>
+    <label for="new">New</label>
+    <input type="radio" id="update" name="neworupdate" value="update">
+    <label for="update">Update</label><br>
+    <label for="userid">UserID:</label>
+    <input type="text" id="userid" name="userid" readonly><br>
+    <label for="username">Username:</label>
+    <input type="text" id="username" name="username"><br>
+    <label for="password">Password:</label>
+    <input type="text" id="password" name="password">
+    <button type="button" id="setPassword">Set/Change Password</button><br>    
+    <label for="email">Email:</label>
+    <input type="text" id="email" name="email"><br>
+    <label for="role">Role:</label>
+    <select id="role" name="role">
+      <option value="SuperUser">SuperUser</option>
+      <option value="admin">admin</option>
+      <option value="listowner">listowner</option>
+      <option value="user">user</option>
+    </select>
+    <button type="button" id="addRole">&lt;-Add this role</button><br>User Roles:
+    <span id="userroles">Roles not retreived or none assigned..</span><br>
+    <input type="submit" value="ADD NEW or UPDATE"><br>
+    <span id="result"></span>
+  </form>
+  <script src="_utils.js"></script>
+  <script src="_edituser.js"></script>
+</body>
+</html>

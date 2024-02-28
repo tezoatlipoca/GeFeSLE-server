@@ -1,0 +1,30 @@
+<html>
+    <title>LOGIN PAGE</title>
+        <head>
+        <script>
+            const urlParams = new URLSearchParams(window.location.search);
+            const returnUrl = urlParams.get('ReturnUrl');
+            document.getElementById('loginredirecturl').value = returnUrl;
+        </script>
+            <link rel="stylesheet" type="text/css" href="/gefesle.default.css">
+            <link rel="icon" href="/gefesle.ff.png">
+        </head>
+        <body>
+            <h1>Login</h1>
+            <p>Please enter your username and password - you SQUID</p>
+            <form method='post' action='/login'>
+                <input type='hidden' name='loginredirecturl' value=''>
+                
+                <label for='username'>Username:</label><br>
+                <input type='text' id='username' name='username'><br>
+                <label for='password'>Password:</label><br>
+                <input type='password' id='password' name='password'><br>
+                <input type='submit' value='Login'>
+            </form>
+            <p>
+                <h2>Or log in with:</h2>
+                <h3><a href="/googlelogin">Google</a></h3>
+                <h3><a href="/_mastodon.html">Mastodon</a></h3>
+            </p>
+        </body>
+    </html>
