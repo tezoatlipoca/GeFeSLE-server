@@ -60,7 +60,8 @@ function getList() {
             document.getElementById('list.name.original').value = json.name;
             // reason we need to pick up on the original is so that we can
             // change the url back to the NEW name of the list page on rename.
-            document.getElementById('list.comment').value = json.comment;
+            simplemde.value(json.comment);
+            //document.getElementById('list.comment').value = json.comment;
             document.getElementById('back2list').href = apiUrl + '/' + json.name + '.html';
             d('List ' + json.id + ' retreived!');
             c(RC.OK);
@@ -88,7 +89,8 @@ async function updateList(e) {
 
     let id = document.getElementById('list.id').value;
     let name = document.getElementById('list.name').value;
-    let comment = document.getElementById('list.comment').value;
+    //let comment = document.getElementById('list.comment').value;
+    let comment = simplemde.value();
 
     console.debug(' | id: ' + id);
     let data;
@@ -194,7 +196,11 @@ async function updateList(e) {
 }
 
 
+
+
+
 document.addEventListener('DOMContentLoaded', getList);
 
 // When the form is submitted, send it to the REST API
 document.getElementById('editlistform').addEventListener('submit', updateList);
+

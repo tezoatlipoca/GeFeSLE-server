@@ -1523,7 +1523,12 @@ app.MapGet("/mastocallback", async (string code,
 });
 
 // endpoint mastobookmarks to call GET /api/v1/bookmarks in mastodon API
-app.MapGet("/mastobookmarks/{listid}", async (int listid, GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
+app.MapGet("/mastobookmarks/{listid}", async (int listid, 
+            int num2Get,
+            bool unbookmark,
+            GeFeSLEDb db, 
+            UserSessionService sessSvc, 
+            HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, "mastobookmarks");
     sessSvc.UpdateSessionAccessTime(httpContext, db);
@@ -1531,6 +1536,8 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid, GeFeSLEDb db, UserSess
     // check to see if the listid is valid
     var list = await db.Lists.FindAsync(listid);
     if (list is null) return Results.NotFound();
+
+    if ((num2Get < 1) || (num2Get > 999)) return Results.BadRequest("num2Get must be between 1 and 999");
 
     // get the access token from the session service
     string? token = sessSvc.GetAccessToken(httpContext, "mastodon");
@@ -1549,18 +1556,20 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid, GeFeSLEDb db, UserSess
     var instance = httpContext.Session.GetString("masto.instance");
     var realizedInstance = httpContext.Session.GetString("masto.realizedInstance");
 
+    
+
     // create httpClient
     var client = new HttpClient();
     bool stillMorePages = true;
-    int pagecount = 0;
+    
+    int numGot = 0;
     client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
 
     var apiUrl = $"{realizedInstance}/api/v1/bookmarks";
 
-    while (stillMorePages)
+    while (stillMorePages && (numGot < num2Get))
     {
         DBg.d(LogLevel.Trace, $"apiUrl: {apiUrl}");
-        // TODO: Handle paging. Only returns 1st 20 bookmarks
         var response = await client.GetAsync(apiUrl);
         var content = await response.Content.ReadAsStringAsync();
 
@@ -1613,12 +1622,13 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid, GeFeSLEDb db, UserSess
                 item.ParseMastoStatus(status, listid);
 
                 db.Items.Add(item);
+                numGot++;
+                if (numGot >= num2Get) break;
             }
             await db.SaveChangesAsync();
         }
-        pagecount++;
-        if (pagecount > 4) stillMorePages = false;
-        DBg.d(LogLevel.Trace, $"pagecount: {pagecount}");
+        DBg.d(LogLevel.Trace, $"numGot: {numGot}");
+        if(numGot >= num2Get) break;
     } // end of while loop!
       // we don't care about waiting for these tasks to complete. 
     _ = list.GenerateHTMLListPage(db);

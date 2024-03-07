@@ -1,10 +1,13 @@
+<!DOCTYPE html>
 <html>
     <title>LOGIN PAGE</title>
         <head>
         <script>
             const urlParams = new URLSearchParams(window.location.search);
             const returnUrl = urlParams.get('ReturnUrl');
-            document.getElementById('loginredirecturl').value = returnUrl;
+            if(returnUrl) {
+                document.getElementById('loginredirecturl').value = returnUrl;
+            }
         </script>
             <link rel="stylesheet" type="text/css" href="/gefesle.default.css">
             <link rel="icon" href="/gefesle.ff.png">

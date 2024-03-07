@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <!-- include gefesle.default.css -->
+  <link rel="stylesheet" href="gefesle.default.css">
+  <!-- inclue default icon -->
+  <link rel="icon" href="gefesle.ff.png" type="image/x-icon">  
+  <title>Import Mastodon Bookmarks?</title>
+</head>
+
+<body>
+  
+  <h1>Import Mastodon Bookmarks?</h1>
+  <p>Specify how <i>many</i> of your Mastodon bookmarks to import. Also, choose whether you want 
+us to UN-bookmark the bookmarked statuses we import here.</p>
+  <form id="mastobookmarkform">
+    <input type="hidden" id="listId" name="listId">
+    <label for="num2Get">Number of bookmarks to get:</label>
+    <input type="text" id="num2Get" name="num2Get"><br>
+    <label for="unbookmark">Unbookmark 'em?</label>
+    <input type="checkbox" id="unbookmark" name="unbookmark"><br>
+    <span id="result"></span>
+    <button onclick="mastodonGO()">Save -> GO</button>
+  </form>
+  <script src="_utils.js"></script>
+  <script src="_mastobookmark.js"></script>
+</body>
+</html>

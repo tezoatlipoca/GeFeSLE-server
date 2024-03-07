@@ -42,13 +42,16 @@ public class GeList
         sb.AppendLine($"<h1 class=\"listtitle\"><a class=\"indexlink\" href=\"index.html\">&lt;-</a> {Name}</h1>");
         sb.AppendLine($"<p class=\"listcreated\">Created: {CreatedDate.ToString("yyyy-MM-dd HH:mm:ss")}");
         sb.AppendLine($"Modified: {ModifiedDate.ToString("yyyy-MM-dd HH:mm:ss")}</p>");
-        sb.AppendLine($"<p class=\"listcomment\">{Comment}</p>");
+        if(Comment != null) {
+            var md = Markdown.ToHtml(Comment);
+            sb.AppendLine($"<p class=\"listcomment\">{md}</p>");
+        }
         sb.AppendLine($"<p> ");
         sb.AppendLine($" <a class=\"editlink\" href=\"_edit.list.html?listid={Id}\">Edit this list</a>");
-        sb.AppendLine($"  <a class=\"rsslink\" href=\"rss-{Name}.xml\">RSS Feed</a>");
-        sb.AppendLine($"  <a class=\"exportlink\" id=\"exportlink\" href=\"{Name}.json\">JSON</a>");
-        sb.AppendLine($"  <a class=\"edititemlink\" href=\"_edit.item.html?listid={Id}\">Add new item</a>");
-        sb.AppendLine($"  <a class=\"mastoimportlink\" href=\"/mastobookmarks/{Id}\">import Masto bookmarks 2 here</a></p>");
+        sb.AppendLine($" |  <a class=\"rsslink\" href=\"rss-{Name}.xml\">RSS Feed</a>");
+        sb.AppendLine($" |  <a class=\"exportlink\" id=\"exportlink\" href=\"{Name}.json\">JSON</a>");
+        sb.AppendLine($" |  <a class=\"edititemlink\" href=\"_edit.item.html?listid={Id}\">Add new item</a>");
+        sb.AppendLine($" |  <a class=\"mastoimportlink\" href=\"_mastobookmark.html?listId={Id}\" >import Masto bookmarks 2 here</a></p>");
         sb.AppendLine("</p>");
         
         // display a form with a text box for the tags search parameters
@@ -93,6 +96,7 @@ public class GeList
         // add a reference to the javascript files
         sb.AppendLine("<script src=\"_utils.js\"></script>");
         sb.AppendLine("<script src=\"_list_view.js\"></script>");
+        sb.AppendLine("<script src=\"_mastobookmark.js\"></script>");
 
         
         await GlobalStatic.GeneratePageFooter(sb);
