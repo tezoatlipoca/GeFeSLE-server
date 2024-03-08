@@ -96,7 +96,7 @@ public class GeList
         // add a reference to the javascript files
         sb.AppendLine("<script src=\"_utils.js\"></script>");
         sb.AppendLine("<script src=\"_list_view.js\"></script>");
-        sb.AppendLine("<script src=\"_mastobookmark.js\"></script>");
+        //sb.AppendLine("<script src=\"_mastobookmark.js\"></script>");
 
         
         await GlobalStatic.GeneratePageFooter(sb);

@@ -3,10 +3,21 @@
 // function that is called when _edit.list.html is called that
 // gets the listid from the url querystring and then 
 // populates the form in _edit.list.html with the list data
-function getList() {
+async function getList() {
     console.log('getList')
 
-    if (islocal()) return;
+    if (islocal()) {
+        d("Cannot call API from a local file!");
+        c(RC.BAD_REQUEST);
+        return;
+        }
+
+    let loggedIn = await amLoggedIn();
+    if (!loggedIn) {
+        d("Not logged in!");
+        c(RC.UNAUTHORIZED);
+        return;
+    }
 
     // Get the listid from the querystring
     let urlParams = new URLSearchParams(window.location.search);
@@ -76,8 +87,21 @@ function getList() {
 
 async function updateList(e) {
     e.preventDefault();
-    if (islocal()) return;
     console.log('updateList');
+    if (islocal()) {
+        d("Cannot call API from a local file!");
+        c(RC.BAD_REQUEST);
+        return;
+        }
+
+    let loggedIn = await amLoggedIn();
+    if (!loggedIn) {
+        d("Not logged in!");
+        c(RC.UNAUTHORIZED);
+        return;
+    }
+    
+    
     let apiUrl = "";
 
 

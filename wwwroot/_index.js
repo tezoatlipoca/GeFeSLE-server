@@ -4,6 +4,18 @@ async function interceptRegen(event) {
     event.preventDefault();
     console.debug(' interceptRegen');
 
+    if (islocal()) {
+        d("Cannot call API from a local file!");
+        c(RC.BAD_REQUEST);
+        return;
+        }
+
+    if(!await amLoggedIn()) {
+        d("You are not logged in! <a href='_login.html'>Login here.</a>");
+        c(RC.UNAUTHORIZED);
+        return;
+    }
+
     let regenlink = document.getElementById('indexregenlink');
     apiUrl = window.location.href;
     // get just the hostname and port from the url
@@ -52,9 +64,24 @@ async function interceptRegen(event) {
 
 window.onload = async function () {
     console.debug('index.js - window.onload')
+
+    if (islocal()) {
+        d("Cannot call API from a local file!");
+        c(RC.BAD_REQUEST);
+        return;
+        }
+
+    let loggedIn = await amLoggedIn();
+    console.debug(' | *loggedIn: ' + loggedIn);
     let role = await getRole();
-    if(isSuperUser(role) || isListOwner(role)) {
-        console.debug(' | isSuperUser or isListOwner');
+    console.debug(' | *role: ' + role);
+
+    
+
+
+    if((isSuperUser(role) || isListOwner(role)) && loggedIn ) {
+        
+        console.debug(' | isSuperUser or isListOwner - and logged in');
     }
     else {
         // hide the id=indexeditlink
@@ -64,6 +91,13 @@ window.onload = async function () {
         }
         let regenlink = document.getElementById('indexregenlink');
         regenlink.style.display = 'none';
+
+        if(!loggedIn) {
+            d("<a href='_login.html'>Login here.</a>");
+            c(RC.OK);
+            return;
+        }
+
     }
 }
 

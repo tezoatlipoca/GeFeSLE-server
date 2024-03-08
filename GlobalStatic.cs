@@ -7,8 +7,8 @@ using Microsoft.AspNetCore.Identity;
 public static class GlobalStatic
 {
     public static string applicationName = "GeFeSLE";
-    public static string cookieName = "GeFeSLECookie";
-
+    public static string authCookieName = "GeFeSLEAuthCookie"; // if you change this, change function amLoggedIn in frontend _utils.js too
+    public static string sessionCookieName = "GeFeSLESessionCookie";
     public static string webSite = "https://awadwatt.com/gefesle";
     public static string googleClientID = "633241786177-0mlrsg1leiu9i3et858idmmn9rtrc2fi.apps.googleusercontent.com";
     public static string googleClientSecret = "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";

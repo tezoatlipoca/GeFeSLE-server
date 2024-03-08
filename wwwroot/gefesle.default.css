@@ -186,3 +186,8 @@ in imported items from exploding your table.
         height: 30px;
         
     }
+
+    input:disabled, textarea:disabled, select:disabled {
+        background-color: grey;
+        border: 1px dashed red;
+    }

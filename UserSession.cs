@@ -103,13 +103,14 @@ public class UserSessionService
 
     public void createSession(HttpContext httpContext, string username, string role)
     {
+        DBg.d(LogLevel.Trace, "createSession");
         // create a claims identity
         var claims = new List<Claim>
         {
             new Claim(ClaimTypes.Name, username),
             new Claim(ClaimTypes.Role, role)
         };
-
+        DBg.d(LogLevel.Trace, "createSession: " + username + " [" + role + "]");
 
         var claimsIdentity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
 
@@ -125,6 +126,7 @@ public class UserSessionService
             CookieAuthenticationDefaults.AuthenticationScheme,
             new ClaimsPrincipal(claimsIdentity),
             authProperties);
+        
 
         
 

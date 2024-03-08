@@ -74,6 +74,9 @@ function c(RC) {
             case 400:
                 resultSpan.style.color = 'red';
                 break;
+            case 401:
+                resultSpan.style.color = 'red';
+                break;
             case 404:
                 resultSpan.style.color = 'red';
                 break;
@@ -109,9 +112,6 @@ async function getRole() {
     console.info('getRole');
     let role = 'anonymous';
 
-    if (islocal()) {
-        return role;
-    }
     // get the role from local storage
     role = localStorage.getItem('role');
     if (Boolean(role)) {
@@ -146,7 +146,7 @@ async function getRole() {
             }})
         .then(text => {
             text = text.replace(/^"|"$/g, ''); // Remove quotation marks at the start and end of the string
-            console.log('Response IS:', text);
+            console.log('GETROLE Response IS:', text);
             localStorage.setItem('role', text);
             return text;
         })
@@ -196,8 +196,56 @@ function isSuperUser(r) {
     }
 }
 
+// similar to getRole, this function "attempts" to see if the user is logged in or not. 
+// WHAT that entails is encapsulated here. The point is to have a boolean we can easily check
+// before exposing any EDIT fields - don't want the user to make tons of changes then have 
+// the submit fail because they're not logged in, then they have to re-enter everything.
 
+async function amLoggedIn() {
+    console.info('amLoggedIn');
+    let amLoggedIn = false;
+   
 
+    // check to see if our jwt token is in local storage
+    let token = localStorage.getItem('apiToken');
+    if (Boolean(token)) {
+        console.debug(' | AMLOGGEDIN - Token found in local storage');
+        amLoggedIn = true;
+    }
+    else {
+        console.debug(' | AMLOGGEDIN - Token NOT found in local storage');
+        amLoggedIn = false;
+    }
+
+    // we can't check the existance of either an auth or session cookie
+    // because we set those to httpOnly server side. 
+    // we have to hit the backened to see if the user has either a valid
+    // jwt token or auth session
+
+    let apiUrl = '/amloggedin';
+
+    await fetch(apiUrl)
+    .then(response => response.json())
+    .then(data => {
+        console.log(' | AMLOGGEDIN be Response IS:', data);
+        if (data === true) {
+            amLoggedIn = true;
+        }
+        else {
+            amLoggedIn = false;
+        }
+        console.debug(' | AMLOGGEDIN - amLoggedIn: ' + amLoggedIn);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        d(error);
+        c(RC.ERROR);
+        
+    })
+    return amLoggedIn;
+}
+
+// utility function for List view - if col1 cell contains what appears to be a URL, make it clicky
 
 function make1stcelllinks() {
     console.debug('make1stcelllinks')

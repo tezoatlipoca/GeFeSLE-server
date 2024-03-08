@@ -6,10 +6,29 @@ document.addEventListener('DOMContentLoaded', getItem);
 // function that is called when _edit.item.html is called that
 // gets the listid from the url querystring and then 
 // populates the form in _edit.item.html with the list data
-function getItem() {
+async function getItem() {
     console.log('getItem')
 
-    if (islocal()) return;
+    if (islocal()) {
+        d("Cannot call API from a local file!");
+        c(RC.BAD_REQUEST);
+        return;
+        }
+    let loggedIn = await amLoggedIn();
+    if(!loggedIn) {
+        d("You are not logged in! <a href='_login.html'>Login here.</a>");
+        c(RC.UNAUTHORIZED);
+        // the link back to the list page is now bork, change back to site index.
+        // (if the user really wants they can hit browser back button)
+        document.getElementById('back2list').href = 'index.html';
+        // disable the form submit action and disable the editable fields
+        let form = document.getElementById('edititemform');
+        let formElements = form.elements;
+        for (var i = 0; i < formElements.length; i++) {
+            formElements[i].readOnly = true;
+        }
+        return;
+    }
 
     // Get the itemid from the querystring
     let urlParams = new URLSearchParams(window.location.search);
@@ -39,7 +58,7 @@ function getItem() {
             // populate the listid field in the form
             document.getElementById('item.listid').value = listid;
             d('Creating new item in list ' + listid + '.');
-
+            c(RC.OK);
         }
 
 
@@ -64,6 +83,7 @@ function getItem() {
             // populate the itemid field in the form
             document.getElementById('item.id').value = itemid;
             d('Editing item ' + itemid + ' in list ' + listid + '.');
+            c(RC.OK);
             // oh and set the radio button to "update"
             document.getElementById('update').checked = true;
         }
@@ -80,7 +100,24 @@ function getItem() {
         console.debug(' | API URL: ' + apiUrl);
         console.debug(' | Getting item ' + itemid + ' in list ' + listid + '.')
         fetch(apiUrl + '/showitems/' + listid + '/' + itemid)
-            .then(response => response.json())
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                }
+                else if (response.status == RC.NOT_FOUND) {
+                    throw new Error('GeFeSLE server ' + storconfig.url + ' Not Found - check your settings');
+                }
+                else if (response.status == RC.UNAUTHORIZED) {
+                    throw new Error('Not authorized - have you logged in yet? <a href="' + storconfig.url + '/login">Login</a>');
+                }
+                else if (response.status == RC.FORBIDDEN) {
+                    throw new Error('Forbidden - have you logged in yet? <a href="' + storconfig.url + '/login">Login</a>');
+                }
+                else {
+                    throw new Error('Error ' + response.status + ' - ' + response.statusText);
+                }
+            })
+            //.then(response => response.json())
             .then(data => {
                 console.log('Success:', data);
                 // Populate the form with the data from the API
@@ -93,7 +130,7 @@ function getItem() {
             .catch((error) => {
                 // write any error to the span with id="result"
                 d(error);
-
+                c(RC.ERROR);
                 console.error('Error:', error);
             });
     }
@@ -109,7 +146,7 @@ function getItem() {
         .catch((error) => {
             // write any error to the span with id="result"
             d(error);
-
+            c(RC.ERROR);
             console.error('Error:', error);
         });
 
@@ -121,9 +158,22 @@ document.getElementById('edititemform').addEventListener('submit', updateItem);
 
 async function updateItem(e) {
     e.preventDefault();
-    if (islocal()) return;
     console.log('updateItem');
     let apiUrl = "";
+
+    if (islocal()) {
+        d("Cannot call API from a local file!");
+        c(RC.BAD_REQUEST);
+        return;
+        }
+    let loggedIn = await amLoggedIn();
+    if(!loggedIn) {
+        d("You are not logged in! <a href='_login.html'>Login here.</a>");
+        c(RC.UNAUTHORIZED);
+        return;
+    }
+
+
 
     try {
         apiUrl = window.location.href;
@@ -165,6 +215,7 @@ async function updateItem(e) {
                 apiMethod = 'PUT';
             }
         }
+        
         let displayResults = "";
         let newID = null;
         // Call the REST API
@@ -175,6 +226,23 @@ async function updateItem(e) {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(data),
+        })
+        .then(response => {
+            if (response.ok) {
+                return response;
+            }
+            else if (response.status == RC.NOT_FOUND) {
+                throw new Error(`Item ${id} in list ${listid} not found!`);
+            }
+            else if (response.status == RC.UNAUTHORIZED) {
+                throw new Error('Not authorized - have you logged in yet? <a href="_login.html">Login</a>');
+            }
+            else if (response.status == RC.FORBIDDEN) {
+                throw new Error('Forbidden - have you logged in yet? <a href="_login.html">Login</a>');
+            }
+            else {
+                throw new Error('Error ' + response.status + ' - ' + response.statusText);
+            }
         })
             .then(response => {
                 console.log('Response IS:', response);
@@ -210,12 +278,13 @@ async function updateItem(e) {
                         displayResults = "Item modified! ";
                         console.log('displayResults IS:', displayResults);
                         d(displayResults);
-
+                        c(RC.OK);
                     });
                 } else {
                     return response.text().then(text => {
                         displayResults = "NO IDEA: " + text;
                         d(displayResults);
+                        c(RC.ERROR);
                     });
                 }
 
@@ -225,6 +294,7 @@ async function updateItem(e) {
     }
     catch (error) {
         d(error);
+        c(RC.ERROR);
         console.error('Error:', error);
     }
 

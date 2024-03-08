@@ -41,8 +41,26 @@ window.onload = function () {
     
 }
 
-function mastodonGO(){
+async function mastodonGO(e){
+    // prevent button default action
+    e.preventDefault();
     console.debug('mastoBookmark - mastodonGO');
+    
+    // if we're in local mode, bail
+    if(islocal()) {
+        d('Cannot call API from a local file!');
+        c(RC.BAD_REQUEST);
+        return;
+    }
+    let loggedIn = await amLoggedIn();
+    if(!loggedIn) {
+        d('You must be logged in to do this!');
+        c(RC.UNAUTHORIZED);
+        return;
+    }
+    d('Processing...');
+    c(RC.OK);
+    
     // get the values of the _mastobookmark.html form and save them to local storage
     mastoBookmarkSaveDefaults();
     // get the listId out of the hidden field
@@ -52,13 +70,15 @@ function mastodonGO(){
     // get num2Get and unbookmark bool from the form
     let num2Get = document.getElementById('num2Get').value;
     let unbookmark = document.getElementById('unbookmark').checked;
-
+    // if unbookarm
     // build the url
-    let url = 'mastobookmarks/' + listId + '?num2Get=' + num2Get + '&unbookmark' + unbookmark;
-    //redirect to the url
-    window
-    .location
-    .replace(url);
+    // get our current url and strip off _mastobookmark.html
+    let url = window.location.href;
+    url = url.replace(/_mastobookmark.html.*/, '');
 
+    url = url + 'mastobookmarks/' + listId + '?num2Get=' + num2Get + '&unbookmark' + unbookmark;
+    //redirect to the url
+    window.location.replace(url);
+    //alert('Redirecting to: ' + url);
 }
 

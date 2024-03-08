@@ -96,7 +96,7 @@ builder.Services.AddSession(options =>
     // TODO: load session timeout from config file
     options.Cookie.HttpOnly = true; // The session cookie is accessible only from the server side, not via JavaScript.
     options.Cookie.IsEssential = true; // The session cookie is essential, meaning it doesn't need user consent.
-    options.Cookie.Name = GlobalStatic.cookieName;
+    options.Cookie.Name = GlobalStatic.sessionCookieName;
 });
 builder.Services.AddAuthentication(options =>
 {
@@ -111,11 +111,14 @@ builder.Services.AddAuthentication(options =>
     // options.DefaultAuthenticateScheme = IdentityConstants.ExternalScheme;
     // options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
     // options.DefaultChallengeScheme = GoogleDefaults.AuthenticationScheme;
-
+    
 
 })
 .AddCookie(options =>
 {
+    options.Cookie.Name = GlobalStatic.authCookieName;
+    options.ExpireTimeSpan = TimeSpan.FromMinutes(30);
+    options.Cookie.HttpOnly = true;
     options.LoginPath = "/_login.html"; // Change this to your desired login path
     // this redirects any failure from the .RequireAuthorization() on endpoints.
     options.Events.OnRedirectToAccessDenied = async context =>
@@ -958,6 +961,7 @@ app.MapPost("/addlist", async (GeList newlist, GeFeSLEDb db, UserSessionService 
     await newlist.GenerateHTMLListPage(db);
     await newlist.GenerateRSSFeed(db);
     await newlist.GenerateJSON(db);
+    _ = GlobalStatic.GenerateHTMLListIndex(db);
 
     sessSvc.UpdateSessionAccessTime(httpContext, db);
     string msg = $"/showlists/{newlist.Id}";
@@ -1077,7 +1081,7 @@ app.MapPut("/modifyitem", async (GeListItem inputItem, GeFeSLEDb db, UserSession
 {
     DBg.d(LogLevel.Trace, $"modifyitem: <- {System.Text.Json.JsonSerializer.Serialize(inputItem)}");
     sessSvc.UpdateSessionAccessTime(httpContext, db);
-    var moditem = await db.Items.FindAsync(inputItem.Id);
+    var moditem = await db.Items.FirstOrDefaultAsync(item => item.Id == inputItem.Id && item.ListId == inputItem.ListId);
     // check for listowner or contributor of the list this item belongs to
     if (moditem is null) return Results.NotFound();
 
@@ -1525,13 +1529,16 @@ app.MapGet("/mastocallback", async (string code,
 // endpoint mastobookmarks to call GET /api/v1/bookmarks in mastodon API
 app.MapGet("/mastobookmarks/{listid}", async (int listid, 
             int num2Get,
-            bool unbookmark,
+            bool? unbookmark, // if the checkbox isn't, there's no value, so it's null
             GeFeSLEDb db, 
             UserSessionService sessSvc, 
             HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, "mastobookmarks");
     sessSvc.UpdateSessionAccessTime(httpContext, db);
+
+    // if there's no/null value for unbookmark, set it to false
+    if (unbookmark is null) unbookmark = false;
 
     // check to see if the listid is valid
     var list = await db.Lists.FindAsync(listid);
@@ -1641,7 +1648,31 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid,
     Roles = "SuperUser,listowner"
 });
 
+app.MapGet("/amloggedin" , (UserSessionService sessSvc, HttpContext httpContext) =>
+{
+    DBg.d(LogLevel.Trace, "amloggedin");
+    
+    //GlobalStatic.dumpRequest(httpContext);
 
+    var username = httpContext.User.Identity?.Name;
+    DBg.d(LogLevel.Trace, $"username: {username}");
+    var isAuthenticated = httpContext.User.Identity?.IsAuthenticated;
+    DBg.d(LogLevel.Trace, $"isAuthenticated: {isAuthenticated}");
+    // Check JWT token
+    var jwtToken = httpContext.Request.Headers["Authorization"].FirstOrDefault()?.Split(" ").Last();
+
+    if ((isAuthenticated == true && !string.IsNullOrEmpty(username)) || !string.IsNullOrEmpty(jwtToken))
+    {
+        return Results.Ok(true);
+    }
+    else
+    {
+        return Results.Ok(false);
+    }
+})
+.AllowAnonymous()
+.RequireAuthorization(new AuthorizeAttribute
+{ AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme});
 
 app.MapGet("/", () => { return Results.Redirect("/index.html"); });
 
