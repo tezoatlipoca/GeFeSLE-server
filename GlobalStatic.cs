@@ -324,47 +324,7 @@ async public static Task SeedRoles(IServiceProvider serviceProvider)
     }
 }
 
-// static string DumpClaimsPrincipalHTML(ClaimsPrincipal cp)
-// {
-//     StringBuilder sb = new StringBuilder();
 
-//     // dump out every property, attribute and child element of the ClaimsPrincipal
-//     sb.AppendLine("<!DOCTYPE html>");
-//     sb.AppendLine("<html><body>");
-//     sb.AppendLine("<a href=\"/session\">Session</a>");
-//     sb.AppendLine("<pre>");
-//     sb.AppendLine("ClaimsPrincipal:");
-//     sb.AppendLine($"  Identity: {cp.Identity}");
-//     sb.AppendLine($"  Claims: {cp.Claims}");
-//     // iterate over every ClaimsIdentity in the ClaimsPrincipal
-//     foreach (var ci in cp.Identities)
-//     {
-//         sb.AppendLine($"  ClaimsIdentity: {ci}");
-//         sb.AppendLine($"    AuthenticationType: {ci.AuthenticationType}");
-//         sb.AppendLine($"    IsAuthenticated: {ci.IsAuthenticated}");
-//         sb.AppendLine($"    Name: {ci.Name}");
-//         sb.AppendLine($"    Label: {ci.Label}");
-//         sb.AppendLine($"    RoleClaimType: {ci.RoleClaimType}");
-//         sb.AppendLine($"    NameClaimType: {ci.NameClaimType}");
-//         sb.AppendLine($"    Claims: {ci.Claims}");
-//         // iterate over every claim in the ClaimsIdentity
-//         foreach (var claim in ci.Claims)
-//         {
-//             sb.AppendLine($"      Claim: {claim}");
-//             sb.AppendLine($"        Type: {claim.Type}");
-//             sb.AppendLine($"        Value: {claim.Value}");
-//             sb.AppendLine($"        ValueType: {claim.ValueType}");
-//             sb.AppendLine($"        OriginalIssuer: {claim.OriginalIssuer}");
-//             sb.AppendLine($"        Properties: {claim.Properties}");
-//             sb.AppendLine($"        Subject: {claim.Subject}");
-//         }
-//     }
-//     sb.AppendLine("</pre>");
-
-//     sb.AppendLine("</body></html>");
-
-//     return sb.ToString();
-// }
 
 }
 

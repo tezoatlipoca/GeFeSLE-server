@@ -18,7 +18,18 @@ public class GeFeSLEDb : IdentityDbContext<GeFeSLEUser>
     {
         base.OnModelCreating(builder); // This needs to be called for Identity to work properly.
 
-        // Your existing model configuration...
+        builder.Entity<GeList>()    // each list has zero or more listowners
+            .HasMany(g => g.ListOwners)
+            .WithMany();
+
+        builder.Entity<GeList>()    // each list has zero or more contributors
+            .HasMany(g => g.Contributors)
+            .WithMany();
+
+        builder.Entity<GeList>()    // each list has exactly one creator, who can create many lists
+            .HasOne(g => g.Creator)
+            .WithMany()
+            .HasForeignKey(g => g.CreatorId);
     }
 
     public DbSet<GeListItem> Items => Set<GeListItem>();

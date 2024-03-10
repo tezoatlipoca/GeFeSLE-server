@@ -14,6 +14,18 @@ public class SuperUser
 
     }
 
+    public bool areWe(string? username) {
+        bool result = false;
+        if (username != null)
+        {
+            result = username == Username;
+        }
+        else {
+            result = false;
+        }
+        return result;
+    }
+
 }
 
 public static class GlobalConfig

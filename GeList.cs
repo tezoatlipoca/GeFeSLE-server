@@ -4,6 +4,16 @@ using System.Xml.Linq;
 //using Newtonsoft.Json;
 using System.Text.Json;
 using Markdig;
+using Microsoft.AspNetCore.Identity;
+using GeFeSLE;
+
+public enum GeListVisibility
+{
+    Public,          // anyone can view the list's html page, json, rss etc. 
+    Contributors,    // restricted to contributors and list owners (and list creator and SU)
+    ListOwners,      // restricted to only list owners (and creator and SU)
+    Private          // restricted to only creator and SU
+}
 
 public class GeList
 {
@@ -16,6 +26,38 @@ public class GeList
 
     // add a member that is this list's modified date
     public DateTime ModifiedDate { get; set; } = DateTime.Now;
+
+    // list owner
+    public string CreatorId { get; set; } = null!;
+    public GeFeSLEUser? Creator { get; set; }
+
+    // Navigation property for the list owners
+    public ICollection<GeFeSLEUser> ListOwners { get; set; } = new List<GeFeSLEUser>();
+
+    // Navigation property for the contributors
+    public ICollection<GeFeSLEUser> Contributors { get; set; } = new List<GeFeSLEUser>();
+
+    // set list visibility
+    public GeListVisibility Visibility { get; private set; } = GeListVisibility.Public;
+
+    public void SetVisibility(GeListVisibility visibility)
+    {
+        var oldVisibility = Visibility;
+        Visibility = visibility;
+        // if the visibility has changed FROM public to something else,
+        // then remove the list from the list of public lists
+        if (oldVisibility == GeListVisibility.Public && visibility > GeListVisibility.Public)
+        {
+            ProtectedFiles.RemoveList(this);
+        }
+        else if (oldVisibility > GeListVisibility.Public && visibility == GeListVisibility.Public)
+        {
+            ProtectedFiles.AddList(this);
+        }
+
+        
+    }
+
 
     async public Task GenerateHTMLListPage(GeFeSLEDb db)
     {
