@@ -24,6 +24,7 @@ using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 // using Google.Apis.Util.Store;
 // using Google.Apis.Auth;
 // using Microsoft.AspNetCore.Http.Extensions;
+using Newtonsoft.Json.Serialization;
 
 
 
@@ -90,7 +91,7 @@ builder.Services.AddIdentity<GeFeSLEUser, IdentityRole>(options =>
 
 builder.Services.AddDistributedMemoryCache(); // Stores session state in memory.
 // TODO: save session state in database
-builder.Services.AddSingleton<UserSessionService>();
+//builder.Services.AddSingleton<UserSessionService>();
 builder.Services.AddSession(options =>
 {
     options.IdleTimeout = TimeSpan.FromMinutes(30); // The session timeout.
@@ -105,8 +106,8 @@ builder.Services.AddAuthentication(options =>
     // options.DefaultSignInScheme = JwtBearerDefaults.AuthenticationScheme;
     // options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
 
-    // options.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-    // options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
     // options.DefaultChallengeScheme = GoogleDefaults.AuthenticationScheme;
 
     // options.DefaultAuthenticateScheme = IdentityConstants.ExternalScheme;
@@ -261,10 +262,74 @@ using (var scope = app.Services.CreateScope())
         db.Database.Migrate();
 
         GlobalStatic.SeedRoles(services).Wait();
-    }
+
+        // also always make sure backdoorAdmin is a user in db
+        if (GlobalConfig.backdoorAdmin != null &&
+            GlobalConfig.backdoorAdmin.UserName != null)
+        {
+            var userManager = services.GetRequiredService<UserManager<GeFeSLEUser>>();
+            var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
+            DBg.d(LogLevel.Trace, "Checking to see if backdoorAdmin in db..");
+            GeFeSLEUser? backdoorAdminUser = await userManager.FindByNameAsync(GlobalConfig.backdoorAdmin.UserName);
+            if (backdoorAdminUser == null)
+            {
+                DBg.d(LogLevel.Trace, "backdoorAdmin not found in database, adding");
+                DBg.d(LogLevel.Trace, "backdoorAdmin from config: " + GlobalConfig.backdoorAdmin.UserName);
+                var result = await userManager.CreateAsync(GlobalConfig.backdoorAdmin);
+                if (result.Succeeded)
+                {
+                    await userManager.AddToRoleAsync(GlobalConfig.backdoorAdmin, "SuperUser");
+
+                }
+                await db.SaveChangesAsync();
+                GlobalConfig.backdoorAdmin = await userManager.FindByNameAsync(GlobalConfig.backdoorAdmin.UserName);
+            } // backdoorAdmin NOT found in db. added
+            else
+            {
+                DBg.d(LogLevel.Trace, "backdoorAdmin already found in database");
+            }
+
+            // always overwrite the backdoorAdmin password with the one from the config file
+            // if one is specified
+            GlobalConfig.backdoorAdmin = await userManager.FindByNameAsync(GlobalConfig.backdoorAdmin.UserName);
+            if (GlobalConfig.backdoorAdminPassword != null)
+            {
+                var removePasswordResult = await userManager.RemovePasswordAsync(GlobalConfig.backdoorAdmin!);
+                if (removePasswordResult.Succeeded)
+                {
+                    var addPasswordResult = await userManager.AddPasswordAsync(GlobalConfig.backdoorAdmin!, GlobalConfig.backdoorAdminPassword);
+                    if (addPasswordResult.Succeeded)
+                    {
+                        DBg.d(LogLevel.Trace, "backdoorAdmin password reset to match config file: " + GlobalConfig.backdoorAdminPassword);
+                    }
+                    else
+                    {
+                        DBg.d(LogLevel.Error, "CAN'T USE backdoorAdmin pwd from CONFIG FILE:");
+                        // Log the errors
+                        foreach (var error in addPasswordResult.Errors)
+                        {
+                            DBg.d(LogLevel.Error, error.Description);
+                        }
+                        // exit the application; having a crap backdoor pwd is a no no.
+                        Environment.Exit(1);
+                    }
+                }
+                else
+                {
+                    // Log the errors
+                    foreach (var error in removePasswordResult.Errors)
+                    {
+                        DBg.d(LogLevel.Error, error.Description);
+                    }
+                }
+            }
+            await db.SaveChangesAsync();
+
+        } // backdoorAdmin provided from config file. 
+    } // end try
     catch (Exception ex)
     {
-        DBg.d(LogLevel.Critical, $"Error occurred while seeding default roles in Database: {ex.Message}");
+        DBg.d(LogLevel.Critical, $"Error occurred while seeding default roles & super user in Database: {ex.Message}");
         Environment.Exit(1);
     }
 }
@@ -279,16 +344,12 @@ else
     app.UseExceptionHandler("/Home/Error"); // improve this. actually define that route for one. 
     app.UseHsts();
 }
-//app.UseHttpsRedirection();
-app.UseStaticFiles();
+
 app.UseRouting();
 app.UseSession(); // Add this line to enable session.
 app.UseAuthentication(); // must be before authorization
 app.UseAuthorization();
 
-app.MapControllerRoute(
-    name: "default",
-    pattern: "{controller=Home}/{action=Index}/{id?}");
 
 app.Use(async (context, next) =>
     {
@@ -298,6 +359,14 @@ app.Use(async (context, next) =>
         // detect if this is a CORS preflight request and if so, add the headers
         // so its not rejected from the plugins
         var origin = context.Request.Headers["Origin"].FirstOrDefault();
+        if (origin.IsNullOrEmpty())
+        {
+            origin = context.Request.Headers["Referer"].FirstOrDefault();
+            if (origin.IsNullOrEmpty())
+            {
+                origin = "(endpoint direct)";
+            }
+        }
         var remoteIpAddress = context.Connection.RemoteIpAddress;
         DBg.d(LogLevel.Trace, $"_Request origin: {origin} - from {remoteIpAddress}");
         //GlobalStatic.dumpRequest(context);
@@ -316,12 +385,18 @@ app.Use(async (context, next) =>
         // but its not a pre-flight
         // now we check to see if the file requested is in our list of protected
 
+        var db = context.RequestServices.GetRequiredService<GeFeSLEDb>();
+        var userManager = context.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
+        var roleManager = context.RequestServices.GetRequiredService<RoleManager<IdentityRole>>();
+
         var path = context.Request.Path.Value;
+        DBg.d(LogLevel.Trace, $"_Middleware_.Use - protected file check: {path}");
+        DBg.d(LogLevel.Trace, $"_Middleware_.Use - context.User.Identity?: {context.User?.Identity?.Name}");
         if (path != null && ProtectedFiles.ContainsFile(path))
         {
             // is the user logged in? 
-            var user = context.User.Identity;
-            if (user != null && user.IsAuthenticated)
+            var user = await UserSessionService.getWhoIAm(context, userManager);
+            if (user == null || !UserSessionService.amILoggedIn(context))
             {
                 // no - make a nice redirect page like the normal UNAUTH page above. 
                 DBg.d(LogLevel.Trace, $"Protected file {path} - requires authenticated user.");
@@ -330,15 +405,13 @@ app.Use(async (context, next) =>
                 await GlobalStatic.GenerateUnAuthPage(sb, msg);
                 var result = Results.Content(sb.ToString(), "text/html");
                 await result.ExecuteAsync(context);
-
+                return;
             }
             else
             {
-                // logged in. are they allowed to look at dis?
-                // get db context
-                var db = context.RequestServices.GetRequiredService<GeFeSLEDb>();
-                string? ynot = "";
-                bool isAllowed = ProtectedFiles.IsFileVisibleToUser(db, path, user!.Name, out ynot);
+
+
+                (bool isAllowed, string? ynot) = await ProtectedFiles.IsFileVisibleToUser(context, path, user, userManager);
                 if (!isAllowed)
                 {
                     // no - make a nice redirect page like the normal UNAUTH page using the ynot message  
@@ -348,14 +421,29 @@ app.Use(async (context, next) =>
                     await GlobalStatic.GenerateUnAuthPage(sb, msg);
                     var result = Results.Content(sb.ToString(), "text/html");
                     await result.ExecuteAsync(context);
+                    return;
+                }
+                else
+                {
+                    DBg.d(LogLevel.Trace, $"Protected file {path} - ALLOWED for {user.UserName}.");
+
                 }
             }
+        }
+        else
+        {
+            DBg.d(LogLevel.Trace, $"_Middleware_.Use - {path} is not a protected file.");
         }
 
         // otherwise, do the normal thing
         await next.Invoke();
 
     });
+
+
+//app.UseHttpsRedirection();
+app.UseStaticFiles();
+
 
 app.UseCors(builder =>
         {
@@ -365,8 +453,15 @@ app.UseCors(builder =>
 
         });
 
+
+
+// app.MapControllerRoute(
+//     name: "default",
+//     pattern: "{controller=Home}/{action=Index}/{id?}");
+
+
 app.MapPost("/login", async (GeFeSLEDb db,
-                    UserSessionService sessSvc,
+                    //
                     HttpContext httpContext,
                     UserManager<GeFeSLEUser> userManager,
                     RoleManager<IdentityRole> roleManager) =>
@@ -415,136 +510,82 @@ app.MapPost("/login", async (GeFeSLEDb db,
             await GlobalStatic.GenerateUnAuthPage(sb, msg);
             return Results.Content(sb.ToString(), "text/html");
         }
-    }
-
-
+    } // username or password is null
     else
     {
-        // check if the username and password are the backdoor admin
-
-        if (GlobalConfig.backdoorAdmin != null &&
-            username == GlobalConfig.backdoorAdmin.Username &&
-            password == GlobalConfig.backdoorAdmin.Password)
+        // find the user in our userManager by username
+        GeFeSLEUser? user = await userManager.FindByNameAsync(username);
+        if (user is null)
         {
-            var realizedRole = "SuperUser";
+            string msg = "LOGIN: Username not found.";
+            DBg.d(LogLevel.Trace, msg);
             if (isJSApi)
             {
-                var token = sessSvc.createToken(username!, realizedRole);
-                DBg.d(LogLevel.Trace, $"LOGIN: User {username} logged in as {realizedRole} VIA API RETURNING 200 + TOKEN");
-                DBg.d(LogLevel.Trace, GlobalStatic.DumpToken(token).ToString());
-                return Results.Ok(new
-                {
-                    token = token,
-                    username = username,
-                    role = realizedRole
-                }
+                DBg.d(LogLevel.Trace, $"LOGIN: RETURNING 400 = {msg}");
+                return Results.BadRequest(msg);
 
-
-                );
             }
             else
             {
-                DBg.d(LogLevel.Trace, "LOGIN: SU OK - REDIRECTING");
-                sessSvc.createSession(httpContext, username!, "SuperUser");
-                sessSvc.UpdateSessionAccessTime(httpContext, db);
-                return Results.Redirect(redirectUrl!);
+                DBg.d(LogLevel.Trace, "LOGIN: REDIRECTING UNAUTH");
+                await GlobalStatic.GenerateUnAuthPage(sb, msg);
+                return Results.Content(sb.ToString(), "text/html");
             }
-        }
+        } // user not in db
         else
         {
-            // OR it IS the backdoor admin but wrong pwd. 
-            if (username == GlobalConfig.backdoorAdmin?.Username)
-            {
-                string msg = "LOGIN: Backdoor admin password incorrect.";
-                if (isJSApi)
-                {
-                    DBg.d(LogLevel.Trace, $"LOGIN: RETURNING 400 + {msg}");
-                    return Results.BadRequest(msg);
-                }
-                else
-                {
-                    DBg.d(LogLevel.Trace, "LOGIN: REDIRECTING UNAUTH");
-                    await GlobalStatic.GenerateUnAuthPage(sb, msg);
-                    return Results.Content(sb.ToString(), "text/html");
-                }
-            }
-            // NOT the backdoor admin, so check the userManager
 
-            var user = await userManager.FindByNameAsync(username!);
-            if (user is null)
+            var result = await userManager.CheckPasswordAsync(user, password!);
+            if (result)
             {
-                string msg = $"LOGIN: Username {user} NOT FOUND.";
+                // get the user's role
+                var roles = await userManager.GetRolesAsync(user);
+                var realizedRole = GlobalStatic.FindHighestRole(roles);
+
+
                 if (isJSApi)
                 {
-                    DBg.d(LogLevel.Trace, $"LOGIN: RETURNING 400 + {msg}");
-                    return Results.BadRequest(msg);
-                }
+                    var token = UserSessionService.createToken(username!, realizedRole);
+                    DBg.d(LogLevel.Trace, $"LOGIN: User {username} logged in as {realizedRole} VIA API RETURNING 200 + TOKEN");
+
+                    return Results.Ok(new
+                    {
+                        token = token,
+                        username = username,
+                        role = realizedRole
+                    });
+                } // good login -API
                 else
                 {
-                    DBg.d(LogLevel.Trace, "LOGIN: REDIRECTING UNAUTH");
-                    await GlobalStatic.GenerateUnAuthPage(sb, msg);
-                    return Results.Content(sb.ToString(), "text/html");
-                }
-            }
+                    UserSessionService.createSession(httpContext, username!, realizedRole);
+                    _ = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+                    DBg.d(LogLevel.Trace, "LOGIN: OK - RETURNING REDIRECT");
+                    return Results.Redirect(redirectUrl!);
+                } // good login - web
+            } // good user pwd
             else
             {
-                var result = await userManager.CheckPasswordAsync(user, password!);
-                if (result)
+                string msg = $"LOGIN: Username {user} PASSWORD NOT CORRECT.";
+                if (isJSApi)
                 {
-                    // get the user's role
-                    var roles = await userManager.GetRolesAsync(user);
-                    var realizedRole = GlobalStatic.FindHighestRole(roles);
-
-
-                    if (isJSApi)
-                    {
-                        var token = sessSvc.createToken(username!, realizedRole);
-                        DBg.d(LogLevel.Trace, $"LOGIN: User {username} logged in as {realizedRole} VIA API RETURNING 200 + TOKEN");
-                        return Results.Ok(new
-                        {
-                            token = token,
-                            username = username,
-                            role = realizedRole
-                        }
-
-
-                        );
-                    }
-                    else
-                    {
-                        sessSvc.createSession(httpContext, username!, realizedRole);
-                        sessSvc.UpdateSessionAccessTime(httpContext, db);
-                        DBg.d(LogLevel.Trace, "LOGIN: OK - RETURNING REDIRECT");
-                        return Results.Redirect(redirectUrl!);
-                    }
-                }
+                    DBg.d(LogLevel.Trace, "LOGIN: RETURNING 400");
+                    return Results.BadRequest(msg);
+                } // bad login API
                 else
                 {
-                    string msg = $"LOGIN: Username {user} PASSWORD NOT CORRECT.";
-                    if (isJSApi)
-                    {
-                        DBg.d(LogLevel.Trace, "LOGIN: RETURNING 400");
-                        return Results.BadRequest(msg);
-                    }
-                    else
-                    {
-                        DBg.d(LogLevel.Trace, "LOGIN: REDIRECTING UNAUTH");
-                        await GlobalStatic.GenerateUnAuthPage(sb, msg);
-                        return Results.Content(sb.ToString(), "text/html");
-                    }
+                    DBg.d(LogLevel.Trace, "LOGIN: REDIRECTING UNAUTH");
+                    await GlobalStatic.GenerateUnAuthPage(sb, msg);
+                    return Results.Content(sb.ToString(), "text/html");
+                } // bad login web
 
-                }
-            }
-
-
-        }
-    }
-
-});
+            } // bad user pwd
+        } // user IN db
+    } // username and password are not null
+}); // end of MapPost/login
 
 // add an endpoint that adds a user to the database
 app.MapPost("/adduser", async (GeFeSLEUser user, GeFeSLEDb db,
-            UserSessionService sessSvc,
+
             HttpContext httpContext,
             UserManager<GeFeSLEUser> userManager,
             RoleManager<IdentityRole> roleManager) =>
@@ -597,7 +638,7 @@ app.MapPost("/adduser", async (GeFeSLEUser user, GeFeSLEDb db,
 
 // add an endpoint that modifies a user in the database
 app.MapPut("/modifyuser", async (GeFeSLEUser user, GeFeSLEDb db,
-            UserSessionService sessSvc,
+
             HttpContext httpContext,
             UserManager<GeFeSLEUser> userManager,
             RoleManager<IdentityRole> roleManager) =>
@@ -648,7 +689,7 @@ app.MapPut("/modifyuser", async (GeFeSLEUser user, GeFeSLEDb db,
 
 // deleteuser endpoint
 app.MapGet("/deleteuser/{id}", async (string id, GeFeSLEDb db,
-            UserSessionService sessSvc,
+
             HttpContext httpContext,
             UserManager<GeFeSLEUser> userManager,
             RoleManager<IdentityRole> roleManager) =>
@@ -694,13 +735,13 @@ app.MapGet("/deleteuser/{id}", async (string id, GeFeSLEDb db,
 
 app.MapGet("/showusers/{username}", async (string username,
         GeFeSLEDb db,
-        UserSessionService sessSvc,
+
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
     DBg.d(LogLevel.Trace, "showusers");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     DBg.d(LogLevel.Trace, $"showusers: {username}");
     var user = await userManager.FindByNameAsync(username);
@@ -721,13 +762,13 @@ app.MapGet("/showusers/{username}", async (string username,
 
 
 app.MapGet("/showusers", async (GeFeSLEDb db,
-        UserSessionService sessSvc,
+
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
     DBg.d(LogLevel.Trace, "showusers");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     DBg.d(LogLevel.Trace, "showusers: all users");
     // that's fine return ALL users in UserManager
     var users = await userManager.Users.ToListAsync();
@@ -750,13 +791,13 @@ app.MapGet("/showusers", async (GeFeSLEDb db,
 
 app.MapPost("/setpassword", async ([FromBody] JsonElement data,
         GeFeSLEDb db,
-        UserSessionService sessSvc,
+
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
     DBg.d(LogLevel.Trace, "setpassword");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     try
     {
@@ -814,16 +855,14 @@ app.MapPost("/setpassword", async ([FromBody] JsonElement data,
 
 app.MapGet("/getrole/{username}", async (string username,
         GeFeSLEDb db,
-        UserSessionService sessSvc,
+
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
     DBg.d(LogLevel.Trace, "getrole");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
-    // dont need checks for username==null, will 404 on that anyway
-    var user = await userManager.FindByNameAsync(username);
     if (user is null)
     {
         DBg.d(LogLevel.Trace, $"getrole: user {username} not found");
@@ -852,58 +891,27 @@ app.MapGet("/getrole/{username}", async (string username,
 });
 
 
-app.MapGet("/getmyrole", async (
+app.MapGet("/getmyrole", (
         GeFeSLEDb db,
-        UserSessionService sessSvc,
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
     DBg.d(LogLevel.Trace, "getMyrole");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
-
-    // dont need checks for username==null, will 404 on that anyway
-    // we also have a user from the context because of the authentication
-    var requestuser = httpContext.User;
-    string? username = requestuser?.Identity?.Name;
-    // if they're the backdoor admin, return SuperUser
-    // they won't be in the db. 
-    if (username == null)
-    {
-        DBg.d(LogLevel.Error, "getMyrole: username is null - NOT SURE HOW WE GOT HERE");
-        return Results.NotFound();
-
-    }
-    else if (username == GlobalConfig.backdoorAdmin?.Username)
-    {
-        return Results.Ok("SuperUser");
-    }
-
-    var user = await userManager.FindByNameAsync(username);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     if (user is null)
     {
-        DBg.d(LogLevel.Trace, $"getrole: user {username} not found");
+        DBg.d(LogLevel.Trace, $"getrole: user not found");
         return Results.NotFound();
     }
     else
     {
-        var role = await userManager.GetRolesAsync(user);
-        if (role.Count == 0)
-        {
-            DBg.d(LogLevel.Trace, $"getrole: user {username} has no role");
-            return Results.Ok();
-        }
-        else
-        {
-            // get the highest role
-            var realizedRole = GlobalStatic.FindHighestRole(role);
-            DBg.d(LogLevel.Trace, $"getrole: user {username} has roles {role.ToString()}");
-            return Results.Ok(realizedRole);
-        }
+        var roles = userManager.GetRolesAsync(user).Result;
+        var realizedRole = GlobalStatic.FindHighestRole(roles);
+        DBg.d(LogLevel.Trace, $"getrole: user {user.UserName} has role {realizedRole}");
+        return Results.Ok(realizedRole);
     }
-
-}
-).RequireAuthorization(new AuthorizeAttribute
+}).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
     Roles = "SuperUser,listowner,contributor"
@@ -914,13 +922,13 @@ app.MapGet("/getmyrole", async (
 app.MapGet("/setrole/{username}/{role}", async (string username,
         string role,
         GeFeSLEDb db,
-        UserSessionService sessSvc,
+
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
     DBg.d(LogLevel.Trace, "setrole");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     // dont need checks for username==null, will 404 on that anyway
     var user = await userManager.FindByNameAsync(username);
@@ -952,21 +960,24 @@ app.MapGet("/setrole/{username}/{role}", async (string username,
 
 
 
-app.MapGet("/showlists", async (GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
+app.MapGet("/showlists", async (GeFeSLEDb db, HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, "showlists");
 
-
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    var userManager = httpContext.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
+    GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     return await db.Lists.ToListAsync();
 
 });
 
-app.MapGet("/showlists/{id}", async (int id, GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
+app.MapGet("/showlists/{id}", async (int id,
+            GeFeSLEDb db,
+            UserManager<GeFeSLEUser> userManager,
+            HttpContext httpContext) =>
    {
        DBg.d(LogLevel.Trace, $"showlists/{id}");
-       sessSvc.UpdateSessionAccessTime(httpContext, db);
+       GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
        var showlist = await db.Lists.FindAsync(id);
        // if showlist is not null, then return it
        if (showlist is not null)
@@ -981,7 +992,11 @@ app.MapGet("/showlists/{id}", async (int id, GeFeSLEDb db, UserSessionService se
        }
    });
 
-app.MapPost("/addlist", async (GeList newlist, GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
+app.MapPost("/addlist", async (GeList newlist,
+    GeFeSLEDb db,
+    HttpContext httpContext,
+    UserManager<GeFeSLEUser> userManager,
+    RoleManager<IdentityRole> roleManager) =>
 {
     DBg.d(LogLevel.Trace, $"addlist: {newlist}");
 
@@ -997,7 +1012,15 @@ app.MapPost("/addlist", async (GeList newlist, GeFeSLEDb db, UserSessionService 
     {
         return Results.BadRequest("List with that name already exists");
     }
+    GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    if (me is null)
+    {
+        return Results.BadRequest("Could not determine who you are");
+    }
+    // no need to check for roles, auth middleware already did it. 
 
+
+    newlist.Creator = me;
     db.Lists.Add(newlist);
     ProtectedFiles.AddList(newlist);
     await db.SaveChangesAsync();
@@ -1006,7 +1029,6 @@ app.MapPost("/addlist", async (GeList newlist, GeFeSLEDb db, UserSessionService 
     await newlist.GenerateJSON(db);
     _ = GlobalStatic.GenerateHTMLListIndex(db);
 
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
     string msg = $"/showlists/{newlist.Id}";
     return Results.Created(msg, newlist);
 }).RequireAuthorization(new AuthorizeAttribute
@@ -1016,10 +1038,13 @@ app.MapPost("/addlist", async (GeList newlist, GeFeSLEDb db, UserSessionService 
 });
 
 
-app.MapPut("/modifylist", async (GeList inputList, GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
+app.MapPut("/modifylist", async (GeList inputList,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, $"modifylist: {inputList}");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var modlist = await db.Lists.FindAsync(inputList.Id);
     var namechange = false;
     if (modlist is null) return Results.NotFound();
@@ -1067,18 +1092,25 @@ app.MapPut("/modifylist", async (GeList inputList, GeFeSLEDb db, UserSessionServ
 });
 
 
-app.MapGet("/showitems/{listId}", async (int listId, GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
+app.MapGet("/showitems/{listId}", async (int listId,
+        GeFeSLEDb db,
+        UserManager<GeFeSLEUser> userManager,
+        HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, $"showitems/{listId}");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var items = await db.Items.Where(item => item.ListId == listId).ToListAsync();
     return Results.Ok(items);
 });
 
-app.MapGet("/showitems/{listid}/{id}", async (int listId, int id, GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
+app.MapGet("/showitems/{listid}/{id}", async (int listId,
+        int id,
+        GeFeSLEDb db,
+        UserManager<GeFeSLEUser> userManager,
+        HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, $"showitems/{listId}/{id}");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var showitem = await db.Items.FindAsync(id);
     if (showitem is not null)
     {
@@ -1090,11 +1122,15 @@ app.MapGet("/showitems/{listid}/{id}", async (int listId, int id, GeFeSLEDb db, 
     }
 });
 
-app.MapPost("/additem/{listid}", async (int listid, GeListItem newitem, GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
+app.MapPost("/additem/{listid}", async (int listid,
+    GeListItem newitem,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    HttpContext httpContext) =>
 {
 
     DBg.d(LogLevel.Trace, $"additem/{listid} <- {System.Text.Json.JsonSerializer.Serialize(newitem)}");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // if the ListId of newitem is 0 (which is ok - no value in json int is 0), then set it to listid
     if (newitem.ListId == 0)
     {
@@ -1120,10 +1156,13 @@ app.MapPost("/additem/{listid}", async (int listid, GeListItem newitem, GeFeSLED
 });
 
 
-app.MapPut("/modifyitem", async (GeListItem inputItem, GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
+app.MapPut("/modifyitem", async (GeListItem inputItem,
+        GeFeSLEDb db,
+        UserManager<GeFeSLEUser> userManager,
+        HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, $"modifyitem: <- {System.Text.Json.JsonSerializer.Serialize(inputItem)}");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var moditem = await db.Items.FirstOrDefaultAsync(item => item.Id == inputItem.Id && item.ListId == inputItem.ListId);
     // check for listowner or contributor of the list this item belongs to
     if (moditem is null) return Results.NotFound();
@@ -1149,10 +1188,14 @@ app.MapPut("/modifyitem", async (GeListItem inputItem, GeFeSLEDb db, UserSession
 
 
 // add an endpoint that DELETEs an item from a list
-app.MapDelete("/deleteitem/{listid}/{id}", async (int listid, int id, GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
+app.MapDelete("/deleteitem/{listid}/{id}", async (int listid,
+        int id,
+        GeFeSLEDb db,
+        UserManager<GeFeSLEUser> userManager,
+        HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, $"deleteitem/{listid}/{id}");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // check if list owner is owner of THIS list
     var delitem = await db.Items.FindAsync(id);
     if (delitem is null) return Results.NotFound();
@@ -1174,11 +1217,11 @@ app.MapDelete("/deleteitem/{listid}/{id}", async (int listid, int id, GeFeSLEDb 
 // add an endpoint that DELETEs a list
 app.MapDelete("/deletelist/{id}", async (int id,
         GeFeSLEDb db,
-        UserSessionService sessSvc,
+        UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, $"deletelist/{id}");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var dellist = await db.Lists.FindAsync(id);
     if (dellist is null) return Results.NotFound();
     db.Lists.Remove(dellist);
@@ -1198,10 +1241,12 @@ app.MapDelete("/deletelist/{id}", async (int id,
 app.MapGet("/heartbeat", () => "OK  " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "(server time)");
 
 // add and endpoint that regenerates the html page for all lists
-app.MapGet("/regenerate", async (GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
+app.MapGet("/regenerate", async (GeFeSLEDb db,
+        UserManager<GeFeSLEUser> userManager,
+        HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, "regenerate");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // add check for if listowner is owner of THIS list
 
     var lists = await db.Lists.ToListAsync();
@@ -1221,10 +1266,13 @@ app.MapGet("/regenerate", async (GeFeSLEDb db, UserSessionService sessSvc, HttpC
 
 
 // add an endpoint that regenerates the html page for a list
-app.MapGet("/regenerate/{listid}", async (int listid, GeFeSLEDb db, UserSessionService sessSvc, HttpContext httpContext) =>
+app.MapGet("/regenerate/{listid}", async (int listid,
+        GeFeSLEDb db,
+        UserManager<GeFeSLEUser> userManager,
+        HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, $"regenerate/{listid}");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // add check for if contributor is contributor of THIS list
     // add check for if listowner is owner of THIS list
 
@@ -1255,7 +1303,7 @@ app.MapGet("/googlelogin", async (HttpContext context) =>
 
 app.MapGet("/googlecallback", async (HttpContext context,
         GeFeSLEDb db,
-        UserSessionService sessSvc,
+
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager
         ) =>
@@ -1302,7 +1350,7 @@ app.MapGet("/googlecallback", async (HttpContext context,
         var roles = await userManager.GetRolesAsync(user);
         var realizedRole = GlobalStatic.FindHighestRole(roles);
 
-        sessSvc.createSession(context, user.UserName!, realizedRole);
+        UserSessionService.createSession(context, user.UserName!, realizedRole);
         msg = $"Welcome {user.UserName}! You are logged in as {realizedRole}";
         await GlobalStatic.GenerateLoginResult(sb, msg);
         return Results.Content(sb.ToString(), "text/html");
@@ -1310,7 +1358,7 @@ app.MapGet("/googlecallback", async (HttpContext context,
 
 });
 
-app.MapPost("/mastoconnect", async (HttpContext context, UserSessionService sessSvc) =>
+app.MapPost("/mastoconnect", async (HttpContext context) =>
 {
     DBg.d(LogLevel.Trace, "mastoconnect");
     string? instance = context.Request.Form["instance"];
@@ -1430,7 +1478,7 @@ app.MapGet("/mastologin", (HttpContext context) =>
 // new endpoint that handles the Mastodon Oauth2 callback
 app.MapGet("/mastocallback", async (string code,
     HttpContext httpContext,
-    UserSessionService sessSvc,
+
     UserManager<GeFeSLEUser> userManager,
     RoleManager<IdentityRole> roleManager) =>
 {
@@ -1476,7 +1524,7 @@ app.MapGet("/mastocallback", async (string code,
         var jsonToken = JObject.Parse(token);
         var accessToken = jsonToken["access_token"]!.ToString();
         DBg.d(LogLevel.Trace, $"token: {accessToken}");
-        sessSvc.AddAccessToken(httpContext, "mastodon", accessToken);
+        UserSessionService.AddAccessToken(httpContext, "mastodon", accessToken);
         // we STILL don't know who this user is, and we haven't
         // LOGGED them in. 
         string credentialsUrl = $"{realizedInstance}/api/v1/accounts/verify_credentials";
@@ -1518,7 +1566,7 @@ app.MapGet("/mastocallback", async (string code,
 
             if (localuser is null)
             {
-                sessSvc.createSession(httpContext, username!, "anonymous");
+                UserSessionService.createSession(httpContext, username!, "anonymous");
                 var msg = $"Hi {username} from the fediverse; You've been logged in with role: anonymous. All this means is you can't modify anything, but at least now you show up in our server logs.";
                 await GlobalStatic.GenerateLoginResult(sb, msg);
                 return Results.Content(sb.ToString(), "text/html");
@@ -1528,7 +1576,7 @@ app.MapGet("/mastocallback", async (string code,
                 // they're in there, which means we've added them, probably to assign them a role
                 var roles = await userManager.GetRolesAsync(localuser);
                 var realizedRole = GlobalStatic.FindHighestRole(roles);
-                sessSvc.createSession(httpContext, localuser.UserName!, realizedRole);
+                UserSessionService.createSession(httpContext, localuser.UserName!, realizedRole);
                 var msg = $"Hi {username} from the fediverse; You've been logged in with role: {realizedRole}.";
                 await GlobalStatic.GenerateLoginResult(sb, msg);
                 return Results.Content(sb.ToString(), "text/html");
@@ -1545,11 +1593,11 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid,
             int num2Get,
             bool? unbookmark, // if the checkbox isn't, there's no value, so it's null
             GeFeSLEDb db,
-            UserSessionService sessSvc,
+            UserManager<GeFeSLEUser> userManager,
             HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, "mastobookmarks");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     // if there's no/null value for unbookmark, set it to false
     if (unbookmark is null) unbookmark = false;
@@ -1561,7 +1609,7 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid,
     if ((num2Get < 1) || (num2Get > 999)) return Results.BadRequest("num2Get must be between 1 and 999");
 
     // get the access token from the session service
-    string? token = sessSvc.GetAccessToken(httpContext, "mastodon");
+    string? token = UserSessionService.GetAccessToken(httpContext, "mastodon");
     // handle this better
     if (token is null)
     {
@@ -1662,7 +1710,7 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid,
     Roles = "SuperUser,listowner"
 });
 
-app.MapGet("/amloggedin", (UserSessionService sessSvc, HttpContext httpContext) =>
+app.MapGet("/amloggedin", (HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, "amloggedin");
 
@@ -1690,13 +1738,13 @@ app.MapGet("/amloggedin", (UserSessionService sessSvc, HttpContext httpContext) 
 
 app.MapGet("/getlistuser/{listid}", async (int listid,
         GeFeSLEDb db,
-        UserSessionService sessSvc,
+
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
     DBg.d(LogLevel.Trace, "getlistuser");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     // middleware rejects the request if there isn't a listid. see if the list given is a real one
     GeList? list = await db.Lists.FindAsync(listid);
@@ -1719,18 +1767,15 @@ app.MapGet("/getlistuser/{listid}", async (int listid,
 
 app.MapGet("/getlistisee", async (
         GeFeSLEDb db,
-        UserSessionService sessSvc,
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
     DBg.d(LogLevel.Trace, "getlistuser");
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
-    // who am i? 
-    var username = httpContext.User.Identity?.Name;
-    if (username is null)
+    GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    if (me is null || !UserSessionService.amILoggedIn(httpContext))
     {
-        DBg.d(LogLevel.Trace, "getlistisee: username is null // Only public lists");
+        DBg.d(LogLevel.Trace, "getlistisee: username is null/notlogged in // Only public lists");
         // user can only see lists that are .Visibility== GeListvisibility.Public
         var listNames = await db.Lists.Where(l => l.Visibility == GeListVisibility.Public)
                                      .Select(l => l.Name)
@@ -1739,50 +1784,47 @@ app.MapGet("/getlistisee", async (
     }
     else
     {
-        // likewise if user is role SuperUser, they can see all
-        GeFeSLEUser? user = await userManager.FindByNameAsync(username);
-        if (user is null) return Results.BadRequest($"ERROR: User {username} is logged in but not in database?");
+        bool isSuperUser = await userManager.IsInRoleAsync(me, "SuperUser");
+        if (isSuperUser)
+        {
+            DBg.d(LogLevel.Trace, $"getlistisee: SuperUser {me.UserName} // All lists");
+            var listNames = await db.Lists.Select(l => l.Name).ToListAsync();
+            return Results.Ok(listNames);
+        }
         else
         {
-            var roles = await userManager.GetRolesAsync(user);
-            var realizedRole = GlobalStatic.FindHighestRole(roles);
-            if (realizedRole == "SuperUser")
-            {
-                DBg.d(LogLevel.Trace, $"getlistisee: SuperUser {username} // All lists");
-                var listNames = await db.Lists.Select(l => l.Name).ToListAsync();
-                return Results.Ok(listNames);
-            }
-            else
-            {
-                // user can only see lists that they are Creators, ListOwners of or Contributors of
-                List<GeList> lists = await db.Lists.ToListAsync();
-                List<string> listnames = new List<string>();
+            // user can only see lists that they are Creators, ListOwners of or Contributors of
+            List<GeList> lists = await db.Lists.ToListAsync();
+            List<string> listnames = new List<string>();
 
-                foreach (GeList list in lists)
+            foreach (GeList list in lists)
+            {
+                (bool canISee, string? ynot) = await ProtectedFiles.IsListVisibleToUser(httpContext, list, me, userManager);
+                if (canISee)
                 {
-                    string? ynot = "";
-                    if (ProtectedFiles.IsListVisibleToUser(db, list, user.UserName, out ynot))
-                    {
-                        listnames.Add(list.Name!);
-                    }
-
+                    listnames.Add(list.Name!);
                 }
-                return Results.Ok(listnames);
-            }
+                else
+                {
+                    DBg.d(LogLevel.Trace, $"getlistisee: {me.UserName} can't see {list.Name} because {ynot}");
+                }
 
+            }
+            return Results.Ok(listnames);
         }
+
     }
 }).AllowAnonymous();
 
 
 app.MapPost("/setlistuser", async ([FromBody] JsonElement data,
         GeFeSLEDb db,
-        UserSessionService sessSvc,
+
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    sessSvc.UpdateSessionAccessTime(httpContext, db);
+    GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     // the FORM post will have a:
     // listname
@@ -1800,7 +1842,8 @@ app.MapPost("/setlistuser", async ([FromBody] JsonElement data,
         {
             return Results.BadRequest("listname, username and role must be specified");
         }
-        else if (role != "listowner" && role != "contributor") {
+        else if (role != "listowner" && role != "contributor")
+        {
             return Results.BadRequest("role must be listowner or contributor");
         }
         else
@@ -1825,23 +1868,24 @@ app.MapPost("/setlistuser", async ([FromBody] JsonElement data,
                     {
                         // find the user we want to add to the list
                         GeFeSLEUser? user = await userManager.FindByNameAsync(username!);
-                        if(user == null) return Results.BadRequest($"User {username} does not exist");
+                        if (user == null) return Results.BadRequest($"User {username} does not exist");
 
                         // only the list's creator or a SuperUser can add a listowner
                         // a listowner, SuperUser or the list's creator can add a contributor
                         var roles = await userManager.GetRolesAsync(caller);
                         var realizedRole = GlobalStatic.FindHighestRole(roles);
 
-                        if(role == "listowner")
+                        if (role == "listowner")
                         {
                             if ((list.Creator == caller) ||
-                                (realizedRole == "SuperUser")) {
+                                (realizedRole == "SuperUser"))
+                            {
 
                                 list.ListOwners.Add(user);
-                                var msg =  $"{caller.UserName} Added {user.UserName} to {list.Name} as a listowner";
-                                DBg.d(LogLevel.Information,msg);
+                                var msg = $"{caller.UserName} Added {user.UserName} to {list.Name} as a listowner";
+                                DBg.d(LogLevel.Information, msg);
                                 return Results.Ok(msg);
-                                }
+                            }
                             else
                             {
                                 return Results.BadRequest("Only the list's creator or a SuperUser can add a listowner");
@@ -1851,12 +1895,13 @@ app.MapPost("/setlistuser", async ([FromBody] JsonElement data,
                         {
                             if ((list.Creator == caller) ||
                                 (realizedRole == "SuperUser") ||
-                                list.ListOwners.Contains(caller)) {
-                                    list.Contributors.Add(user);
-                                    var msg = $"{caller.UserName} Added {user.UserName} to {list.Name} as a contributor";
-                                    DBg.d(LogLevel.Information, msg);
-                                    return Results.Ok(msg);
-                                }
+                                list.ListOwners.Contains(caller))
+                            {
+                                list.Contributors.Add(user);
+                                var msg = $"{caller.UserName} Added {user.UserName} to {list.Name} as a contributor";
+                                DBg.d(LogLevel.Information, msg);
+                                return Results.Ok(msg);
+                            }
 
                             else
                             {
@@ -1882,6 +1927,63 @@ app.MapPost("/setlistuser", async ([FromBody] JsonElement data,
     Roles = "SuperUser,listowner"
 });
 
+app.MapGet("/session", async (HttpContext httpContext,
+    UserManager<GeFeSLEUser> userManager
+    ) =>
+{
+    DBg.d(LogLevel.Trace, "session");
+
+    StringBuilder sb = new StringBuilder();
+    sb.AppendLine("<!DOCTYPE html><html><body>");
+    string? niceSession = await UserSessionService.dumpSession(httpContext, userManager);
+    if (niceSession.IsNullOrEmpty())
+    {
+        sb.AppendLine("<p>Session is empty</p>");
+    }
+    else
+    {
+        sb.AppendLine($"<p>Nice Session: <pre>{niceSession}</pre></p>");
+    }
+
+
+
+    // ...
+
+    sb.AppendLine($"User.Identity.Name: {httpContext.User.Identity?.Name}<br>");
+    sb.AppendLine($"User.Identity.IsAuthenticated: {httpContext.User.Identity?.IsAuthenticated}<br>");
+    sb.AppendLine($"User.Identity.AuthenticationType: {httpContext.User.Identity?.AuthenticationType}<br>");
+
+    foreach (var identity in httpContext.User.Identities)
+    {
+        sb.AppendLine($"Identity: {identity.AuthenticationType}, IsAuthenticated: {identity.IsAuthenticated}<br>");
+        foreach (var claim in identity.Claims)
+        {
+            sb.AppendLine($"Claim: {claim.Type} = {claim.Value}<br>");
+        }
+    }
+
+    sb.AppendLine($"User is in role Admin: {httpContext.User.IsInRole("SuperUser")}");
+    sb.AppendLine("<br>");
+
+
+    sb.AppendLine("</body></html>");
+
+
+    return Results.Content(sb.ToString(), "text/html");
+}).AllowAnonymous()
+.RequireAuthorization(new AuthorizeAttribute
+{ AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme });
+
+
+// /killsession - destroys any active cookie or jwt session
+app.MapGet("/killsession", (HttpContext httpContext) =>
+{
+    DBg.d(LogLevel.Trace, "killsession");
+    UserSessionService.UserLoggedOut(httpContext);
+    return Results.Ok("Session killed");
+}).AllowAnonymous()
+.RequireAuthorization(new AuthorizeAttribute
+{ AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme });
 
 
 app.MapGet("/", () => { return Results.Redirect("/index.html"); });
@@ -1898,6 +2000,7 @@ using (var scope = app.Services.CreateScope())
 
     // Call your method here
     _ = GlobalStatic.GenerateHTMLListIndex(db);
+    ProtectedFiles.ReLoadFiles(db);
 }
 app.Run($"http://{GlobalConfig.Bind}:{GlobalConfig.Port}");
 

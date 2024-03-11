@@ -1,10 +1,22 @@
 using System.Collections.Concurrent;
 using GeFeSLE;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using SQLitePCL;
+using Newtonsoft.Json; // Add this import statement
 
 public static class ProtectedFiles
 {
-
+    // define a bunch of defaults: List<string>
+    private static readonly string[] internalFiles = new string[] { 
+        "/_edit.item.html", 
+        "/_edit.item.js", 
+        "/_edit.list.html",
+        "/_edituser.html",
+        "/_edituser.js",
+        "/_mastobookmark.html",
+        "/_mastobookmark.js"
+    };
 
 
     private static ConcurrentDictionary<string, string> Files = new ConcurrentDictionary<string, string>();
@@ -59,6 +71,10 @@ public static class ProtectedFiles
             AddList(list);
 
         }
+        foreach (string file in internalFiles)
+        {
+            AddFile(file, "internal");
+        }
     }
     public static void AddList(GeList list)
     {
@@ -84,116 +100,114 @@ public static class ProtectedFiles
         return false;
     }
 
-    public static bool IsFileVisibleToUser(GeFeSLEDb db, string path, string? username, out string? ynot)
+    public static async Task<(bool, string?)> IsFileVisibleToUser(HttpContext context,
+        string path,
+        GeFeSLEUser user,
+        UserManager<GeFeSLEUser> userManager)
     {
-        DBg.d(LogLevel.Trace, $"ProtectedFiles.IsFileVisibleToUser: {path} - {username}");
-        // at this pt the path should be a valid file in ur list of files AND
-        // the user should a) exist // we'll have to trust that the user is logged in
-        // but lets eliminate these cases first.
-        ynot = null;
-        // get the GeList that this file is associated with
+
+        
+
+        var serializedFiles = JsonConvert.SerializeObject(Files, Formatting.Indented);
+        DBg.d(LogLevel.Trace, $"HERE DA FILES: {serializedFiles}");
+
+        string? ynot = null;
+
         GeList? list = Files.TryGetValue(path, out var listName) && Lists.TryGetValue(listName, out var tempList)
-    ? tempList
-    : null;
+            ? tempList
+            : null;
         // did we get a list? 
         if (list == null)
         {
-            DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: {path} - {username} - NO LIST ASSOCIATED - WHY AM I HERE?");
+            DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: {path} - {user.UserName} - NO LIST ASSOCIATED - WHY AM I HERE?");
             ynot = "No list associated with this file! Why am I here?";
-            return false;
+            return (false, ynot);
         }
 
-        if(IsListVisibleToUser(db, list, username!, out ynot)) {
-            ynot = $"Path {path} is visible to user {username}";
-            return true;
+        (bool isVis, ynot) = await IsListVisibleToUser(context, list, user, userManager);
+        if(isVis)
+        {
+            ynot = $"Path {path} is visible: {ynot}";
+            return (isVis, ynot);
         }
-        else {
-            ynot = $"Path {path} is NOT visible to user {username} because {ynot}";
-            return false;
-        
+        else
+        {
+            ynot = $"Path {path} is NOT visible: {ynot}";
+            return (isVis,ynot);
+
         };
     }
 
-    public static bool IsListVisibleToUser(GeFeSLEDb db, GeList list, string? username, out string? ynot) {
+    public static async Task<(bool, string?)> IsListVisibleToUser(HttpContext context,
+        GeList list,
+        GeFeSLEUser user,
+        UserManager<GeFeSLEUser> userManager)
+    {
         // so we got a list. 
         // is the list public?
-        ynot = null;
+        string? ynot = null;
         if (list.Visibility == GeListVisibility.Public)
         {
-            DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: - {username} - LIST IS PUBLIC - WHY AM I HERE? ");
+            DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: - {user.UserName} - LIST IS PUBLIC - WHY AM I HERE? ");
             ynot = "List is public";
-            return true;
+            return (true, ynot);
         }
 
-        // get the user; account for backdoor admin which may not be in our IdentityUser db
-        if ((GlobalConfig.backdoorAdmin != null) &&
-            (username != null) &&
-            (username == GlobalConfig.backdoorAdmin.Username))
+        bool isSuperUser = await userManager.IsInRoleAsync(user, "SuperUser");
+        if (UserSessionService.amILoggedIn(context) && isSuperUser)
         {
-            ynot = "Backdoor admin";
-            return true;
+            DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: - {user.UserName} - USER IS SUPERUSER");
+            ynot = "User is a super user";
+            return (true, ynot);
         }
 
-        else
+        switch (list.Visibility)
         {
-            var user = db.Users.FirstOrDefault(u => u.UserName == username);
-            if (user == null)
-            {
-                DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: - {username} - USER NOT IN DB - WHY AM I HERE? ");
-                ynot = "User not found";
-                return false;
-            }
-            else if (db.UserRoles.Any(ur => ur.UserId == user.Id && ur.RoleId == "SuperUser"))
-            {
-                ynot = "User is a super user";
-                return true;
-            }
-            else
-            {
-                switch (list.Visibility)
+            case GeListVisibility.Contributors:
+                if (list.Contributors.Contains(user) || list.ListOwners.Contains(user) || list.Creator == user)
                 {
-                    case GeListVisibility.Contributors:
-                        if (list.Contributors.Contains(user) || list.ListOwners.Contains(user) || list.Creator == user)
-                        {
-                            DBg.d(LogLevel.Trace, $"Related list is CONTRIB access. User is a contributor/owner/creator.");
-                            return true;
-                        }
-                        else
-                        {
-                            ynot = $"User {username} is not a contributor/list owner/creator of list {list.Name}";
-                            return false;
-                        }
-                    case GeListVisibility.ListOwners:
-                        if (list.ListOwners.Contains(user) || list.Creator == user)
-                        {
-                            DBg.d(LogLevel.Trace, $"Related list is OWNER access. User is a list owner/creator.");
-                            return true;
-                        }
-                        else
-                        {
-                            ynot = $"User {username} is not a list owner/creator of list {list.Name}";
-                            return false;
-                        }
-                    case GeListVisibility.Private:
-
-                        if (list.Creator == user)
-                        {
-                            DBg.d(LogLevel.Trace, $"Related list is PRIVATE access. User is the creator.");
-                            return true;
-                        }
-                        else
-                        {
-                            ynot = $"User {username} is not the creator of list {list.Name}";
-                            return false;
-                        }
-                    case GeListVisibility.Public:
-                        ynot = "List is public";
-                        return true;
-
+                    DBg.d(LogLevel.Trace, $"Related list is CONTRIB access. User is a contributor/owner/creator.");
+                    return (true, ynot);
                 }
-            }
+                else
+                {
+                    ynot = $"User {user.UserName} is not a contributor/list owner/creator of list {list.Name}";
+                    return (false, ynot);
+                }
+            case GeListVisibility.ListOwners:
+                if (list.ListOwners.Contains(user) || list.Creator == user)
+                {
+                    DBg.d(LogLevel.Trace, $"Related list is OWNER access. User is a list owner/creator.");
+                    return (true, ynot);
+                }
+                else
+                {
+                    ynot = $"User {user.UserName} is not a list owner/creator of list {list.Name}";
+                    return (false, ynot);
+                }
+            case GeListVisibility.Private:
+
+                if (list.Creator == user)
+                {
+                    DBg.d(LogLevel.Trace, $"Related list is PRIVATE access. User is the creator.");
+                    return (true, ynot);
+                }
+                else
+                {
+                    ynot = $"User {user.UserName} is not the creator of list {list.Name}";
+                    return (false, ynot);
+                }
+            case GeListVisibility.Public:
+                ynot = "List is public";
+                return (true, ynot);
+
         }
-        DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: - WHY AM I HERE? ");
-        return false;
+        DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: - HOW WE GET HERE? {user.UserName} {list.Name}");
+        ynot = "How did we get here?";
+        return (false, ynot);
     }
 }
+        
+    
+
+    

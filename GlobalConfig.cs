@@ -1,32 +1,6 @@
 using System.Reflection;
+using GeFeSLE;
 
-public class SuperUser
-{
-    public string? Username { get; set; } = null;
-    public string? Password { get; set; } = null;
-    public string Role { get; set; } = "SuperUser";
-
-    public SuperUser(string username, string password)
-    {
-
-        Username = username;
-        Password = password;
-
-    }
-
-    public bool areWe(string? username) {
-        bool result = false;
-        if (username != null)
-        {
-            result = username == Username;
-        }
-        else {
-            result = false;
-        }
-        return result;
-    }
-
-}
 
 public static class GlobalConfig
 {
@@ -52,7 +26,8 @@ public static class GlobalConfig
     public static string? sitetitle { get; set; }
     public static string? owner { get; set; }
 
-    public static SuperUser? backdoorAdmin { get; set; }
+    public static GeFeSLEUser? backdoorAdmin { get; set; }
+    public static string? backdoorAdminPassword { get; set; } = null;
 
     // the secret key for JWT bearer tokens - issued to API clients when they log in.
     // we're using only the default HS256 algorithm, so your secret key SHOULD be 
@@ -135,12 +110,16 @@ public static class GlobalConfig
 
         // probably not kosher, but I'm lazy
         // get the admin user from the config file
-        backdoorAdmin = config.GetSection("Users:backdooradmin").Get<SuperUser>();
+        backdoorAdmin = config.GetSection("Users:backdooradmin").Get<GeFeSLEUser>();
+        backdoorAdminPassword = config.GetValue<string>("Users:backdooradmin:Password");
         // in /LOGIN we'll make sure that a user with these credentials will always 
         // authenticate as an admin, no matter what the database says.
+        
         if (backdoorAdmin != null)
         {
-            DBg.d(LogLevel.Debug, $"Backdoor admin user: {backdoorAdmin.Username}");
+            DBg.d(LogLevel.Debug, $"Backdoor admin user: {backdoorAdmin.UserName}");
+            DBg.d(LogLevel.Debug, $"Backdoor admin password: {backdoorAdminPassword}");
+            
         }
         else
         {

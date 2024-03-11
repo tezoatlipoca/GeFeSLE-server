@@ -8,17 +8,19 @@ using Microsoft.VisualBasic;
 using System.IdentityModel.Tokens.Jwt; // Add this directive for JWT token
 using System.Text; // Add this directive for Encoding
 using GeFeSLE;
+using Microsoft.AspNetCore.Identity;
 
 
-public class UserSessionService
+public static class UserSessionService
 {
-    public void ConfigureServices(IServiceCollection services)
-    {
-        services.AddSingleton<UserSessionService>();
-        // Other service registrations...
-    }
 
-    public void UserLoggedOut(HttpContext context)
+    // public static void ConfigureServices(IServiceCollection services)
+    // {
+    //     services.AddSingleton<UserSessionService>();
+    //     // Other service registrations...
+    // }
+
+    public static void UserLoggedOut(HttpContext context)
     {
         // if its not null, get the user name
         var username = context.User?.Identity?.Name;
@@ -27,50 +29,41 @@ public class UserSessionService
         DBg.d(LogLevel.Trace, "UserLoggedOut: " + username);
     }
 
-    public void UpdateSessionAccessTime(HttpContext context, GeFeSLEDb db)
+    public static GeFeSLEUser? UpdateSessionAccessTime(HttpContext context,
+            GeFeSLEDb db,
+            UserManager<GeFeSLEUser> userManager)
     {
-        // context and db will always be valid
-
-        if (context.User?.Identity?.IsAuthenticated == true)
+        DBg.d(LogLevel.Trace, "UpdateSessionAccessTime");
+        if (amILoggedIn(context))
         {
-            var username = context.User?.Identity?.Name;
-            var role = context.User?.FindFirst(ClaimTypes.Role)?.Value;
-
-            // Access the GeFeSLEUser that matches the claims principal
-            var user = db.Users.FirstOrDefault(u => u.UserName == username);
-
+            GeFeSLEUser? user = getWhoIAm(context, userManager).Result;
             if (user != null)
             {
-                // Perform actions with the user...
                 user.LastAccessTime = DateTime.UtcNow;
-                db.SaveChanges();
-                DBg.d(LogLevel.Trace, "UpdateSessionAccessTime: " + username + " [" + role + "] to " + context.Request.Path + " from " + context.Connection.RemoteIpAddress);
+                _ = db.SaveChangesAsync();
+                var roles = userManager.GetRolesAsync(user).Result;
+                string realizedRole = GlobalStatic.FindHighestRole(roles);
 
-            }
+                DBg.d(LogLevel.Trace, "UpdateSessionAccessTime: " + user.UserName + " [" + realizedRole + "] to " + context.Request.Path + " from " + context.Connection.RemoteIpAddress);
+                return user;
+            } // user in db 
             else
             {
-                // wait - how did the user get here if they arent in the database?
-                // unless they're the super user
-                if (username == GlobalConfig.backdoorAdmin!.Username)
-                {
-                    DBg.d(LogLevel.Trace, "UpdateSessionAccessTime: Superuser " + username + " [" + role + "] to " + context.Request.Path + " from " + context.Connection.RemoteIpAddress);
-                }
-                else
-                {
-                    DBg.d(LogLevel.Critical, "UpdateSessionAccessTime: User " + username + " not found in database, but they're authenticated as " + role);
-                }
-                
-            }
+                DBg.d(LogLevel.Critical, "UpdateSessionAccessTime: User not found in database, but they're authenticated??");
+                return null;
+            } // user NOT in db.
+
         }
         else // not authenticated
         {
             DBg.d(LogLevel.Trace, "UpdateSessionAccessTime: Anonymous access to " + context.Request.Path + " from " + context.Connection.RemoteIpAddress);
+            return null;
         }
 
     }
 
 
-    public string createToken(string username, string role)
+    public static string createToken(string username, string role)
     {
         // create a claims identity
         var claims = new List<Claim>
@@ -101,7 +94,7 @@ public class UserSessionService
         return tokenString;
     }
 
-    public void createSession(HttpContext httpContext, string username, string role)
+    public static void createSession(HttpContext httpContext, string username, string role)
     {
         DBg.d(LogLevel.Trace, "createSession");
         // create a claims identity
@@ -126,15 +119,15 @@ public class UserSessionService
             CookieAuthenticationDefaults.AuthenticationScheme,
             new ClaimsPrincipal(claimsIdentity),
             authProperties);
-        
 
-        
+
+
 
 
     }
 
-        // a method that takes username and an OAuth2AccessTokenResponse and stores it in the user session
-    public void AddAccessToken(HttpContext context, string provider, string accessToken)
+    // a method that takes username and an OAuth2AccessTokenResponse and stores it in the user session
+    public static void AddAccessToken(HttpContext context, string provider, string accessToken)
     {
         DBg.d(LogLevel.Trace, "AddAccessTokenResponse");
         var username = context.User?.Identity?.Name;
@@ -152,7 +145,7 @@ public class UserSessionService
     }
 
     // a method that takes username and provider and returns the OAuth2AccessTokenResponse
-    public string? GetAccessToken(HttpContext context, string provider)
+    public static string? GetAccessToken(HttpContext context, string provider)
     {
         DBg.d(LogLevel.Trace, "GetAccessTokenResponse");
         if (provider == null)
@@ -174,8 +167,77 @@ public class UserSessionService
 
     }
 
+    public static async Task<GeFeSLEUser?> getWhoIAm(HttpContext context,
+        UserManager<GeFeSLEUser> userManager)
+    {
+        DBg.d(LogLevel.Trace, "getWhoIAm");
+        DBg.d(LogLevel.Trace, "getWhoIAm: " + context.User?.Identity?.Name);
+        string? username = context.User?.Identity?.Name;
+        if (username == null)
+        {
+            DBg.d(LogLevel.Trace, "getWhoIAm: null username");
+            return null;
+        }
+        else
+        {
+            GeFeSLEUser? user = await userManager.FindByNameAsync(username);
+            if (user == null)
+            {
+                DBg.d(LogLevel.Error, $"getWhoIAm: NO DB user {username}!");
+                return null;
+            }
+            DBg.d(LogLevel.Trace, $"getWhoIAm: {user.UserName}");
+            return user;
+        }
+    }
 
+    public static bool amILoggedIn(HttpContext context)
+    {
+        DBg.d(LogLevel.Trace, "amILoggedIn");
+        string? username = context.User?.Identity?.Name;
+        bool loggedIn = context.User?.Identity?.IsAuthenticated == true;
 
+        DBg.d(LogLevel.Trace, $"amILoggedIn: {username} - {loggedIn}");
+        return loggedIn;
+    }
+
+    public static async Task<List<string>> getRoles(GeFeSLEUser user,
+        UserManager<GeFeSLEUser> userManager)
+    {
+        DBg.d(LogLevel.Trace, "getMyRoles");
+        var roles = await userManager.GetRolesAsync(user);
+        DBg.d(LogLevel.Trace, $"getMyRoles: {user.UserName} [{string.Join(", ", roles)}]");
+        return roles.ToList();
+    }
+
+    public static async Task<string?> dumpSession(HttpContext context,
+        UserManager<GeFeSLEUser> userManager)
+    {
+        DBg.d(LogLevel.Trace, "dumpSession");
+
+        GeFeSLEUser? user = await getWhoIAm(context, userManager);
+        if (user == null)
+        {
+            return null;
+        }
+        else
+        {
+            var roles = await userManager.GetRolesAsync(user!);
+            var claims = context.User?.Claims.Select(c => new { c.Type, c.Value });
+            var session = JsonConvert.SerializeObject(new
+            {
+                user,
+                roles,
+                claims
+            }, new JsonSerializerSettings
+            {
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                Formatting = Formatting.Indented
+            });
+            DBg.d(LogLevel.Trace, $"dumpSession: {session}");
+            return session;
+        }
+    }
 
 
 }
