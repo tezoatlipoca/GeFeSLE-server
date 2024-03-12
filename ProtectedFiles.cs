@@ -8,14 +8,16 @@ using Newtonsoft.Json; // Add this import statement
 public static class ProtectedFiles
 {
     // define a bunch of defaults: List<string>
-    private static readonly string[] internalFiles = new string[] { 
-        "/_edit.item.html", 
-        "/_edit.item.js", 
-        "/_edit.list.html",
-        "/_edituser.html",
-        "/_edituser.js",
-        "/_mastobookmark.html",
-        "/_mastobookmark.js"
+    private static readonly Dictionary<string,string> internalFiles = new Dictionary<string,string> { 
+       { "/_edit.item.html", "contributor" },
+       { "/_edit.item.js", "contributor" },
+       { "/_edit.list.js", "listowner" },
+       { "/_edit.list.html", "listowner" },
+       { "/_edituser.html", "SuperUser" },
+       { "/_edituser.js", "SuperUser" },
+       { "/_mastobookmark.html", "listowner" },
+       { "/_mastobookmark.js", "listowner" }
+       
     };
 
 
@@ -71,9 +73,9 @@ public static class ProtectedFiles
             AddList(list);
 
         }
-        foreach (string file in internalFiles)
+        foreach ((string file, string minrole) in internalFiles)
         {
-            AddFile(file, "internal");
+            AddFile(file, minrole);
         }
     }
     public static void AddList(GeList list)
@@ -106,14 +108,51 @@ public static class ProtectedFiles
         UserManager<GeFeSLEUser> userManager)
     {
 
-        
-
         var serializedFiles = JsonConvert.SerializeObject(Files, Formatting.Indented);
         DBg.d(LogLevel.Trace, $"HERE DA FILES: {serializedFiles}");
 
         string? ynot = null;
+        
+        Files.TryGetValue(path, out var listName);
+        GeList? list = null;
+        // get user's highest realizedRole
+            var roles = await userManager.GetRolesAsync(user);
+        switch (listName)
+        {
+            case "SuperUser":
+                if (roles.Contains("SuperUser"))
+                {
+                    return (true, "User is a super user");
+                }
+                else
+                {
+                    return (false, "User is not a super user");
+                }
+            case "listowner":
+                if (roles.Contains("SuperUser") || roles.Contains("listowner"))
+                {
+                    return (true, "User is a super user or list owner");
+                }
+                else
+                {
+                    return (false, "User is not a super user or list owner");
+                }
+            case "contributor":
+                if (roles.Contains("SuperUser") || roles.Contains("listowner") || roles.Contains("contributor"))
+                {
+                    return (true, "User is a super user, list owner, or contributor");
+                }
+                else
+                {
+                    return (false, "User is not a super user, list owner, or contributor");
+                }
+            default:
+                break; // not one of these; do the other thing
 
-        GeList? list = Files.TryGetValue(path, out var listName) && Lists.TryGetValue(listName, out var tempList)
+        }
+        DBg.d(LogLevel.Trace, $"ProtectedFiles.IsFileVisibleToUser: {path} - not a special protected file");
+        
+        list = Lists.TryGetValue(listName!, out var tempList)
             ? tempList
             : null;
         // did we get a list? 

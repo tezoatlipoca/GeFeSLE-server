@@ -379,6 +379,7 @@ app.Use(async (context, next) =>
                 DBg.d(LogLevel.Trace, "_CORs Preflight");
                 context.Response.StatusCode = 200;
                 await context.Response.WriteAsync(string.Empty);
+                return;
             }
         }
         // if we get here its not a Cors request or it IS
