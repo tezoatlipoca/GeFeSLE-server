@@ -268,3 +268,11 @@ function make1stcelllinks() {
         }
     });
 }
+
+const GeListVisibility =  
+{
+    Public: 0,          // anyone can view the list's html page, json, rss etc. 
+    Contributors: 1,    // restricted to contributors and list owners (and list creator and SU)
+    ListOwners: 2,      // restricted to only list owners (and creator and SU)
+    Private: 3          // restricted to only creator and SU
+}
