@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
-
+using Microsoft.AspNetCore.Builder; 
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Authentication.Google;
@@ -25,6 +25,7 @@ using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 // using Google.Apis.Auth;
 // using Microsoft.AspNetCore.Http.Extensions;
 using Newtonsoft.Json.Serialization;
+using Microsoft.AspNetCore.Antiforgery;
 
 
 
@@ -350,6 +351,7 @@ app.UseSession(); // Add this line to enable session.
 app.UseAuthentication(); // must be before authorization
 app.UseAuthorization();
 
+app.UseAntiforgery();
 
 app.Use(async (context, next) =>
     {
@@ -1989,7 +1991,54 @@ app.MapGet("/killsession", (HttpContext httpContext) =>
 
 app.MapGet("/", () => { return Results.Redirect("/index.html"); });
 
+app.MapPost("/fileuploadxfer", (IFormFile file, 
+    IAntiforgery antiforgery,
+    GeFeSLEDb db, 
+    UserManager<GeFeSLEUser> userManager, 
+    HttpContext httpContext) =>
+{
+    DBg.d(LogLevel.Trace, "fileupload");
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
+    try {
+        antiforgery.ValidateRequestAsync(httpContext);
+    }
+    catch (Exception e)
+    {
+        return Results.BadRequest(e.Message);
+    }
+
+    if(user is null) return Results.BadRequest("User is null");
+    if (file is null) return Results.BadRequest("No file uploaded");
+    if (file.Length > 0)
+    {
+        // the filepath will be wwwroot/uploads/user/filename
+        string filePath = Path.Combine($"{GlobalConfig.wwwroot}/uploads/{user.UserName}", file.FileName);
+        DBg.d(LogLevel.Trace, $"fileupload - file will be saved at (filepath): {filePath}");
+        //creates the folder if it doesn't exist
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            file.CopyToAsync(stream);
+        }
+        // we want to return the URL of the file that was uploaded
+        string url = $"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/uploads/{user.UserName}/{file.FileName}";
+        
+        
+        
+        
+        return Results.Ok(url);
+    }
+    else
+    {
+        return Results.BadRequest("File is empty");
+    }
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser,listowner,contributor"
+});
 
 // lets always generate index.html once before we start
 // for a new setup, it won't exist. 
