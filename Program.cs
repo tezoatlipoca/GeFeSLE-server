@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
-using Microsoft.AspNetCore.Builder; 
+using Microsoft.AspNetCore.Builder;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Authentication.Google;
@@ -100,6 +100,8 @@ builder.Services.AddSession(options =>
     options.Cookie.HttpOnly = true; // The session cookie is accessible only from the server side, not via JavaScript.
     options.Cookie.IsEssential = true; // The session cookie is essential, meaning it doesn't need user consent.
     options.Cookie.Name = GlobalStatic.sessionCookieName;
+    options.Cookie.SameSite = SameSiteMode.None; // The session cookie can be sent in a cross-site context.
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // The session cookie is always sent over HTTPS.
 });
 builder.Services.AddAuthentication(options =>
 {
@@ -122,6 +124,8 @@ builder.Services.AddAuthentication(options =>
     options.Cookie.Name = GlobalStatic.authCookieName;
     options.ExpireTimeSpan = TimeSpan.FromMinutes(30);
     options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.None; // The authentication cookie can be sent in a cross-site context.
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // The authentication cookie is always sent over HTTPS.
     options.LoginPath = "/_login.html"; // Change this to your desired login path
     // this redirects any failure from the .RequireAuthorization() on endpoints.
     options.Events.OnRedirectToAccessDenied = async context =>
@@ -240,6 +244,15 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("listowner", policy => policy.RequireRole("listowner"));
     options.AddPolicy("contributor", policy => policy.RequireRole("contributor"));
 
+});
+
+builder.Services.AddAntiforgery(options =>
+{
+    options.Cookie.Name = GlobalStatic.antiForgeryCookieName;
+    options.Cookie.SameSite = SameSiteMode.None;
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+        ? CookieSecurePolicy.None
+        : CookieSecurePolicy.Always;
 });
 
 builder.Services.AddControllersWithViews();
@@ -1991,24 +2004,25 @@ app.MapGet("/killsession", (HttpContext httpContext) =>
 
 app.MapGet("/", () => { return Results.Redirect("/index.html"); });
 
-app.MapPost("/fileuploadxfer", (IFormFile file, 
+app.MapPost("/fileuploadxfer", async (IFormFile file,
     IAntiforgery antiforgery,
-    GeFeSLEDb db, 
-    UserManager<GeFeSLEUser> userManager, 
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
     HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, "fileupload");
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
-    try {
-        antiforgery.ValidateRequestAsync(httpContext);
+    try
+    {
+        await antiforgery.ValidateRequestAsync(httpContext);
     }
     catch (Exception e)
     {
         return Results.BadRequest(e.Message);
     }
 
-    if(user is null) return Results.BadRequest("User is null");
+    if (user is null) return Results.BadRequest("User is null");
     if (file is null) return Results.BadRequest("No file uploaded");
     if (file.Length > 0)
     {
@@ -2020,14 +2034,14 @@ app.MapPost("/fileuploadxfer", (IFormFile file,
 
         using (var stream = new FileStream(filePath, FileMode.Create))
         {
-            file.CopyToAsync(stream);
+            await file.CopyToAsync(stream);
         }
         // we want to return the URL of the file that was uploaded
         string url = $"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/uploads/{user.UserName}/{file.FileName}";
-        
-        
-        
-        
+
+
+
+
         return Results.Ok(url);
     }
     else
@@ -2039,6 +2053,20 @@ app.MapPost("/fileuploadxfer", (IFormFile file,
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
     Roles = "SuperUser,listowner,contributor"
 });
+
+
+app.MapGet("/antiforgerytoken", (IAntiforgery antiforgery,
+    HttpContext httpContext) =>
+{
+    DBg.d(LogLevel.Trace, "antiforgerytoken");
+    var token = antiforgery.GetAndStoreTokens(httpContext);
+    return Results.Ok(token);
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser,listowner,contributor"
+});
+
 
 // lets always generate index.html once before we start
 // for a new setup, it won't exist. 
