@@ -253,6 +253,7 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
         ? CookieSecurePolicy.None
         : CookieSecurePolicy.Always;
+
 });
 
 builder.Services.AddControllersWithViews();
@@ -452,8 +453,34 @@ app.Use(async (context, next) =>
         }
 
         // otherwise, do the normal thing
-        await next.Invoke();
+        //await next.Invoke();
+        try
+        {
+            await next.Invoke();
+        }
+        catch (BadHttpRequestException ex) when (ex.InnerException is AntiforgeryValidationException)
+        {
+            var antiForgeryEx = ex.InnerException as AntiforgeryValidationException;
+            // Log the error if needed
+            // _logger.LogError(ex);
+            DBg.d(LogLevel.Error, $"AntiforgeryValidationException: {antiForgeryEx.Message}");
+            context.Response.Clear();
+            context.Response.StatusCode = 400; // Or any status code you want to return
+            context.Response.ContentType = "application/json";
 
+            var responseBody = new
+            {
+                error = new
+                {
+                    message = antiForgeryEx.Message,
+                    type = antiForgeryEx.GetType().Name
+                }
+            };
+
+            await context.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(responseBody));
+
+            return;
+        }
     });
 
 
