@@ -5,8 +5,12 @@ using System.Xml.Linq;
 using System.Text.Json;
 using Markdig;
 using Microsoft.AspNetCore.Identity;
+using System.Text.Json.Serialization;
+
 using GeFeSLE;
 
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum GeListVisibility
 {
     Public,          // anyone can view the list's html page, json, rss etc. 
@@ -38,21 +42,22 @@ public class GeList
     public ICollection<GeFeSLEUser> Contributors { get; set; } = new List<GeFeSLEUser>();
 
     // set list visibility
-    public GeListVisibility Visibility { get; private set; } = GeListVisibility.Public;
+    public GeListVisibility Visibility { get; set; } = GeListVisibility.Public;
 
-    public void SetVisibility(GeListVisibility visibility)
+    public void SetVisibility(GeListVisibility newvisibility)
     {
         var oldVisibility = Visibility;
-        Visibility = visibility;
+        Visibility = newvisibility;
         // if the visibility has changed FROM public to something else,
         // then remove the list from the list of public lists
-        if (oldVisibility == GeListVisibility.Public && visibility > GeListVisibility.Public)
-        {
-            ProtectedFiles.RemoveList(this);
-        }
-        else if (oldVisibility > GeListVisibility.Public && visibility == GeListVisibility.Public)
+        if (oldVisibility == GeListVisibility.Public && newvisibility > GeListVisibility.Public)
         {
             ProtectedFiles.AddList(this);
+        }
+        else if (oldVisibility > GeListVisibility.Public && newvisibility == GeListVisibility.Public)
+        {
+            ProtectedFiles.RemoveList(this);
+            
         }
 
         
@@ -88,18 +93,22 @@ public class GeList
             var md = Markdown.ToHtml(Comment);
             sb.AppendLine($"<p class=\"listcomment\">{md}</p>");
         }
+        
+        sb.AppendLine($"<p><a class=\"editlink\" href=\"_edit.list.html?listid={Id}\" style=\"display: none;\">Edit this list</a>");
+        sb.AppendLine($" <a class=\"edititemlink\" href=\"_edit.item.html?listid={Id}\" style=\"display: none;\">Add new item</a>");
+        sb.AppendLine($" <a class=\"mastoimportlink\" href=\"_mastobookmark.html?listId={Id}\" style=\"display: none;\">import Masto bookmarks 2 here</a></p>");
         sb.AppendLine($"<p> ");
-        sb.AppendLine($" <a class=\"editlink\" href=\"_edit.list.html?listid={Id}\">Edit this list</a>");
-        sb.AppendLine($" |  <a class=\"rsslink\" href=\"rss-{Name}.xml\">RSS Feed</a>");
-        sb.AppendLine($" |  <a class=\"exportlink\" id=\"exportlink\" href=\"{Name}.json\">JSON</a>");
-        sb.AppendLine($" |  <a class=\"edititemlink\" href=\"_edit.item.html?listid={Id}\">Add new item</a>");
-        sb.AppendLine($" |  <a class=\"mastoimportlink\" href=\"_mastobookmark.html?listId={Id}\" >import Masto bookmarks 2 here</a></p>");
+        sb.AppendLine($" [ <a class=\"rsslink\" href=\"rss-{Name}.xml\">RSS Feed</a>");
+        sb.AppendLine($" |  <a class=\"exportlink\" id=\"exportlink\" href=\"{Name}.json\">JSON</a> ]");
         sb.AppendLine("</p>");
         
-        // display a form with a text box for the tags search parameters
+        // display a form with a text box for the text and tags search parameters
         sb.AppendLine($"<span class=\"result\" id=\"result\"></span>");
+        sb.AppendLine($"<span class=\"textsearch\"><form>Search Text (space separated)");
+        sb.AppendLine($"<input type=\"text\" id=\"textsearchbox\" onInput=\"filterUpdate(); return false;\" placeholder=\"Search text..\">");
+        sb.AppendLine($"</form></span>");
         sb.AppendLine("<span class=\"tagsearch\"><form>Search Tags (space separated)");
-        sb.AppendLine("<input type=\"text\" id=\"tagsearchbox\" onInput=\"filterTAGSUpdate(); return false;\" placeholder=\"Search tags..\">");
+        sb.AppendLine("<input type=\"text\" id=\"tagsearchbox\" onInput=\"filterUpdate(); return false;\" placeholder=\"Search tags..\">");
         sb.AppendLine("</form></span>");
         sb.AppendLine("<hr>");
         sb.AppendLine("<table class=\"itemtable\" id=\"itemtable\">");
@@ -127,9 +136,9 @@ public class GeList
             sb.AppendLine("</td>");
             sb.AppendLine("<td class=\"utilitybox\">");
             sb.AppendLine($"<span class=\"itemmoddate\">{item.ModifiedDate.ToString("yyyy-MM-dd HH:mm:ss")}</span>");
-            sb.AppendLine($"<span class=\"itemeditlink\"><a href=\"_edit.item.html?listid={item.ListId}&itemid={item.Id}\">Edit</a></span>");
+            sb.AppendLine($"<span class=\"itemeditlink\" style=\"display: none;\"><a href=\"_edit.item.html?listid={item.ListId}&itemid={item.Id}\" >Edit</a></span>");
             // call the deleteitem endpoint but then refresh the page as well
-            sb.AppendLine($"<span class=\"itemdeletelink\"><a href=\"#\" onclick=\"deleteItem({item.ListId},{item.Id}); return;\">Delete</a></span>");
+            sb.AppendLine($"<span class=\"itemdeletelink\" style=\"display: none;\"><a href=\"#\" onclick=\"deleteItem({item.ListId},{item.Id}); return;\" >Delete</a></span>");
             sb.AppendLine("</td>");
 
             sb.AppendLine("</tr>");

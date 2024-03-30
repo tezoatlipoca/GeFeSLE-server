@@ -5,42 +5,55 @@
   <!-- include gefesle.default.css -->
   <link rel="stylesheet" href="gefesle.default.css">
   <!-- inclue default icon -->
-  <link rel="icon" href="gefesle.ff.png" type="image/x-icon">  
-  <!-- Include SimpleMDE library -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/simplemde/latest/simplemde.min.css">
-  <script src="https://cdn.jsdelivr.net/simplemde/latest/simplemde.min.js"></script>
+  <link rel="icon" href="gefesle.ff.png" type="image/x-icon">
+  <!-- Include EasyMDE library -->
+  <link rel="stylesheet" href="lib/easymde/easymde.min.css">
+  <script src="lib/easymde/easymde.min.js"></script>
   <title>Edit List Page</title>
 </head>
 
 <body>
-  
+
   <h1>EDIT LIST:</h1>
   <a href="../index.html" id="back2list">Back to list view</a>
   <form id="editlistform">
-    <label for="list.id">ID:</label>
-    <input type="text" id="list.id" name="list.id" readonly><br>
-    <label for="list.name">Name:</label>
-    <input type="text" id="list.name" name="list.name"><br>
+    <div style="display: flex;">
+    <div id="leftcell" style="background-color: lightgray;
+      position: relative;
+      
+      width: 45vw;">
+      
+          <label for="list.id">ID:</label>
+          <input type="text" id="list.id" name="list.id" readonly><br>
+          <label for="list.name">Name:</label>
+          <input type="text" id="list.name" name="list.name"><br>
 
-    <label for="list.visibility">Visibility. </label>
-    <select id="list.visibility" name="list.visibility">
-      <option value=`{GeListVisibility.Public}`>Public - anyone can see</option>
-      <option value=`{GeListVisibility.Contributors}`>Contributors - and ListOwners and creator can see</option>
-      <option value=`{GeListVisibility.ListOwners}`>ListOwners - and creator can see</option>
-      <option value=`{GeListVisibility.Private}`>Private - only creator can see</option>
-    </select><br>
-    List creator: <span id="listcreator"></span><br>
-    List owners: <span id="listowners"></span><br>
-    List contributors: <span id="listcontributors"></span><br>
-    User add: <select id="list.allusers" name="list.allusers">
+          <label for="list.visibility">Visibility. </label>
+          <select id="list.visibility" name="list.visibility">
+            <option value="Public">Public - anyone can see</option>
+            <option value="Contributors">Contributors - and ListOwners and creator can see</option>
+            <option value="ListOwners">ListOwners - and creator can see</option>
+            <option value="Private">Private - only creator can see</option>
+          </select>
+        </div>
+        <div id="rightcell" style="background-color: lightsalmon;
+        position: relative;
+        width: 45vw;">
+   List roles:<br>
+          List creator: <span id="listcreator"></span><br>
+          List owners: <span id="listowners"></span><br>
+          List contributors: <span id="listcontributors"></span><br>
+          User add: <select id="list.allusers" name="list.allusers">
 
-    </select>
-    <select id="list.userrole" name="list.userrole">
-      <option value=`{GeListUserRole.Contributor}`>Contributor</option>
-      <option value=`{GeListUserRole.Owner}`>ListOwner</option>
-      <option value=`{GeListUserRole.Creator}`>Creator</option>
-    </select>
-    <button type="button" id="assignuser" onClick="getListUsers(event)">Assign 2 List</button>
+          </select>
+          <select id="list.userrole" name="list.userrole">
+            <option value="contributor">contributor</option>
+            <option value="listowner">listowner`</option>
+
+          </select>
+          <button type="button" id="assignuser" onClick="assignUser2List(event)">Assign 2 List+Role</button>
+          <button type="button" id="removeuser" onClick="removeUserFromList(event)">Remove From List+Role</button>
+        </div></div>
     <label for="list.comment">comment</label>
     <input type="textarea" id="list.comment" name="list.comment"><br>
     <input type="submit" value="ADD NEW or UPDATE"><br>
@@ -48,10 +61,11 @@
     <input type="hidden" id="list.name.original" name="list.name.original">
     <span id="result"></span>
     <script>
-      var simplemde = new SimpleMDE({ element: document.getElementById("list.comment") });
+      var easymde = new EasyMDE({ element: document.getElementById("list.comment") });
     </script>
   </form>
   <script src="_utils.js"></script>
   <script src="_edit.list.js"></script>
 </body>
+
 </html>

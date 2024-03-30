@@ -517,7 +517,7 @@ document.getElementById('new').addEventListener('change', function () {
 
 // get the addRole button and add an event listener to it
 document.getElementById('addRole').addEventListener('click', setRoles);
-
+document.getElementById('deleteRole').addEventListener('click', deleteRole);
 
 
 
@@ -578,6 +578,85 @@ function getUsers() {
         });
         userlist += '</ol>';
         users.innerHTML = userlist;
+    })
+    .catch((error) => {
+        console.error('Error:', error);
+        d(error);
+        c(RC.ERROR);
+    });
+
+
+
+}
+
+function deleteRole() {
+    console.log('DELETEROLE');
+    if(islocal()) return;
+
+    // get the username from the form
+    let username = document.getElementById('username').value;
+    // get the selected role from the roles dropdown
+    let role = document.getElementById('role').value;
+    console.debug('DELETEROLE: ' + username + ' - ' + role);
+
+    if(username == null || username == '' || role == null || role == ''){
+        d('Cant delete role for user: user/role cannot be blank!');
+        c(RC.ERROR);
+    }
+
+    // assume this page is ON the server with the API
+    // get the url of the API from the current page url
+    apiUrl = window.location.href;
+    // get just the hostname and port from the url
+    apiUrl = apiUrl.substring(0, apiUrl.indexOf('/_edituser.html'));
+    
+    // Get the list data from the API
+    apiUrl = apiUrl + '/deleterole/' + username + '/' + role;
+    console.debug('DELETEROLE - calling: ' + apiUrl);
+    fetch(apiUrl, {headers: {
+        "GeFeSLE-XMLHttpRequest": "true"
+    }})
+    .then(response => {
+        if (response.status == RC.NOT_FOUND) {
+            console.debug('DELETEROLE - User ' + username + ' not found!');
+            throw new Error('User ' + username + ' not found!')
+        }
+        else if (response.status == RC.OK) {
+            d('Role ' + role + 'for ' + username + ' UNASSIGNED!');
+            c(RC.OK);
+            // wait 3 seconds then call getRoles to refresh the roles list
+            setTimeout(getRoles, 3000);
+            return;
+            
+        }
+        else if (response.status == RC.UNAUTHORIZED) {
+            console.debug('DELETEROLE - Not authorized to set roles for user ' + username);
+            throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
+        }
+        else if (response.status == RC.FORBIDDEN) {
+            console.debug('DELETEROLE - Forbidden to get user ' + username);
+            throw new Error('Forbidden! Are you logged in as an admin?');
+        }
+        else if (response.status == RC.BAD_REQUEST) {
+
+            response.json().then(data => {
+
+                // its gonna be a collection of code/description pairs
+                console.debug('DELETEROLE - bad something: ' + JSON.stringify(data));
+                // iterate over data - its going to be an array
+                let msg = '';
+                data.forEach((item) => {
+                    msg += 'Error: ' + item.code + ' - ' + item.description + '<br>';
+                })
+                d(msg);
+                c(RC.BAD_REQUEST);
+
+            });
+        }
+        else {
+            console.debug('DELETEROLE - Error Setting user roles' + username);
+            throw new Error('Error Setting roles for ' + username);
+        }
     })
     .catch((error) => {
         console.error('Error:', error);

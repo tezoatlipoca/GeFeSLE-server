@@ -1,20 +1,8 @@
 
-
-
-// when the page loads see if there's a stored value in localStorage
-// if there is write it to the results span, then clear it from localStorage
-// this is how we can pass msgs between static pages
-window.onload = function () {
-    if (localStorage.getItem('result')) {
-        document.getElementById('result').innerHTML = localStorage.getItem('result');
-        localStorage.removeItem('result');
-    }
-}
-
-
-
 function deleteItem(listId, itemid) {
-    console.log('deleteItem');
+    let fn="deleteItem / ";
+
+    console.log(fn);
     if (islocal()) return;
     if (confirm('Are you sure you want to delete this item?')) {
         let apiUrl = 'deleteitem/' + listId + '/' + itemid;
@@ -36,12 +24,12 @@ function deleteItem(listId, itemid) {
                     location.reload();
                 }
                 else if (response.status == RC.UNAUTHORIZED) {
-                    console.debug(' | DELETEITEM - Not authorized to set roles for user ' + username);
-                    throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
+                    let msg = "Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>";
+                    throw new Error(msg);
                 }
                 else if (response.status == RC.FORBIDDEN) {
-                    console.debug(' | DELETEITEM - Forbidden to get user ' + username);
-                    throw new Error('Forbidden! Are you logged in as an admin?');
+                    let msg = "Forbidden to delete items! Are you logged in? <a href=\"_login.html\">LOGIN</a><br>You also need to be SuperUser or listowner.";
+                    throw new Error(msg);
                 }
                 else {
                     d('Error: ' + response.statusText);
@@ -50,52 +38,18 @@ function deleteItem(listId, itemid) {
 
             })
             .catch((error) => {
-                console.error('Error:', error);
+                console.error(fn + error);
                 d(error);
                 c(RC.ERROR);
             });
     }
 }
 
-function exportList(listId) {
-    console.log('exportList');
-    if (islocal()) {
-        util.d('Can\'t export; viewing local html file');
-        return;
-    }
-    fetch('export/' + listId, {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-            "GeFeSLE-XMLHttpRequest": "true"
-        },
-    })
-        .then(response => {
-            console.log('Response IS:', response);
-            // if the response is ok, the result is the name of the json file in wwwroot
-            if (response.ok) {
-                // change the target href of the exportlink a tag to the file name
-                response.text().then((text) => {
-                    document.getElementById('exportlink').href = listId + '.json';
-                    document.getElementById('exportlink').text = listId + '.json';
-                });
-
-            }
-            else {
-                util.d('Error: ' + response.statusText);
-            }
-
-        })
-        .catch((error) => {
-            console.error('Error:', error);
-            d(error);
-            c(RC.ERROR);
-        });
-}
 
 
 
-function filterTAGSUpdate() {
+
+function filterUpdate() {
     console.info('filterUpdate');
 
     // get the table
@@ -104,6 +58,18 @@ function filterTAGSUpdate() {
     let rows = table.getElementsByTagName('tr');
     // get the total number of rows; save for later
     let totesrows = rows.length;
+
+    // get the value of the textsearchbox field
+    let textsearch = document.getElementById('textsearchbox').value;
+    // convert it to array of texttags called texttags
+    const texttags = textsearch.split(' ');
+    // annoyingly if the user enters a space at the end of the search string,
+    // it will create an empty tag at the end of the array
+    // so if the last element of the array is empty, remove it
+    if (texttags[texttags.length - 1] == '') {
+        texttags.pop();
+    }
+
     // get the value of the tagssearchbox field
     let tagssearch = document.getElementById('tagsearchbox').value;
     // convert it to an array of tags called tagstags
@@ -119,9 +85,28 @@ function filterTAGSUpdate() {
     //rows.length
     if (totesrows > 0) {
         for (let i = 0; i < rows.length; i++) {
-            // get the contents of 1st and second cell in the row
+            
+
             console.debug('rows[i]:', rows[i]);
-            let rowtagstext = rows[i].getElementsByTagName('td')[2].innerText;
+            let rowcols = rows[i].getElementsByTagName('td');
+            let itemnametext = rowcols[0].innerText;
+            let rowcommtext = rowcols[1].innerText;
+            let rowtext = itemnametext + ' ' + rowcommtext;
+            let foundtext = false;
+            
+
+            // if there are no texttags then foundtext is true (searching for nothing returns everything)
+            if (texttags.length == 0) {
+                foundtext = true;
+                console.debug('rowtext:', rowtext, 'texttags:', texttags, 'foundtext: TRUE because no search text');
+            }
+            else {
+                foundtext = texttags.some(tag => rowtext.includes(tag));
+                console.debug('rowtext:', rowtext, 'texttags:', texttags, 'foundtext:', foundtext);
+            }
+
+            let rowtagstext = rowcols[2].innerText;
+
             let foundtags = false;
             // if there are no texttags then foundtages is true (searching for nothing returns everything)
             if (tagstags.length == 0) {
@@ -132,7 +117,8 @@ function filterTAGSUpdate() {
                 foundtags = tagstags.some(tag => rowtagstext.includes(tag));
                 console.debug('rowtagstext:', rowtagstext, 'tagstags:', tagstags, 'foundtags:', foundtags);
             }
-            if (foundtags) {
+
+            if (foundtags && foundtext) {
                 rows[i].style.display = '';
                 numVisibleTags++;
                 console.debug('visible row!');
@@ -153,34 +139,25 @@ function filterTAGSUpdate() {
 
 // on page load, call the filterTAGSUpdate function
 window.onload = async function () {
-    console.info('window.onload');
-    let role = await getRole();
-    console.debug('role:', role);
-    // if the user isn't a list owner, hide the edit list link
-    if(isSuperUser(role) || isListOwner(role)) {
-        // show the stuff
-    } else {
-        let editlink = document.getElementsByClassName('editlink');
-        // set the display style of the editlink to none
-        editlink[0].style.display = 'none';
+    let fn = 'list_view.js - window.onload';
+    if (localStorage.getItem('result')) {
+        document.getElementById('result').innerHTML = localStorage.getItem('result');
+        localStorage.removeItem('result');
+    }
 
+    let [username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
+
+    if(isSuperUser(role) || isListOwner(role) ) {
+        console.debug(fn + ' | logged in and either isSuperUser or isListOwner');
+        showListSecrets();
+        showDebuggingElements();
     }
-    // if the user isn't a contributor (or higher), hide the add and edit item links
-    if(isSuperUser(role) || isListOwner(role) || isContributor(role)) {
-        // show stuff
-    } else {
-        let itemlink = document.getElementsByClassName('edititemlink');
-        itemlink[0].style.display = 'none';
-        // hide any a's on the page with class=itemeditlink or class=itemdeletelink
-        let spans = document.getElementsByTagName('span');
-        for (let s of spans) {
-            if (s.className == 'itemeditlink' || s.className == 'itemdeletelink') {
-                s.style.display = 'none';
-            }
-        }
-    }
+
+
     //
-    filterTAGSUpdate();
+    filterUpdate();
     // lastly call the function that checks first cell for links and makes them clickable
     make1stcelllinks();
 }

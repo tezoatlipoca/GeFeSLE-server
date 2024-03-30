@@ -5,9 +5,9 @@
   <!-- include stylesheet and gefesle icon -->
   <link rel="stylesheet" href="gefesle.default.css">
   <link rel="icon" href="gefesle.ff.png" type="image/x-icon">
-  <!-- Include SimpleMDE library -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/simplemde/latest/simplemde.min.css">
-  <script src="https://cdn.jsdelivr.net/simplemde/latest/simplemde.min.js"></script>
+  <!-- Include EasyMDE library -->
+  <link rel="stylesheet" href="lib/easymde/easymde.min.css">
+  <script src="lib/easymde/easymde.min.js"></script>
   <title>Edit List Page</title>
 </head>
 
@@ -34,9 +34,9 @@
     <input type="text" id="item.tags" name="item.tags"><br>
     <input type="submit" value="ADD NEW or UPDATE"><br>
     <span id="result"></span>
-    <!-- Initialize SimpleMDE for the textarea -->
+    <!-- Initialize EasyMDE for the textarea -->
     <script>
-      var simplemde = new SimpleMDE({ element: document.getElementById("item.comment") });
+      var easymde = new EasyMDE({ element: document.getElementById("item.comment") });
     </script>
   </form>
   <script src="_utils.js"></script>

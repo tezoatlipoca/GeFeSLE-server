@@ -10,12 +10,6 @@ async function interceptRegen(event) {
         return;
         }
 
-    if(!await amLoggedIn()) {
-        d("You are not logged in! <a href='_login.html'>Login here.</a>");
-        c(RC.UNAUTHORIZED);
-        return;
-    }
-
     let regenlink = document.getElementById('indexregenlink');
     apiUrl = window.location.href;
     // get just the hostname and port from the url
@@ -63,7 +57,8 @@ async function interceptRegen(event) {
 }
 
 window.onload = async function () {
-    console.debug('index.js - window.onload')
+    let fn = 'index.js - window.onload';
+    console.debug(fn);
 
     if (islocal()) {
         d("Cannot call API from a local file!");
@@ -71,34 +66,21 @@ window.onload = async function () {
         return;
         }
 
-    let loggedIn = await amLoggedIn();
-    console.debug(' | *loggedIn: ' + loggedIn);
-    let role = await getRole();
-    console.debug(' | *role: ' + role);
+    let [username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
 
-    
-
-
-    if((isSuperUser(role) || isListOwner(role)) && loggedIn ) {
-        
-        console.debug(' | isSuperUser or isListOwner - and logged in');
-    }
-    else {
-        // hide the id=indexeditlink
+    if(isSuperUser(role) || isListOwner(role) ) {
+        console.debug(fn + ' | logged in and either isSuperUser or isListOwner');
+        // SHOW the id=indexeditlink
         let links = document.getElementsByClassName('indexeditlink');
         for (l of links) {
-            l.style.display = 'none';
+            l.style.display = '';
         }
         let regenlink = document.getElementById('indexregenlink');
-        regenlink.style.display = 'none';
-
-        if(!loggedIn) {
-            d("<a href='_login.html'>Login here.</a>");
-            c(RC.OK);
-            return;
-        }
-
+        regenlink.style.display = '';
     }
+    showDebuggingElements();
 }
 
 

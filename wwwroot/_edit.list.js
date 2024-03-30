@@ -4,7 +4,8 @@
 // gets the listid from the url querystring and then 
 // populates the form in _edit.list.html with the list data
 async function getList() {
-    console.log('getList')
+    let fn = 'getList';
+    console.log(fn);
 
     if (islocal()) {
         d("Cannot call API from a local file!");
@@ -12,8 +13,11 @@ async function getList() {
         return;
     }
 
-    let loggedIn = await amLoggedIn();
-    if (!loggedIn) {
+    let [username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
+    
+    if (!isSuperUser(role) && !isListOwner(role)){
         d("Not logged in!");
         c(RC.UNAUTHORIZED);
         return;
@@ -69,13 +73,16 @@ async function getList() {
             document.getElementById('list.id').value = json.id;
             document.getElementById('list.name').value = json.name;
             document.getElementById('list.name.original').value = json.name;
+            // set the visibility select to the visibility of the list
+            document.getElementById('list.visibility').value = json.visibility;
             // reason we need to pick up on the original is so that we can
             // change the url back to the NEW name of the list page on rename.
-            simplemde.value(json.comment);
+            easymde.value(json.comment);
             //document.getElementById('list.comment').value = json.comment;
             document.getElementById('back2list').href = apiUrl + '/' + json.name + '.html';
             d('List ' + json.id + ' retreived!');
             c(RC.OK);
+            getListUsers();
         })
         .catch((error) => {
             // write any error to the span with id="result"
@@ -86,16 +93,19 @@ async function getList() {
 }
 
 async function updateList(e) {
-    e.preventDefault();
+    let fn = 'updateList';
     console.log('updateList');
+    e.preventDefault();
     if (islocal()) {
         d("Cannot call API from a local file!");
         c(RC.BAD_REQUEST);
         return;
     }
 
-    let loggedIn = await amLoggedIn();
-    if (!loggedIn) {
+    let [username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
+    if (!isSuperUser(role) && !isListOwner(role)){
         d("Not logged in!");
         c(RC.UNAUTHORIZED);
         return;
@@ -114,7 +124,8 @@ async function updateList(e) {
     let id = document.getElementById('list.id').value;
     let name = document.getElementById('list.name').value;
     //let comment = document.getElementById('list.comment').value;
-    let comment = simplemde.value();
+    let comment = easymde.value();
+    let visibility = document.getElementById('list.visibility').value;
 
     console.debug(' | id: ' + id);
     let data;
@@ -124,7 +135,7 @@ async function updateList(e) {
     // and we need to call the API to create a new list
     if (id == null || id == '') {
         apiUrl = apiUrl + '/addlist';
-        data = { name, comment };
+        data = { name, comment, visibility };
         apiMethod = 'POST';
         addNotModify = true;
     }
@@ -132,7 +143,7 @@ async function updateList(e) {
         // if id is not null or empty, then this is an existing list
         // and we need to call the API to update the list
         apiUrl = apiUrl + '/modifylist';
-        data = { id, name, comment };
+        data = { id, name, comment, visibility };
         apiMethod = 'PUT';
     }
     let displayResults = "";
@@ -223,25 +234,22 @@ async function updateList(e) {
 
 
 
-document.addEventListener('DOMContentLoaded', getList);
-document.addEventListener('DOMContentLoaded', getAllUsers);
-
-// When the form is submitted, send it to the REST API
-document.getElementById('editlistform').addEventListener('submit', updateList);
-
 
 
 async function getAllUsers() {
+    let fn = 'getAllUsers';
     
-    console.log('getAllUsers');
+    console.log(fn);
     if (islocal()) {
         d("Cannot call API from a local file!");
         c(RC.BAD_REQUEST);
         return;
     }
 
-    let loggedIn = await amLoggedIn();
-    if (!loggedIn) {
+    let [username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
+    if (!isSuperUser(role) && !isListOwner(role)){
         d("Not logged in!");
         c(RC.UNAUTHORIZED);
         return;
@@ -280,7 +288,7 @@ async function getAllUsers() {
                 users[json[i].userName] = json[i].email;
                 // add each user to the list.allusers select; option label is "userName (email)", value is username
                 let option = document.createElement("option");
-                option.text = json[i].userName + " (" + json[i].email + ")";
+                option.text = json[i].userName + " (" + (json[i].email || "<no email>") + ")";
                 option.value = json[i].userName;
                 document.getElementById('list.allusers').add(option);
             }
@@ -293,17 +301,20 @@ async function getAllUsers() {
 
 }
 
-async function getListUsers(e) {
-    e.preventDefault();
-    console.log('getListUsers');
+async function getListUsers() {
+    let fn = 'getListUsers';
+    //e.preventDefault();
+    console.log(fn);
     if (islocal()) {
         d("Cannot call API from a local file!");
         c(RC.BAD_REQUEST);
         return;
     }
 
-    let loggedIn = await amLoggedIn();
-    if (!loggedIn) {
+    let [username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
+    if (!isSuperUser(role) && !isListOwner(role)){
         d("Not logged in!");
         c(RC.UNAUTHORIZED);
         return;
@@ -342,14 +353,14 @@ async function getListUsers(e) {
             // get the creator
             let creator = json.creator;
             // display creator.userName (creator.email) in the list.creator span
-            document.getElementById('listcreator').innerText = creator.userName + " (" + creator.email + ")";
+            document.getElementById('listcreator').innerText = creator.userName + " (" + (creator.email || "<no email>") + ")";
             
             let listowners = json.listowners;
             let listownersVar = "";
             // iterate over every listowner in the listowners array
             for (let i = 0; i < listowners.length; i++) {
                 // add each listowner to the listowners span; 
-                listownersVar += listowners[i].userName + " (" + listowners[i].email + ") ";
+                listownersVar += listowners[i].userName + " (" + (listowners[i].email || "<no email>") + ") ";
             }
             if(listownersVar.length == 0) {
                 listownersVar = "No listowners yet!";
@@ -361,7 +372,7 @@ async function getListUsers(e) {
             // iterate over every contributor in the contributors array
             for (let i = 0; i < contributors.length; i++) {
                 // add each contributor to the contributors span; 
-                contributorsVar += contributors[i].userName + " (" + contributors[i].email + ") ";
+                contributorsVar += contributors[i].userName + " (" + (contributors[i].email|| "<no email>") + ") ";
             }
             if(contributorsVar.length == 0) {
                 contributorsVar = "No contributors yet!";
@@ -376,4 +387,169 @@ async function getListUsers(e) {
 
 }
 
+async function assignUser2List(e) {
+    let fn = 'assignUser2List';
+    e.preventDefault();
+    console.log(fn);
+    if (islocal()) {
+        d("Cannot call API from a local file!");
+        c(RC.BAD_REQUEST);
+        return;
+    }
 
+    let [username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
+    if (!isSuperUser(role) && !isListOwner(role)){
+        d("Not logged in!");
+        c(RC.UNAUTHORIZED);
+        return;
+    }
+
+    // get the value of the listid out of the list.id field
+    let listid = document.getElementById('list.id').value;
+
+    // get the value of the username out of the list.allusers select
+    let assignee = document.getElementById('list.allusers').value;
+
+    // get the role of the user from the list.role select
+    let assignee_role = document.getElementById('list.userrole').value;
+
+    let apiUrl = "/setlistuser";
+    
+    // create post form data with listid, assignee as "username" and role
+    let data = {
+        'listid': listid,
+        'username': assignee,
+        'role': assignee_role
+    };
+
+    console.debug(' | API URL: ' + apiUrl);
+    console.debug(' | Data: ' + data);
+    
+    await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            "GeFeSLE-XMLHttpRequest": "true"
+        },
+        body: JSON.stringify(data),
+    })
+        .then(response => {
+            if (response.ok) {
+                return response.text();
+            }
+            else if (response.status == RC.UNAUTHORIZED) {
+                console.debug(' | setListUsers - Not authorized to set users');
+                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
+            }
+            else if (response.status == RC.FORBIDDEN) {
+                console.debug(' | setListUsers - Forbidden to set users');
+                throw new Error('Forbidden! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
+            }
+            else {
+                throw new Error(' | setListUsers - url: ' + apiUrl + ' returned: ' + response.status + ' - ' + response.statusText);
+            }
+        })
+        .then(text => {
+            // text is a message from the API
+            d(text);
+            c(RC.OK);
+            // call getListUsers to update the list of users
+            getListUsers(e);
+        })
+        .catch((error) => {
+            console.error('Error:', error);
+            d(error);
+            c(RC.ERROR);
+        });
+
+}
+
+async function removeUserFromList(e) {
+    let fn = 'removeUserFromList';
+    e.preventDefault();
+    console.log('removeUserFromList');
+    if (islocal()) {
+        d("Cannot call API from a local file!");
+        c(RC.BAD_REQUEST);
+        return;
+    }
+
+    let [username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
+    if (!isSuperUser(role) && !isListOwner(role)){
+        d("Not logged in!");
+        c(RC.UNAUTHORIZED);
+        return;
+    }
+
+    // get the value of the listid out of the list.id field
+    let listid = document.getElementById('list.id').value;
+
+    // get the value of the username out of the list.allusers select
+    let assignee = document.getElementById('list.allusers').value;
+
+    // get the role of the user from the list.role select
+    let assignee_role = document.getElementById('list.userrole').value;
+
+    let apiUrl = "/deletelistuser";
+    
+    // create post form data with listid, assignee as "username" and role
+    let data = {
+        'listid': listid,
+        'username': assignee,
+        'role': assignee_role
+    };
+
+    console.debug(' | API URL: ' + apiUrl);
+    console.debug(' | Data: ' + data);
+    
+    await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            "GeFeSLE-XMLHttpRequest": "true"
+        },
+        body: JSON.stringify(data),
+    })
+        .then(response => {
+            if (response.ok) {
+                return response.text();
+            }
+            else if (response.status == RC.UNAUTHORIZED) {
+                console.debug(' | removeUserFromList - Not authorized to set users');
+                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
+            }
+            else if (response.status == RC.FORBIDDEN) {
+                console.debug(' | removeUserFromList - Forbidden to set users');
+                throw new Error('Forbidden! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
+            }
+            else {
+                throw new Error(' | removeUserFromList - url: ' + apiUrl + ' returned: ' + response.status + ' - ' + response.statusText);
+            }
+        })
+        .then(text => {
+            // text is a message from the API
+            d(text);
+            c(RC.OK);
+            // call getListUsers to update the list of users
+            getListUsers(e);
+        })
+        .catch((error) => {
+            console.error('Error:', error);
+            d(error);
+            c(RC.ERROR);
+        });
+
+}
+
+
+document.addEventListener('DOMContentLoaded', getList);
+document.addEventListener('DOMContentLoaded', getAllUsers);
+
+// When the form is submitted, send it to the REST API
+document.getElementById('editlistform').addEventListener('submit', updateList);
+// when the form is loaded, call the getListUsers function
+document.getElementById('editlistform').addEventListener('load', getListUsers);

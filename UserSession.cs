@@ -33,10 +33,12 @@ public static class UserSessionService
             GeFeSLEDb db,
             UserManager<GeFeSLEUser> userManager)
     {
-        DBg.d(LogLevel.Trace, "UpdateSessionAccessTime");
-        if (amILoggedIn(context))
+        var fn = "UpdateSessionAccessTime"; DBg.d(LogLevel.Trace, fn);
+        
+        var sessionUser = amILoggedIn(context);
+        if (sessionUser.UserIdentityIsAuthenticated)
         {
-            GeFeSLEUser? user = getWhoIAm(context, userManager).Result;
+            GeFeSLEUser? user = mapUserNameToDBUser(sessionUser.UserIdentityName!, userManager).Result;
             if (user != null)
             {
                 user.LastAccessTime = DateTime.UtcNow;
@@ -44,19 +46,21 @@ public static class UserSessionService
                 var roles = userManager.GetRolesAsync(user).Result;
                 string realizedRole = GlobalStatic.FindHighestRole(roles);
 
-                DBg.d(LogLevel.Trace, "UpdateSessionAccessTime: " + user.UserName + " [" + realizedRole + "] to " + context.Request.Path + " from " + context.Connection.RemoteIpAddress);
+                DBg.d(LogLevel.Information, $"{fn}: User {user.UserName} [{realizedRole}] TO {context.Request.Path} FROM {context.Connection.RemoteIpAddress}");
                 return user;
             } // user in db 
             else
             {
-                DBg.d(LogLevel.Critical, "UpdateSessionAccessTime: User not found in database, but they're authenticated??");
+                // could be an anonymous OAuth user - someone who has logged in via an OAuth source 
+                // but they're not in our database (i.e. have been invited/added by a legit usesr)
+                DBg.d(LogLevel.Information, $"{fn}: User {sessionUser.UserIdentityName} (OAuth guest) [{sessionUser.UserClaimsRole}] to {context.Request.Path} from {context.Connection.RemoteIpAddress}");
                 return null;
             } // user NOT in db.
 
         }
         else // not authenticated
         {
-            DBg.d(LogLevel.Trace, "UpdateSessionAccessTime: Anonymous access to " + context.Request.Path + " from " + context.Connection.RemoteIpAddress);
+            DBg.d(LogLevel.Information, $"{fn}: Anonymous access TO {context.Request.Path} FROM {context.Connection.RemoteIpAddress}");
             return null;
         }
 
@@ -167,15 +171,14 @@ public static class UserSessionService
 
     }
 
-    public static async Task<GeFeSLEUser?> getWhoIAm(HttpContext context,
+    public static async Task<GeFeSLEUser?> mapUserNameToDBUser(string username,
         UserManager<GeFeSLEUser> userManager)
     {
-        DBg.d(LogLevel.Trace, "getWhoIAm");
-        DBg.d(LogLevel.Trace, "getWhoIAm: " + context.User?.Identity?.Name);
-        string? username = context.User?.Identity?.Name;
+        string? fn = "mapUserNameToDBUser"; DBg.d(LogLevel.Trace, fn);
+        
         if (username == null)
         {
-            DBg.d(LogLevel.Trace, "getWhoIAm: null username");
+            DBg.d(LogLevel.Trace, $"{fn} null username");
             return null;
         }
         else
@@ -183,44 +186,56 @@ public static class UserSessionService
             GeFeSLEUser? user = await userManager.FindByNameAsync(username);
             if (user == null)
             {
-                DBg.d(LogLevel.Error, $"getWhoIAm: NO DB user {username}!");
+                DBg.d(LogLevel.Debug, $"{fn} username {username} does NOT exist in the Database!");
                 return null;
             }
-            DBg.d(LogLevel.Trace, $"getWhoIAm: {user.UserName}");
-            return user;
+            else {
+                DBg.d(LogLevel.Debug, $"{fn} username {user.UserName} does exist in the Database!");
+                return user;
+            }
         }
     }
 
-    public static bool amILoggedIn(HttpContext context)
+    // This function is the sole arbiter of "what does 'logged in' mean?"
+    // A logged in user session for our purposes has a username, is authenticated, and has a role in the claims. 
+    // Returns a tuple of username, isAuthenticated and first/default role claims
+    // TODO: should unpack/investigate ALL claims, not just the first one. 
+    // TODO: handle missing context.User/Identity gracefully
+    // TODO: in all uses, see if we check for username == null and isAuthenticated == false; if so, 
+    //       can we even have .isAuthenticated with a non-nul username? i.e. can we just check isAuthenticated?
+    public static (string? UserIdentityName, bool UserIdentityIsAuthenticated, string? UserClaimsRole) amILoggedIn(HttpContext context)
     {
-        DBg.d(LogLevel.Trace, "amILoggedIn");
-        string? username = context.User?.Identity?.Name;
-        bool loggedIn = context.User?.Identity?.IsAuthenticated == true;
+        string fn = "amILoggedIn"; DBg.d(LogLevel.Trace, fn);
+        //GlobalStatic.dumpRequest(httpContext);
 
-        DBg.d(LogLevel.Trace, $"amILoggedIn: {username} - {loggedIn}");
-        return loggedIn;
-    }
+        var username = context.User?.Identity?.Name ?? null;
+        DBg.d(LogLevel.Trace, $"{fn} username: {username}");
+        bool isAuthenticated = context.User.Identity?.IsAuthenticated ?? false;
+        DBg.d(LogLevel.Trace, $"{fn} isAuthenticated: {isAuthenticated}");
+    
+        string? role = null;
+        if (isAuthenticated == true && !string.IsNullOrEmpty(username))
+        {
+            DBg.d(LogLevel.Trace, $"{fn} - valid cookie/jwt session");
+            role = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
+        }
 
-    public static async Task<List<string>> getRoles(GeFeSLEUser user,
-        UserManager<GeFeSLEUser> userManager)
-    {
-        DBg.d(LogLevel.Trace, "getMyRoles");
-        var roles = await userManager.GetRolesAsync(user);
-        DBg.d(LogLevel.Trace, $"getMyRoles: {user.UserName} [{string.Join(", ", roles)}]");
-        return roles.ToList();
+        var returnTuple = (username, isAuthenticated, role);
+        DBg.d(LogLevel.Debug, $"{fn} returning {{ username: {returnTuple.username}, isAuthenticated: {returnTuple.isAuthenticated}, role: {returnTuple.role} }}");
+        return returnTuple;
     }
+    
+
 
     public static async Task<string?> dumpSession(HttpContext context,
+        string username,
         UserManager<GeFeSLEUser> userManager)
     {
-        DBg.d(LogLevel.Trace, "dumpSession");
-
-        GeFeSLEUser? user = await getWhoIAm(context, userManager);
-        if (user == null)
-        {
-            return null;
-        }
-        else
+        var fn = "dumpSession"; DBg.d(LogLevel.Trace, fn);
+        
+        GeFeSLEUser? user = await mapUserNameToDBUser(username, userManager);
+        if (user != null)
+        
         {
             var roles = await userManager.GetRolesAsync(user!);
             var claims = context.User?.Claims.Select(c => new { c.Type, c.Value });
@@ -234,8 +249,12 @@ public static class UserSessionService
                 ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
                 Formatting = Formatting.Indented
             });
-            DBg.d(LogLevel.Trace, $"dumpSession: {session}");
+            DBg.d(LogLevel.Trace, $"{fn}: {session}");
             return session;
+        }
+        else {
+            DBg.d(LogLevel.Error, $"{fn}: no user in db");
+            return null;
         }
     }
 

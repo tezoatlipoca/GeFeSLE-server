@@ -15,7 +15,7 @@ public static class GlobalStatic
     public static string googleClientSecret = "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";
 
     public static string mastoClient_Name = "GeFeSLE";
-    public static string mastoScopes = "read";
+    public static string mastoScopes = "read write:bookmarks";
 
     public static List<string> roleNames = new List<string> { "SuperUser", "listowner", "contributor" };
 
@@ -37,9 +37,9 @@ public static class GlobalStatic
             sb.AppendLine(header);
         }
         sb.AppendLine($"<h1 class=\"indextitle\">{GlobalConfig.sitetitle}</h1>");
-        sb.AppendLine($"<p><a id=\"indexeditlink\" class=\"indexeditlink\" href=\"_edit.list.html\">Add new list</a> ");
+        sb.AppendLine($"<p><a id=\"indexeditlink\" class=\"indexeditlink\" href=\"_edit.list.html\" style=\"display: none;\">Add new list</a> ");
         // write a line that calls the regenerate endpoint and refreshes this page
-        sb.AppendLine($"<a id=\"indexregenlink\" class=\"indexregenlink\" href=\"\" onclick=\"interceptRegen(event)\">REGEN</a></p>");
+        sb.AppendLine($"<a id=\"indexregenlink\" class=\"indexregenlink\" href=\"\" onclick=\"interceptRegen(event)\" style=\"display: none;\">REGEN</a></p>");
         sb.AppendLine("<ul class=\"indexuloflists\">");
         if (lists.Count == 0)
         {
@@ -50,8 +50,8 @@ public static class GlobalStatic
             foreach (var list in lists)
             {
                 sb.AppendLine($"<li class=\"indexliitem\"><a href=\"{list.Name}.html\">{list.Name}</a>");
-                sb.AppendLine($"<span class=\"indexeditlink\"><a href=\"_edit.list.html?listid={list.Id}\">edit</a></span>");
-                sb.AppendLine($"<span class=\"indexeditlink\"><a href=\"#\" onclick=\"deleteList({list.Id}); return;\">Delete</a></span>");
+                sb.AppendLine($"<span class=\"indexeditlink\" style=\"display: none;\"><a href=\"_edit.list.html?listid={list.Id}\">edit</a></span>");
+                sb.AppendLine($"<span class=\"indexeditlink\" style=\"display: none;\"><a href=\"#\" onclick=\"deleteList({list.Id}); return;\">Delete</a></span>");
 
 
                 sb.AppendLine("</li>");
@@ -110,22 +110,17 @@ public static class GlobalStatic
         sb.AppendLine($"<title>{pagetitle}</title>");
         sb.AppendLine("</head>");
         sb.AppendLine("<body >");
-        // IF GlobalStatic.CompileTimeDebugging
-        if (GlobalStatic.CompileTimeDebugging)
-        {
-            sb.AppendLine($"<p class=\"debugging\">[ Compile time debugging is ON |");
+        
+        sb.AppendLine($"<p class=\"debugging\" style=\"display: none;\">[ Debugging is ON |");
             sb.AppendLine($"<a href=\"/session\">Session</a> |");
             sb.AppendLine($"<a href=\"/regenerate\">REGEN</a> |");
             sb.AppendLine($"<a href=\"/showusers\">show users</a> | ");
             sb.AppendLine($"<a href=\"/_edituser.html\">edit users</a> | ");
             sb.AppendLine($"<a href=\"/killsession\">nerf session</a> | ");
-            sb.AppendLine($"<a href=\"_login.html\">LOGIN</a> | ");
-            sb.AppendLine("]</p>");
-        }
-        else
-        {
-            sb.AppendLine($"<a href=\"_login.html\">login</a>");
-        }
+        sb.AppendLine("]</p>");
+        
+        sb.AppendLine($"<p>[ <a href=\"_login.html\">login</a> ]</p>");
+        
 
     }
 

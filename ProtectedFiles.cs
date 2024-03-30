@@ -107,9 +107,9 @@ public static class ProtectedFiles
         GeFeSLEUser user,
         UserManager<GeFeSLEUser> userManager)
     {
-
+        var fn = "IsFileVisibleToUser";
         var serializedFiles = JsonConvert.SerializeObject(Files, Formatting.Indented);
-        DBg.d(LogLevel.Trace, $"HERE DA FILES: {serializedFiles}");
+        //DBg.d(LogLevel.Trace, $"{fn} HERE DA FILES: {serializedFiles}");
 
         string? ynot = null;
         
@@ -193,7 +193,7 @@ public static class ProtectedFiles
         }
 
         bool isSuperUser = await userManager.IsInRoleAsync(user, "SuperUser");
-        if (UserSessionService.amILoggedIn(context) && isSuperUser)
+        if (isSuperUser)
         {
             DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: - {user.UserName} - USER IS SUPERUSER");
             ynot = "User is a super user";

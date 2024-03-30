@@ -7,15 +7,18 @@ document.addEventListener('DOMContentLoaded', getItem);
 // gets the listid from the url querystring and then 
 // populates the form in _edit.item.html with the list data
 async function getItem() {
-    console.log('getItem')
+    let fn = 'getItem';
+    console.log(fn)
 
     if (islocal()) {
         d("Cannot call API from a local file!");
         c(RC.BAD_REQUEST);
         return;
         }
-    let loggedIn = await amLoggedIn();
-    if(!loggedIn) {
+    let [username, role] = await amloggedin();
+        console.debug(fn + ' | username: ' + username);
+        console.debug(fn + ' | role: ' + role);
+    if (!isSuperUser(role) && !isListOwner(role)){
         d("You are not logged in! <a href='_login.html'>Login here.</a>");
         c(RC.UNAUTHORIZED);
         // the link back to the list page is now bork, change back to site index.
@@ -124,7 +127,7 @@ async function getItem() {
                 document.getElementById('item.id').value = data.id;
                 document.getElementById('item.name').value = data.name;
                 //document.getElementById('item.comment').value = data.comment;
-                simplemde.value(data.comment);
+                easymde.value(data.comment);
                 document.getElementById('item.tags').value = data.tags.join(' ');
             })
             .catch((error) => {
@@ -157,6 +160,7 @@ async function getItem() {
 document.getElementById('edititemform').addEventListener('submit', updateItem);
 
 async function updateItem(e) {
+    let fn = 'updateItem';
     e.preventDefault();
     console.log('updateItem');
     let apiUrl = "";
@@ -166,8 +170,10 @@ async function updateItem(e) {
         c(RC.BAD_REQUEST);
         return;
         }
-    let loggedIn = await amLoggedIn();
-    if(!loggedIn) {
+    let [username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
+    if (!isSuperUser(role) && !isListOwner(role)){
         d("You are not logged in! <a href='_login.html'>Login here.</a>");
         c(RC.UNAUTHORIZED);
         return;
@@ -186,7 +192,7 @@ async function updateItem(e) {
         let listid = document.getElementById('item.listid').value;
         let name = document.getElementById('item.name').value;
         //let comment = document.getElementById('item.comment').value;
-        let comment = simplemde.value();
+        let comment = easymde.value();
         //alert(comment);
         let tags = document.getElementById('item.tags').value;
         //split the tags 

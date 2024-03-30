@@ -42,6 +42,7 @@ window.onload = function () {
 }
 
 async function mastodonGO(e){
+    let fn = 'mastoBookmark - mastodonGO';
     // prevent button default action
     e.preventDefault();
     console.debug('mastoBookmark - mastodonGO');
@@ -52,8 +53,10 @@ async function mastodonGO(e){
         c(RC.BAD_REQUEST);
         return;
     }
-    let loggedIn = await amLoggedIn();
-    if(!loggedIn) {
+    let [username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
+    if(!isSuperUser(role) && !isListOwner(role) && !isContributor(role)){
         d('You must be logged in to do this!');
         c(RC.UNAUTHORIZED);
         return;
@@ -76,7 +79,7 @@ async function mastodonGO(e){
     let url = window.location.href;
     url = url.replace(/_mastobookmark.html.*/, '');
 
-    url = url + 'mastobookmarks/' + listId + '?num2Get=' + num2Get + '&unbookmark' + unbookmark;
+    url = url + 'mastobookmarks/' + listId + '?num2Get=' + num2Get + '&unbookmark=' + unbookmark;
     //redirect to the url
     window.location.replace(url);
     //alert('Redirecting to: ' + url);

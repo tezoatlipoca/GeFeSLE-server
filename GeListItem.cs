@@ -23,10 +23,9 @@ public class GeListItem
     {
         ListId = listid;
         Name = status.Url;
-        //Comment = status.Content;
         IsComplete = false;
-        //CreatedDate = status.CreatedAt,
-        //ModifiedDate = status.CreatedAt
+        CreatedDate = status.CreatedAt;
+        ModifiedDate = status.CreatedAt;
 
         Account poster = status.Account;
         StringBuilder sb = new StringBuilder();
