@@ -107,8 +107,8 @@ public static class ProtectedFiles
         GeFeSLEUser user,
         UserManager<GeFeSLEUser> userManager)
     {
-        var fn = "IsFileVisibleToUser";
-        var serializedFiles = JsonConvert.SerializeObject(Files, Formatting.Indented);
+        var fn = "IsFileVisibleToUser"; DBg.d(LogLevel.Trace, fn);
+        //var serializedFiles = JsonConvert.SerializeObject(Files, Formatting.Indented);
         //DBg.d(LogLevel.Trace, $"{fn} HERE DA FILES: {serializedFiles}");
 
         string? ynot = null;

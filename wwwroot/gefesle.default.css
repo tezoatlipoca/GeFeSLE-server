@@ -144,6 +144,13 @@ in imported items from exploding your table.
         text-align: right;
     }
 
+    .moveitemlink {
+        border: 1px solid grey;
+        border-radius: 3px;
+        display: block;
+        text-align: right;
+    }
+
     .tagsearch {
         
         display: inline-block;

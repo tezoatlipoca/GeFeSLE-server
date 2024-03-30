@@ -185,6 +185,8 @@ function showListSecrets() {
     for (let l of links) { l.style.display = ''; }
     links = document.getElementsByClassName('itemdeletelink');
     for (let l of links) { l.style.display = ''; }
+    links = document.getElementsByClassName('moveitemlink');
+    for (let l of links) { l.style.display = ''; }
 
 }
 

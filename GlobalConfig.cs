@@ -219,18 +219,7 @@ public static class GlobalConfig
         }
 
     }
-    public static void changeRunLevel(LogLevel newlevel, WebApplicationBuilder builder)
-    {
-        DBg.d(LogLevel.Trace, "GlobalConfig.changeRunLevel() called");
-        if (CURRENT_LEVEL != newlevel)
-        {
-            DBg.d(LogLevel.Debug, $"Changed runlevel from {CURRENT_LEVEL} to {newlevel}");
-            CURRENT_LEVEL = newlevel;
-            // also change the LogLevel of Microsoft.EntityFrameworkCore
-            builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", newlevel + 1);
-        }
-    }
-
+ 
     public static LogLevel castRunLevel(string level)
     {
         var returnLevel = LogLevel.None;

@@ -129,11 +129,13 @@ function filterUpdate() {
             }
 
             // change the result span to show the number of visible rows
-            document.getElementById('result').innerHTML = 'DISPLAYING ' + numVisibleTags + ' of ' + totesrows + ' items in this list.';
+            d('DISPLAYING ' + numVisibleTags + ' of ' + totesrows + ' items in this list.');
+            c(RC.OK);
         }
     }
     else {
-        document.getElementById('result').innerHTML = 'NO ITEMS in this list';
+        d('NO ITEMS in this list');
+        c(RC.OK);
     }
 }
 
@@ -162,3 +164,165 @@ window.onload = async function () {
     make1stcelllinks();
 }
 
+// function to retreive a list of listids and listnames from the REST API
+async function loadLists() {
+    let fn = 'loadLists'; console.debug(fn);    
+    let apiUrl = '/showlists';
+    let tuples = [];
+
+    try {
+        let response = await fetch(apiUrl);
+        if (!response.ok) {
+            d('No lists found at this URL: ' + apiUrl);
+            console.error(' | Error calling API: ' + response.status + ' ' + response.statusText);
+            return;
+        }
+        let data = await response.json();
+        console.debug(`${fn} ${apiUrl} -> ${JSON.stringify(data)}`);
+        for (let list of data) {
+            tuples.push([list.id, list.name]);
+        }
+        return tuples;
+    } catch (error) {
+        d('EXCEPTION loading lists - no lists found at this URL:' + apiUrl);
+        console.error(' | EXCEPTION calling API: ' + error);
+    }
+}
+
+
+
+
+
+
+async function createQuickMoveMenu() {
+    let fn = 'createQuickMoveMenu'; console.debug(fn);
+    // get all of the lists
+    let lists = await loadLists();
+
+    // add some html to the page
+    let menuHtml = '<div id="contextMenu" class="context-menu" ';
+    menuHtml += 'style="display: none; position: absolute; z-index: 1000; background-color: #fff; border: 1px solid #ccc;">';
+    
+    
+    for (let list of lists) {
+        menuHtml += `<a href="#" id="list${list[0]}" style="display: block; padding: 10px; text-decoration: none; color: #000;">${list[1]}</a>`;
+
+    }
+    
+    menuHtml += '</div>';
+    
+    console.debug(fn + ' | menuHtml: ' + menuHtml);
+    document.body.insertAdjacentHTML('beforeend', menuHtml);
+    
+    for (let list of lists) {
+        document.getElementById(`list${list[0]}`).addEventListener('click', function() {
+            // call your function here and pass the parameters dynamically
+            console.debug(`LINK ${rightClickedLink.id} listid: ${list[0]} listname: ${list[1]}`);
+            moveItem(rightClickedLink.id, list[0]);
+        });
+    }
+
+}
+
+createQuickMoveMenu();
+
+let rightClickedLink;
+
+function showContextMenu(e) {
+    e.preventDefault();
+    rightClickedLink = e.target;
+
+    var contextMenu = document.getElementById('contextMenu');
+    contextMenu.style.display = 'block';
+    contextMenu.style.left = e.pageX + 'px';
+    contextMenu.style.top = e.pageY + 'px';
+
+    return false; // prevents the browser's context menu from appearing
+};
+
+// Hide the context menu when the user clicks elsewhere
+window.addEventListener('click', function(e) {
+    document.getElementById('contextMenu').style.display = 'none';
+});
+
+
+async function moveItem(itemid, listid) {
+    let fn = 'moveItem'; console.debug(fn);
+    let apiUrl = "/moveitem";
+
+    if (islocal()) {
+        d("Cannot call API from a local file!");
+        c(RC.BAD_REQUEST);
+        return;
+        }
+    let [username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
+    if (!isSuperUser(role) && !isListOwner(role)){
+        d("You are not logged in! <a href='_login.html'>Login here.</a>");
+        c(RC.UNAUTHORIZED);
+        return;
+    }
+
+
+
+    try {
+        console.debug(' | API URL: ' + apiUrl);
+
+        let data;
+        let apiMethod;
+        // if id is null or empty, then this is a new item
+        // and we need to call the API to create a new item
+        // make sure both itemid and listid are int
+        itemid = parseInt(itemid);
+        listid = parseInt(listid);
+
+        data = { itemid, listid };
+        apiMethod = 'POST';
+        
+        let formPOST = JSON.stringify(data);
+        console.info(`${fn} <- ${formPOST}`);
+        fetch(apiUrl, {
+            method: apiMethod,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: formPOST,
+        })
+        .then(response => {
+            if (response.ok) {
+                return response.text();
+            }
+            else if (response.status == RC.NOT_FOUND) {
+                // the actual reason why is in the response body, so we need to read it
+                return response.text().then(text => {
+                    throw new Error('MOVEITEM: ' + text);
+                });
+            }
+            else if (response.status == RC.UNAUTHORIZED) {
+                throw new Error('Not authorized - have you logged in yet? <a href="_login.html">Login</a>');
+            }
+            else if (response.status == RC.FORBIDDEN) {
+                throw new Error('Forbidden - have you logged in yet? <a href="_login.html">Login</a>');
+            }
+            else {
+                throw new Error('Error ' + response.status + ' - ' + response.statusText);
+            }
+        })
+        .then(text => {
+            d(text);
+            c(RC.OK);
+            })
+        .catch((error) => {
+            d(error);
+            c(RC.ERROR);
+
+        });
+    }
+    catch (error) {
+        d(error);
+        c(RC.ERROR);
+        console.error('Error:', error);
+    }
+
+}

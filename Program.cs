@@ -1318,6 +1318,60 @@ app.MapDelete("/deleteitem/{listid}/{id}", async (int listid,
 });
 
 
+
+// moves an item between two lists
+// yes, we could also use the /deleteitem and /additem endpoints but is less of a hit
+app.MapPost("/moveitem", async (
+    [FromBody] MoveItemDto data,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    HttpContext httpContext) =>
+{
+    var fn = "/moveitem"; DBg.d(LogLevel.Trace,fn);
+    
+    // stringify the data and log it
+    string dumpData = System.Text.Json.JsonSerializer.Serialize(data);
+    DBg.d(LogLevel.Trace, $"{fn} -- dump data {dumpData}");
+
+    var itemid = data.itemid;
+    var newlistid = data.listid;
+    DBg.d(LogLevel.Trace, $"{fn} <-- {{ itemid: {itemid}, newlistid: {newlistid}}}");
+
+    
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    
+    // find the item in question
+    var item = await db.Items.FindAsync(itemid);
+    if (item is null) return Results.NotFound($"Item {itemid} not found");
+    var oldlistid = item.ListId;
+    var newlist = await db.Lists.FindAsync(newlistid);
+    if (newlist is null) return Results.NotFound($"Destination list {newlistid} not found");
+    var oldlist = await db.Lists.FindAsync(oldlistid);
+    // we'll never actually get this unless something has gone very bork
+    if (oldlist is null) return Results.NotFound($"Source list {oldlistid} not found");
+    
+    // now the tricky part - does the user have right listowner or contributor-ship or role to modify 
+    // TODO: implement permissions check; for now rely on SU/listowner roles via middleware 
+    
+    item.ListId = newlistid;
+
+    await db.SaveChangesAsync();
+    
+    // regenerate both old AND new lists
+    _ = newlist.GenerateHTMLListPage(db);
+    _ = newlist.GenerateRSSFeed(db);
+    _ = newlist.GenerateJSON(db);
+    _ = oldlist.GenerateHTMLListPage(db);
+    _ = oldlist.GenerateRSSFeed(db);
+    _ = oldlist.GenerateJSON(db);
+    var msg = $"Item {itemid} moved from list {oldlistid} to list {newlistid}";
+    return Results.Ok(msg);
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser,listowner"
+});
+
 // add an endpoint that DELETEs a list
 app.MapDelete("/deletelist/{id}", async (int id,
         GeFeSLEDb db,
@@ -2243,7 +2297,7 @@ app.MapGet("/session", async (HttpContext httpContext,
     var sessionUser = UserSessionService.amILoggedIn(httpContext);
     string? niceSession = null;   
     if(!sessionUser.UserIdentityName.IsNullOrEmpty()) { 
-        niceSession = await UserSessionService.dumpSession(httpContext, sessionUser.UserIdentityName, userManager);
+        niceSession = await UserSessionService.dumpSession(httpContext, sessionUser!.UserIdentityName!, userManager);
     }
     string? msg = null;
     if (niceSession.IsNullOrEmpty() )
