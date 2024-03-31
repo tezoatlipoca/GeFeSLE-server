@@ -2,6 +2,7 @@
 <html>
     <title>LOGIN PAGE</title>
         <head>
+            <meta charset="UTF-8">
         <script>
             const urlParams = new URLSearchParams(window.location.search);
             const returnUrl = urlParams.get('ReturnUrl');
@@ -26,8 +27,7 @@
             </form>
             <p>
                 <h2>Or log in with:</h2>
-                <h3><a href="/googlelogin">Google</a></h3>
-                <h3><a href="/_mastodon.html">Mastodon</a></h3>
+                <h3><a href="/googlelogin">Google</a> | <a href="/microsoftlogin">Microsoft</a> | <a href="/_mastodon.html">Mastodon</a></h3>
             </p>
         </body>
     </html>

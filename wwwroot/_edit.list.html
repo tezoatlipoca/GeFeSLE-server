@@ -2,6 +2,7 @@
 <html>
 
 <head>
+  <meta charset="UTF-8">
   <!-- include gefesle.default.css -->
   <link rel="stylesheet" href="gefesle.default.css">
   <!-- inclue default icon -->
@@ -62,6 +63,7 @@
     <span id="result"></span>
     <script>
       var easymde = new EasyMDE({ element: document.getElementById("list.comment") });
+      easymde.value("");
     </script>
   </form>
   <script src="_utils.js"></script>

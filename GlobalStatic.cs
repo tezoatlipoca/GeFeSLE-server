@@ -11,8 +11,14 @@ public static class GlobalStatic
     public static string sessionCookieName = "GeFeSLESessionCookie";
     public static string antiForgeryCookieName = "GeFeSLEAntiForgeryCookie";
     public static string webSite = "https://awadwatt.com/gefesle";
+
+    // TODO: move these to config file for users to create their own. 
     public static string googleClientID = "633241786177-0mlrsg1leiu9i3et858idmmn9rtrc2fi.apps.googleusercontent.com";
     public static string googleClientSecret = "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";
+
+    public static string microsoftClientId = "7167c2f7-7c2f-4039-8195-a046c6b05032";
+    public static string microsoftClientSecret = "Bk98Q~rgkjDANYv8RMoKVQJ0D-1Usa4cBkXBLbbs";
+    // secret ID: 504b1740-ce89-40fe-bbbf-b470393259e1
 
     public static string mastoClient_Name = "GeFeSLE";
     public static string mastoScopes = "read write:bookmarks";
@@ -94,6 +100,7 @@ public static class GlobalStatic
         sb.AppendLine("<!DOCTYPE html>");
         sb.AppendLine("<html>");
         sb.AppendLine("<head>");
+        sb.AppendLine("<meta charset=\"utf-8\">");
         sb.AppendLine("<link rel=\"icon\" href=\"/gefesle.ff.png\" type=\"image/x-icon\">");
 
 

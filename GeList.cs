@@ -116,7 +116,7 @@ public class GeList
   
         foreach (var item in items)
         {
-            sb.AppendLine($"<tr class=\"itemrow\">");
+            sb.AppendLine($"<tr class=\"itemrow\" id=\"{item.Id}\">");
             sb.AppendLine($"<td class=\"namecell\">{item.Name}</td>");
 
             if(item.Comment != null) {
@@ -136,7 +136,7 @@ public class GeList
             sb.AppendLine("</td>");
             sb.AppendLine("<td class=\"utilitybox\">");
             sb.AppendLine($"<span class=\"itemmoddate\">{item.ModifiedDate.ToString("yyyy-MM-dd HH:mm:ss")}</span>");
-            sb.AppendLine($"<span class=\"moveitemlink\" style=\"display: none;\"><a href=\"#\" id=\"{item.Id}\" oncontextmenu=\"showContextMenu(event)\">Move</a></span>");
+            sb.AppendLine($"<span class=\"moveitemlink\" style=\"display: none;\"><a href=\"#\" oncontextmenu=\"showContextMenu(event)\">Move</a></span>");
             sb.AppendLine($"<span class=\"itemeditlink\" style=\"display: none;\"><a href=\"_edit.item.html?listid={item.ListId}&itemid={item.Id}\" >Edit</a></span>");
             // call the deleteitem endpoint but then refresh the page as well
             sb.AppendLine($"<span class=\"itemdeletelink\" style=\"display: none;\"><a href=\"#\" onclick=\"deleteItem({item.ListId},{item.Id}); return;\" >Delete</a></span>");

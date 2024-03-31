@@ -97,6 +97,18 @@ public static class UserSessionService
 
         return tokenString;
     }
+    public static void storeProvider(HttpContext httpContext, string provider)
+    {
+        DBg.d(LogLevel.Trace, $"storeProvider: {provider}");
+        httpContext.Session.SetString("provider", provider);
+    }
+
+    public static string? getProvider(HttpContext httpContext)
+    {
+        DBg.d(LogLevel.Trace, "getProvider");
+        return httpContext.Session.GetString("provider");
+    }
+
 
     public static void createSession(HttpContext httpContext, string username, string role)
     {
@@ -134,8 +146,7 @@ public static class UserSessionService
     public static void AddAccessToken(HttpContext context, string provider, string accessToken)
     {
         DBg.d(LogLevel.Trace, "AddAccessTokenResponse");
-        var username = context.User?.Identity?.Name;
-
+        
         if (provider == null || accessToken == null)
         {
             DBg.d(LogLevel.Error, "AddAccessTokenResponse: provider or accessToken is null");

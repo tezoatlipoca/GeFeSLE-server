@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authentication.MicrosoftAccount;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.IdentityModel.Tokens;
@@ -206,7 +207,7 @@ builder.Services.AddAuthentication(options =>
         };
         options.Events = new JwtBearerEvents
         {
-            
+
             OnMessageReceived = context =>
             {
                 var fn = "jwt middleware";
@@ -223,7 +224,7 @@ builder.Services.AddAuthentication(options =>
         };
     })
 
-.AddGoogle(options =>
+.AddGoogle("Google", options =>
     {
         options.ClientId = GlobalStatic.googleClientID;
         options.ClientSecret = GlobalStatic.googleClientSecret;
@@ -238,7 +239,39 @@ builder.Services.AddAuthentication(options =>
                 }
                 return Task.CompletedTask;
             };
-    });
+        //google keep
+        //ggogle tasks
+        //google saved/interests
+
+        options.Scope.Add("https://www.googleapis.com/auth/tasks");
+        //options.Scope.Add("https://www.googleapis.com/auth/tasks.readonly");
+
+    })
+.AddMicrosoftAccount("Microsoft", options =>
+{
+    options.ClientId = GlobalStatic.microsoftClientId;
+    options.ClientSecret = GlobalStatic.microsoftClientSecret;
+    options.SignInScheme = IdentityConstants.ExternalScheme;
+    options.Events.OnCreatingTicket = (context) =>
+    {
+        if (context != null)
+        {
+            context?.Identity?.AddClaim(new Claim(ClaimTypes.AuthenticationMethod, "Microsoft"));
+        }
+        return Task.CompletedTask;
+    };
+
+    // there are several locations where "notes" and lists of "things" are 
+    // stored in Microsoft's Graph API. 
+    // first we have the Windows 10+ "Sticky Notes" app. These are actually 
+    // elements stored in Outlook mail:
+    // https://graph.microsoft.com/v1.0/me/MailFolders/notes/messages
+
+    // To-Do --> outlook Tasks
+    // OneNote 
+    // Microsoft Lists (coughLAMEcough)
+
+});
 
 builder.Services.AddAuthorization(options =>
 {
@@ -415,7 +448,7 @@ app.Use(async (context, next) =>
         if (path != null && ProtectedFiles.ContainsFile(path))
         {
             // is the user logged in? 
-            
+
             if (!sessionUser.UserIdentityIsAuthenticated)
             {
                 // no - make a nice redirect page like the normal UNAUTH page above. 
@@ -1327,8 +1360,8 @@ app.MapPost("/moveitem", async (
     UserManager<GeFeSLEUser> userManager,
     HttpContext httpContext) =>
 {
-    var fn = "/moveitem"; DBg.d(LogLevel.Trace,fn);
-    
+    var fn = "/moveitem"; DBg.d(LogLevel.Trace, fn);
+
     // stringify the data and log it
     string dumpData = System.Text.Json.JsonSerializer.Serialize(data);
     DBg.d(LogLevel.Trace, $"{fn} -- dump data {dumpData}");
@@ -1337,9 +1370,9 @@ app.MapPost("/moveitem", async (
     var newlistid = data.listid;
     DBg.d(LogLevel.Trace, $"{fn} <-- {{ itemid: {itemid}, newlistid: {newlistid}}}");
 
-    
+
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-    
+
     // find the item in question
     var item = await db.Items.FindAsync(itemid);
     if (item is null) return Results.NotFound($"Item {itemid} not found");
@@ -1349,14 +1382,14 @@ app.MapPost("/moveitem", async (
     var oldlist = await db.Lists.FindAsync(oldlistid);
     // we'll never actually get this unless something has gone very bork
     if (oldlist is null) return Results.NotFound($"Source list {oldlistid} not found");
-    
+
     // now the tricky part - does the user have right listowner or contributor-ship or role to modify 
     // TODO: implement permissions check; for now rely on SU/listowner roles via middleware 
-    
+
     item.ListId = newlistid;
 
     await db.SaveChangesAsync();
-    
+
     // regenerate both old AND new lists
     _ = newlist.GenerateHTMLListPage(db);
     _ = newlist.GenerateRSSFeed(db);
@@ -1371,6 +1404,100 @@ app.MapPost("/moveitem", async (
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
     Roles = "SuperUser,listowner"
 });
+
+// yeah we could edit an item but quick and dirty for now
+// note that this function does not care if we get a tag with spaces
+// vs. some interpretations of tags where spaces delimit
+app.MapPost("/removetag", async (
+    [FromBody] RemoveTagDto data,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    HttpContext httpContext) =>
+{
+    var fn = "/removetag"; DBg.d(LogLevel.Trace, fn);
+
+    // stringify the data and log it
+    string dumpData = System.Text.Json.JsonSerializer.Serialize(data);
+    DBg.d(LogLevel.Trace, $"{fn} -- dump data {dumpData}");
+
+    var itemid = data.itemid;
+    var gonetag = data.tag;
+    DBg.d(LogLevel.Trace, $"{fn} <-- {{ itemid: {itemid}, tag: {gonetag}}}");
+
+
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+
+    // find the item in question
+    var item = await db.Items.FindAsync(itemid);
+    if (item is null) return Results.NotFound($"Item {itemid} not found");
+
+    // now the tricky part - does the user have right listowner or contributor-ship or role to modify 
+    // TODO: implement permissions check; for now rely on SU/listowner roles via middleware 
+
+    // if gonetag is in the item's tags remove it. if not, we don't care
+    item.Tags.Remove(gonetag);
+
+    await db.SaveChangesAsync();
+    // TODO: regenerate item's list
+
+    var msg = $"Tag {gonetag} removed from item {itemid}";
+    return Results.Ok(msg);
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser,listowner,contributor"
+});
+
+app.MapPost("/addtag", async (
+    [FromBody] AddTagDto data,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    HttpContext httpContext) =>
+{
+    var fn = "/addtag"; DBg.d(LogLevel.Trace, fn);
+
+    // stringify the data and log it
+    string dumpData = System.Text.Json.JsonSerializer.Serialize(data);
+    DBg.d(LogLevel.Trace, $"{fn} -- dump data {dumpData}");
+
+    var itemid = data.itemid;
+    var newtag = data.tag;
+    DBg.d(LogLevel.Trace, $"{fn} <-- {{ itemid: {itemid}, tag: {newtag}}}");
+
+
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+
+    // find the item in question
+    var item = await db.Items.FindAsync(itemid);
+    if (item is null) return Results.NotFound($"Item {itemid} not found");
+
+    // now the tricky part - does the user have right listowner or contributor-ship or role to modify 
+    // TODO: implement permissions check; for now rely on SU/listowner roles via middleware 
+
+    string? msg = null;
+    // if newtag is NOT the item's tags add it. List<T> doesn't prevent duplicates
+    if (!item.Tags.Contains(newtag))
+    {
+        item.Tags.Add(newtag);
+        msg = $"Tag {newtag} added to item {itemid}";
+    }
+    else
+    {
+        msg = $"Tag {newtag} already exists in item {itemid}";
+
+    }
+    await db.SaveChangesAsync();
+    // TODO: regenerate item's list
+
+    return Results.Ok(msg);
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser,listowner,contributor"
+});
+
+
+
 
 // add an endpoint that DELETEs a list
 app.MapDelete("/deletelist/{id}", async (int id,
@@ -1451,69 +1578,92 @@ app.MapGet("/regenerate/{listid}", async (int listid,
     Roles = "SuperUser,listowner,contributor"
 });
 
+app.MapGet("/microsoftlogin", async (HttpContext context) =>
+{
+    var properties = new AuthenticationProperties { RedirectUri = $"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/oauthcallback" };
+    DBg.d(LogLevel.Trace, $"microsoftlogin - sending {properties.RedirectUri} challenge");
+    await context.ChallengeAsync(MicrosoftAccountDefaults.AuthenticationScheme, properties);
+});
+
 app.MapGet("/googlelogin", async (HttpContext context) =>
 {
 
-    var properties = new AuthenticationProperties { RedirectUri = $"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/googlecallback" };
+    var properties = new AuthenticationProperties { RedirectUri = $"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/oauthcallback" };
     DBg.d(LogLevel.Trace, $"googlelogin - sending {properties.RedirectUri} challenge");
     await context.ChallengeAsync(GoogleDefaults.AuthenticationScheme, properties);
 });
 
-app.MapGet("/googlecallback", async (HttpContext context,
+app.MapGet("/oauthcallback", async (HttpContext context,
         GeFeSLEDb db,
-
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager
         ) =>
 {
-    DBg.d(LogLevel.Trace, "googlecallback");
+    DBg.d(LogLevel.Trace, "oauthcallback");
     StringBuilder sb = new StringBuilder();
     var msg = "";
     var auth = await context.AuthenticateAsync(IdentityConstants.ExternalScheme);
     // look for auth success
     if (!auth.Succeeded)
     {
-        msg = "External authentication error";
+        msg = "External OAuth authentication error";
         await GlobalStatic.GenerateUnAuthPage(sb, msg);
         return Results.Content(sb.ToString(), "text/html");
     }
 
-    // so at this point the user has already been authenticated by google
+    // so at this point the user has already been authenticated by google or whatever
     // we need to sign the user into OUR system; create a session for them. 
-    // yeah yeah there's signInManager.SignInAsync but we're not using that
-    // couldn't get it to work properly 
 
+    if (auth.Properties != null)
+    {
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = true
+        };
+    
+    var json = System.Text.Json.JsonSerializer.Serialize(auth.Properties.Items, options);
+    Console.WriteLine(json);
+    }
+    // get provider out of the auth
+    var provider = auth.Properties.Items[".AuthScheme"];
+    // get the access_token out of the auth
+    var accessToken = auth.Properties.GetTokenValue("access_token");
+    DBg.d(LogLevel.Trace, $"provider: {provider} accessToken: {accessToken}");
 
     // get claimsPrincipal out of auth
     var claimsPrincipal = auth.Principal;
     string? email = claimsPrincipal.FindFirstValue(ClaimTypes.Email);
     if (email == null)
     {
-        msg = "Google account does not have an email address";
+        msg = "OAuth account does not have an email address";
         await GlobalStatic.GenerateUnAuthPage(sb, msg);
         return Results.Content(sb.ToString(), "text/html");
     }
     // find the user by email in our database
     GeFeSLEUser? user = await userManager.FindByEmailAsync(email);
+    string? realizedRole = null;
+    string username = null;
     if (user is null)
     {
-        UserSessionService.createSession(context, email!, "anonymous");
-        msg = $"Hi {email} from the Googlespace; You've been logged in with role: anonymous. All this means is you can't modify anything, but at least now you show up in our server logs.";
-        await GlobalStatic.GenerateLoginResult(sb, msg);
-        return Results.Content(sb.ToString(), "text/html");
+        msg = $"Hi {email} from the OAuth; You've been logged in with role: anonymous. All this means is you can't modify anything, but at least now you show up in our server logs.";
+        realizedRole = "anonymous";
+        username = email;
     }
     else
     {
         // user exists. get their role. Add a claimsPrincipal for the role
         // and create a session for them.
+        username = user!.UserName;
         var roles = await userManager.GetRolesAsync(user);
-        var realizedRole = GlobalStatic.FindHighestRole(roles);
-
-        UserSessionService.createSession(context, user.UserName!, realizedRole);
-        msg = $"Welcome {user.UserName}! You are logged in as {realizedRole}";
-        await GlobalStatic.GenerateLoginResult(sb, msg);
-        return Results.Content(sb.ToString(), "text/html");
+        realizedRole = GlobalStatic.FindHighestRole(roles);
+        msg = $"Welcome {username}! You are logged in as {realizedRole}";
     }
+    UserSessionService.createSession(context, username, realizedRole);
+    UserSessionService.storeProvider(context, provider!);
+    UserSessionService.AddAccessToken(context, provider!, accessToken!);
+    await GlobalStatic.GenerateLoginResult(sb, msg);
+    return Results.Content(sb.ToString(), "text/html");
+
 
 });
 
@@ -1763,10 +1913,7 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid,
     {
         unbookmark = false;
     }
-    else
-    {
-        unbookmark = true;
-    }
+
     DBg.d(LogLevel.Trace, $"unbookmark: {unbookmark}");
 
     // check to see if the listid is valid
@@ -1853,22 +2000,35 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid,
             // iterate over the statuses and print them out
             foreach (Status status in Systemstatuses)
             {
+                // check to see the status's visibility
+                // only import it if its public or unlisted
 
-                // add the bookmark status class to the list
-                var item = new GeListItem();
-                item.ParseMastoStatus(status, listid);
-
-                db.Items.Add(item);
-
-                // add the item.statusID to unbookmarkIDs
-                if (unbookmark == true)
+                if (status.Visibility != Mastonet.Visibility.Public &&
+                    status.Visibility != Mastonet.Visibility.Unlisted)
                 {
-                    DBg.d(LogLevel.Trace, $"unbookmarking {status.Id}");
-                    unbookmarkIDs.Add(status.Id);
+                    DBg.d(LogLevel.Trace, $"skipping {status.Id} because its visibility is {status.Visibility}");
+
+                }
+                else
+                {
+                    // add the bookmark status class to the list
+                    var item = new GeListItem();
+                    item.ParseMastoStatus(status, listid);
+
+                    db.Items.Add(item);
+
+                    // add the item.statusID to unbookmarkIDs
+                    if (unbookmark == true)
+                    {
+                        DBg.d(LogLevel.Trace, $"unbookmarking {status.Id}");
+                        unbookmarkIDs.Add(status.Id);
+                    }
+                    // only "count" the imported bookmarks
+                    numGot++;
+                    if (numGot >= num2Get) break;
+
                 }
 
-                numGot++;
-                if (numGot >= num2Get) break;
             }
             await db.SaveChangesAsync();
         }
@@ -1956,9 +2116,9 @@ app.MapGet("/getlistisee", async (
     var fn = "/getlistisee"; DBg.d(LogLevel.Trace, fn);
     var sessionUser = UserSessionService.amILoggedIn(httpContext);
     GeFeSLEUser? me = null;
-    if(sessionUser.UserIdentityIsAuthenticated)
+    if (sessionUser.UserIdentityIsAuthenticated)
     {
-        me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);    
+        me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     }
     if (!sessionUser.UserIdentityIsAuthenticated || me is null)
     {
@@ -2295,18 +2455,21 @@ app.MapGet("/session", async (HttpContext httpContext,
     sb.AppendLine("<!DOCTYPE html><html><body>");
 
     var sessionUser = UserSessionService.amILoggedIn(httpContext);
-    string? niceSession = null;   
-    if(!sessionUser.UserIdentityName.IsNullOrEmpty()) { 
+    string? niceSession = null;
+    if (!sessionUser.UserIdentityName.IsNullOrEmpty())
+    {
         niceSession = await UserSessionService.dumpSession(httpContext, sessionUser!.UserIdentityName!, userManager);
     }
     string? msg = null;
-    if (niceSession.IsNullOrEmpty() )
+    if (niceSession.IsNullOrEmpty())
     {
-        if(sessionUser.UserIdentityIsAuthenticated) {
+        if (sessionUser.UserIdentityIsAuthenticated)
+        {
             //that's fine, that may just mean they weren't in the database. 
             msg = $"{fn} - OAuth guest - username: {sessionUser.UserIdentityName} role: {sessionUser.UserClaimsRole}";
         }
-        else {
+        else
+        {
             msg = $"{fn} - Anonymous guest session.";
         }
     }

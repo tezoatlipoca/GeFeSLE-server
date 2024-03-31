@@ -89,7 +89,7 @@ in imported items from exploding your table.
         border-radius: 3px;
         display: block;
         position: relative;
-        top: -30px;
+        top: -10px;
         left: 0vw;
         width: 65vw;
         padding: 5px;
@@ -102,12 +102,14 @@ in imported items from exploding your table.
         display: inline;
         padding: 0;
         white-space: normal;
+        
     }
     
     /* the tags td */
     td:nth-child(3) {
         width: 15vw;
         padding: 0px;
+        border: 2px solid lightgreen;
     }
 
     td:nth-child(4) {
@@ -149,6 +151,28 @@ in imported items from exploding your table.
         border-radius: 3px;
         display: block;
         text-align: right;
+    }
+
+    .context-menu {
+        display: none; 
+        position: absolute; 
+        z-index: 1000; 
+        background-color: #fff;
+        border: 1px solid #ccc;
+    }
+
+    .context-menu-link-regular {
+        display: block; 
+        padding: 10px; 
+        text-decoration: none; 
+        color: #000;
+    }
+
+    .context-menu-link-recent {
+        display: block; 
+        padding: 10px; 
+        text-decoration: none; 
+        color: #ffcc99;
     }
 
     .tagsearch {

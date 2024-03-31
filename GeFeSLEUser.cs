@@ -14,8 +14,11 @@ public enum GTokenSource
     WEB,
     FFPLUGIN,
     EDGEPLUGIN,
-    CHROMEPLUGIN
+    CHROMEPLUGIN,
+    MICROSOFT,
+    GOOGLE,
 }
+
 
 
     public class JwtToken

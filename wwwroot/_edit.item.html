@@ -2,6 +2,7 @@
 <html>
 
 <head>
+  <meta charset="UTF-8">
   <!-- include stylesheet and gefesle icon -->
   <link rel="stylesheet" href="gefesle.default.css">
   <link rel="icon" href="gefesle.ff.png" type="image/x-icon">
@@ -37,6 +38,7 @@
     <!-- Initialize EasyMDE for the textarea -->
     <script>
       var easymde = new EasyMDE({ element: document.getElementById("item.comment") });
+      easymde.value("");
     </script>
   </form>
   <script src="_utils.js"></script>

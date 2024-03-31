@@ -14,6 +14,9 @@
   <h1>Import Mastodon Bookmarks?</h1>
   <p>Specify how <i>many</i> of your Mastodon bookmarks to import. Also, choose whether you want 
 us to UN-bookmark the bookmarked statuses we import here.</p>
+<p>Only bookmarked toots that have <b>Public or Unlisted</b> visibility get imported.<br>
+  We unbookmark only posts that we import.
+  The import keeps going until it imports # you specify or you run out of bookmarked'd toots.</p>
   <form id="mastobookmarkform">
     <input type="hidden" id="listId" name="listId">
     <label for="num2Get">Number of bookmarks to get:</label>

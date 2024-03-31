@@ -1,3 +1,5 @@
+using System.Runtime.Serialization;
+
 public static class MastoController
 {
     // Add your static methods and properties here
@@ -47,3 +49,4 @@ public static class MastoController
 
     }
 }
+
