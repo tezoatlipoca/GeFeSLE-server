@@ -9,6 +9,7 @@ using System.IdentityModel.Tokens.Jwt; // Add this directive for JWT token
 using System.Text; // Add this directive for Encoding
 using GeFeSLE;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Primitives;
 
 
 public static class UserSessionService
@@ -34,7 +35,7 @@ public static class UserSessionService
             UserManager<GeFeSLEUser> userManager)
     {
         var fn = "UpdateSessionAccessTime"; DBg.d(LogLevel.Trace, fn);
-        
+
         var sessionUser = amILoggedIn(context);
         if (sessionUser.UserIdentityIsAuthenticated)
         {
@@ -146,7 +147,7 @@ public static class UserSessionService
     public static void AddAccessToken(HttpContext context, string provider, string accessToken)
     {
         DBg.d(LogLevel.Trace, "AddAccessTokenResponse");
-        
+
         if (provider == null || accessToken == null)
         {
             DBg.d(LogLevel.Error, "AddAccessTokenResponse: provider or accessToken is null");
@@ -186,7 +187,7 @@ public static class UserSessionService
         UserManager<GeFeSLEUser> userManager)
     {
         string? fn = "mapUserNameToDBUser"; DBg.d(LogLevel.Trace, fn);
-        
+
         if (username == null)
         {
             DBg.d(LogLevel.Trace, $"{fn} null username");
@@ -200,7 +201,8 @@ public static class UserSessionService
                 DBg.d(LogLevel.Debug, $"{fn} username {username} does NOT exist in the Database!");
                 return null;
             }
-            else {
+            else
+            {
                 DBg.d(LogLevel.Debug, $"{fn} username {user.UserName} does exist in the Database!");
                 return user;
             }
@@ -223,7 +225,7 @@ public static class UserSessionService
         DBg.d(LogLevel.Trace, $"{fn} username: {username}");
         bool isAuthenticated = context.User.Identity?.IsAuthenticated ?? false;
         DBg.d(LogLevel.Trace, $"{fn} isAuthenticated: {isAuthenticated}");
-    
+
         string? role = null;
         if (isAuthenticated == true && !string.IsNullOrEmpty(username))
         {
@@ -235,41 +237,82 @@ public static class UserSessionService
         DBg.d(LogLevel.Debug, $"{fn} returning {{ username: {returnTuple.username}, isAuthenticated: {returnTuple.isAuthenticated}, role: {returnTuple.role} }}");
         return returnTuple;
     }
-    
 
 
-    public static async Task<string?> dumpSession(HttpContext context,
-        string username,
-        UserManager<GeFeSLEUser> userManager)
+
+    public static async Task<string?> dumpSession(HttpContext context)
     {
         var fn = "dumpSession"; DBg.d(LogLevel.Trace, fn);
-        
-        GeFeSLEUser? user = await mapUserNameToDBUser(username, userManager);
-        if (user != null)
-        
+        IdentityUser? user = context.User?.Identity as IdentityUser;
+        var claims = context.User?.Claims.Select(c => new { c.Type, c.Value });
+        var cookies = context.Request.Headers["Cookie"].ToString();
+        var prettyCookies = PrettifyCookieHeader(cookies);
+        context.Request.Headers["Cookie"] = "<have been prettified - see below>";
+
+        // also get the session data:
+        var sessionData = new Dictionary<string, string>();
+        foreach (var key in context.Session.Keys)
+            {
+            sessionData[key] = context.Session.GetString(key);
+            }
+
+
+        var serializableContext = new
         {
-            var roles = await userManager.GetRolesAsync(user!);
-            var claims = context.User?.Claims.Select(c => new { c.Type, c.Value });
-            var session = JsonConvert.SerializeObject(new
+            Request = new
+            {
+                context.Request.Method,
+                context.Request.Scheme,
+                context.Request.Host,
+                context.Request.Path,
+                context.Request.QueryString,
+                context.Request.Headers,
+                context.Request.ContentType,
+                context.Request.ContentLength,
+                context.Request.Protocol
+            },
+            Response = new
+            {
+                context.Response.StatusCode,
+                Headers = context.Response.Headers.ToDictionary(h => h.Key, h => h.Value.ToString())
+            },
+            User = new
             {
                 user,
-                roles,
                 claims
-            }, new JsonSerializerSettings
-            {
-                ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-                Formatting = Formatting.Indented
-            });
-            DBg.d(LogLevel.Trace, $"{fn}: {session}");
-            return session;
-        }
-        else {
-            DBg.d(LogLevel.Error, $"{fn}: no user in db");
-            return null;
-        }
+            },
+            context.TraceIdentifier,
+            context.Connection.Id,
+            prettyCookies,
+            Session = sessionData
+        };
+        
+        
+        var session = JsonConvert.SerializeObject(serializableContext, new JsonSerializerSettings
+        {
+            ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+            Formatting = Formatting.Indented
+        });
+
+        DBg.d(LogLevel.Trace, $"{fn}: {session}");
+        return session;
     }
 
-
+    private static List<KeyValuePair<string, string>> PrettifyCookieHeader(string cookieHeader)
+    {
+        var cookies = cookieHeader.Split(";", StringSplitOptions.RemoveEmptyEntries);
+        var prettyCookies = new List<KeyValuePair<string, string>>();
+        foreach (var cookie in cookies)
+        {
+            // split it into name and value
+            var parts = cookie.Split("=", StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 2)
+            {
+                prettyCookies.Add(new KeyValuePair<string, string>(parts[0].Trim(), parts[1].Trim()));
+            }
+        }
+        return prettyCookies;
+    }
 }
 
 

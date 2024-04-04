@@ -96,8 +96,9 @@ public class GeList
         
         sb.AppendLine($"<p><a class=\"editlink\" href=\"_edit.list.html?listid={Id}\" style=\"display: none;\">Edit this list</a>");
         sb.AppendLine($" <a class=\"edititemlink\" href=\"_edit.item.html?listid={Id}\" style=\"display: none;\">Add new item</a>");
-        sb.AppendLine($" <a class=\"mastoimportlink\" href=\"_mastobookmark.html?listId={Id}\" style=\"display: none;\">import Masto bookmarks 2 here</a></p>");
-        sb.AppendLine($"<p> ");
+        sb.AppendLine($" <a class=\"mastoimportlink\" href=\"_mastobookmark.html?listId={Id}\" style=\"display: none;\">import Masto bookmarks 2 here</a>");
+        sb.AppendLine($" <a class=\"stickynoteslink\" href=\"/microsoftstickynotes/{Id}\" style=\"display: none;\">import Microsoft Sticky Notes here</a>");
+        sb.AppendLine($"</p><p> ");
         sb.AppendLine($" [ <a class=\"rsslink\" href=\"rss-{Name}.xml\">RSS Feed</a>");
         sb.AppendLine($" |  <a class=\"exportlink\" id=\"exportlink\" href=\"{Name}.json\">JSON</a> ]");
         sb.AppendLine("</p>");

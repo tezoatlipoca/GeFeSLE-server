@@ -28,6 +28,7 @@ using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 // using Microsoft.AspNetCore.Http.Extensions;
 using Newtonsoft.Json.Serialization;
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authentication.OAuth;
 
 
 
@@ -243,8 +244,25 @@ builder.Services.AddAuthentication(options =>
         //ggogle tasks
         //google saved/interests
 
-        options.Scope.Add("https://www.googleapis.com/auth/tasks");
+        //options.Scope.Add("https://www.googleapis.com/auth/tasks");
+        options.Scope.Add(GoogleController.GOOGLE_TASKS_API_TASKS_OAUTH_SCOPE);
         //options.Scope.Add("https://www.googleapis.com/auth/tasks.readonly");
+
+        options.Events = new OAuthEvents
+        {
+            OnCreatingTicket = async context =>
+            {
+                var accessToken = context.AccessToken;
+                DBg.d(LogLevel.Trace, "Google - OnCreatingTicket - token: " + accessToken);
+                // this is what copilot suggested, but I already have a method
+                // context.Response.Cookies.Append("MicrosoftAccessToken", accessToken, new CookieOptions
+                // {
+                //     HttpOnly = true,
+                //     Secure = true
+                // });
+                UserSessionService.AddAccessToken(context.HttpContext, "Google", accessToken!);
+            }
+        };
 
     })
 .AddMicrosoftAccount("Microsoft", options =>
@@ -267,9 +285,31 @@ builder.Services.AddAuthentication(options =>
     // elements stored in Outlook mail:
     // https://graph.microsoft.com/v1.0/me/MailFolders/notes/messages
 
+    options.Scope.Add("https://graph.microsoft.com/Mail.Read");
+
+
+
     // To-Do --> outlook Tasks
     // OneNote 
     // Microsoft Lists (coughLAMEcough)
+
+    // we have to EXPLICITLY store the access token for the Microsoft Graph API
+    // if we want to make use of it across multiple requests/endpoints.
+    options.Events = new OAuthEvents
+    {
+        OnCreatingTicket = async context =>
+        {
+            var accessToken = context.AccessToken;
+            DBg.d(LogLevel.Trace, "Microsoft - OnCreatingTicket - token: " + accessToken);
+            // this is what copilot suggested, but I already have a method
+            // context.Response.Cookies.Append("MicrosoftAccessToken", accessToken, new CookieOptions
+            // {
+            //     HttpOnly = true,
+            //     Secure = true
+            // });
+            UserSessionService.AddAccessToken(context.HttpContext, "Microsoft", accessToken!);
+        }
+    };
 
 });
 
@@ -1614,16 +1654,11 @@ app.MapGet("/oauthcallback", async (HttpContext context,
     // so at this point the user has already been authenticated by google or whatever
     // we need to sign the user into OUR system; create a session for them. 
 
-    if (auth.Properties != null)
-    {
-        var options = new JsonSerializerOptions
-        {
-            WriteIndented = true
-        };
-    
-    var json = System.Text.Json.JsonSerializer.Serialize(auth.Properties.Items, options);
-    Console.WriteLine(json);
-    }
+    DBg.d(LogLevel.Trace, "-------------------------------------------------");
+    UserSessionService.dumpSession(context);
+    DBg.d(LogLevel.Trace, "-------------------------------------------------");
+
+
     // get provider out of the auth
     var provider = auth.Properties.Items[".AuthScheme"];
     // get the access_token out of the auth
@@ -1640,6 +1675,9 @@ app.MapGet("/oauthcallback", async (HttpContext context,
         return Results.Content(sb.ToString(), "text/html");
     }
     // find the user by email in our database
+    // TODO: the user should have been "granted" with both username and email in our system the same
+    //       Modify this so it checks for the OAuth user by either username OR email (or any other 
+    //      identifying info? dunno !?)
     GeFeSLEUser? user = await userManager.FindByEmailAsync(email);
     string? realizedRole = null;
     string username = null;
@@ -1897,6 +1935,178 @@ app.MapGet("/mastocallback", async (string code,
     }
 });
 
+app.MapGet("/microsoftstickynotes/{listid}", async (
+        int listid,
+        GeFeSLEDb db,
+        UserManager<GeFeSLEUser> userManager,
+        HttpContext httpContext) =>
+{
+    DBg.d(LogLevel.Trace, "microsoftstickynotes");
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+
+    // get the access token from the session service
+    string? token = UserSessionService.GetAccessToken(httpContext, "Microsoft");
+    // handle this better
+    if (token is null)
+    {
+        var sb = new StringBuilder();
+        string msg = $"You need to login/authorize w/ Microsoft - I don't have a token for you. ";
+
+        await GlobalStatic.GenerateUnAuthPage(sb, msg);
+        return Results.Content(sb.ToString(), "text/html");
+    }
+
+    // obtain the list - if it doesn't exist return 404 list not found
+    var list = await db.Lists.FindAsync(listid);
+    if (list is null) return Results.NotFound($"List {listid} not found.");
+
+    List<GeListItem> geListItems = await MicrosoftController.getMicrosoftOutlookTasks(httpContext, token);
+    if (geListItems is null) return Results.NotFound($"No Sticky Notes for {user.UserName} found.");
+    int numitems = geListItems.Count;
+    if (numitems == 0) return Results.NotFound($"No Sticky Notes for {user.UserName} found.");
+
+    // iterate through the list of GeListItems
+    foreach (GeListItem item in geListItems)
+    {
+        // set the listId of the item to the listid
+        item.ListId = list.Id;
+        // add a blurb to the end of the .comment field saying who imported this item from where and when
+        item.Comment += GlobalStatic.ImportAttribution(user.UserName, "Microsoft Sticky Notes", list.Name);
+
+
+        // add the item to the database
+        db.Items.Add(item);
+    }
+    // save the changes to the database
+    await db.SaveChangesAsync();
+
+    // regenerate all the list artifacts
+    _ = list.GenerateHTMLListPage(db);
+    _ = list.GenerateRSSFeed(db);
+    _ = list.GenerateJSON(db);
+
+    return Results.Ok($"Retreived {numitems} Sticky Notes..");
+
+}).AllowAnonymous()
+.RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser"
+});
+
+
+
+app.MapGet("/googletasklists", async (
+        GeFeSLEDb db,
+        UserManager<GeFeSLEUser> userManager,
+        HttpContext httpContext) =>
+{
+    var fn = "/googletasklists";
+    DBg.d(LogLevel.Trace, fn);
+    GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    if (me is null)
+    {
+        var sb = new StringBuilder();
+        string msg = $"You need to login. ";
+
+        await GlobalStatic.GenerateUnAuthPage(sb, msg);
+        return Results.Content(sb.ToString(), "text/html");
+    }
+    // get the access token from the session service
+    string? token = UserSessionService.GetAccessToken(httpContext, "Google");
+    // handle this better
+    if (token is null)
+    {
+        var sb = new StringBuilder();
+        string msg = $"You need to login/authorize w/ Google - I don't have a token for you. ";
+
+        await GlobalStatic.GenerateUnAuthPage(sb, msg);
+        return Results.Content(sb.ToString(), "text/html");
+    }
+
+    List<(string, string)> taskLists = await GoogleController.getGoogleTaskLists(token);
+
+    if (taskLists is null)
+    {
+        return Results.NotFound($"No Google Task Lists for {me.UserName} found.");
+    }
+    if (taskLists.Count == 0) return Results.NotFound($"No Google Task Lists for {me.UserName} found.");
+    
+    StringBuilder listChoosePage = await GoogleController.makeTaskListChooser(taskLists,  db, httpContext, userManager, me);
+
+    return Results.Content(listChoosePage.ToString(),"text/html");
+
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser, listowner, contributor"
+});
+
+app.MapGet("/googletasklistimport/{glistid}/{listid}", async (
+        string glistid,
+        int listid,
+        GeFeSLEDb db,
+        UserManager<GeFeSLEUser> userManager,
+        HttpContext httpContext) =>
+{
+    var fn = "/googletasklistimport";
+    DBg.d(LogLevel.Trace, fn);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+
+    // get the access token from the session service
+    string? token = UserSessionService.GetAccessToken(httpContext, "Google");
+    // handle this better
+    if (token is null)
+    {
+        var sb = new StringBuilder();
+        string msg = $"You need to login/authorize w/ Google - I don't have a token for you. ";
+
+        await GlobalStatic.GenerateUnAuthPage(sb, msg);
+        return Results.Content(sb.ToString(), "text/html");
+    }
+    if(glistid is null)
+    {
+        return Results.NotFound("No Google Task List ID specified.");
+
+    }
+    // find the GeLIst for this listid
+    var list = await db.Lists.FindAsync(listid);
+    if (list is null) return Results.NotFound();
+
+    List<GeListItem> tasks = await GoogleController.getGoogleTasks(glistid, token);
+
+    if(tasks is null)
+    {
+        return Results.NotFound($"No Google Tasks for {user.UserName} found.");
+    }
+    int numtasks = tasks.Count;
+    if(numtasks == 0) return Results.NotFound($"No Google Tasks for {user.UserName} found.");
+
+    foreach(GeListItem item in tasks)
+    {
+        item.ListId = list.Id;
+        item.Comment += GlobalStatic.ImportAttribution(user.UserName, "Google Task List", list.Name);
+        db.Items.Add(item);
+    }
+    await db.SaveChangesAsync();
+
+    // regenerate all the list artifacts
+    _ = list.GenerateHTMLListPage(db);
+    _ = list.GenerateRSSFeed(db);
+    _ = list.GenerateJSON(db);
+
+    //TODO: list.function that is responsible for a list's file name
+    // do for each file type. 
+    return Results.Redirect($"/{list.Name}.html");
+
+}).AllowAnonymous()
+.RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser"
+});
+
+
 // endpoint mastobookmarks to call GET /api/v1/bookmarks in mastodon API
 app.MapGet("/mastobookmarks/{listid}", async (int listid,
             int num2Get,
@@ -2014,6 +2224,7 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid,
                     // add the bookmark status class to the list
                     var item = new GeListItem();
                     item.ParseMastoStatus(status, listid);
+                    item.Comment += GlobalStatic.ImportAttribution(user.UserName, $"Mastodon ({realizedInstance})", list.Name);
 
                     db.Items.Add(item);
 
@@ -2456,31 +2667,24 @@ app.MapGet("/session", async (HttpContext httpContext,
 
     var sessionUser = UserSessionService.amILoggedIn(httpContext);
     string? niceSession = null;
-    if (!sessionUser.UserIdentityName.IsNullOrEmpty())
-    {
-        niceSession = await UserSessionService.dumpSession(httpContext, sessionUser!.UserIdentityName!, userManager);
-    }
+    niceSession = await UserSessionService.dumpSession(httpContext);
+
     string? msg = null;
-    if (niceSession.IsNullOrEmpty())
+
+    if (sessionUser.UserIdentityIsAuthenticated)
     {
-        if (sessionUser.UserIdentityIsAuthenticated)
-        {
-            //that's fine, that may just mean they weren't in the database. 
-            msg = $"{fn} - OAuth guest - username: {sessionUser.UserIdentityName} role: {sessionUser.UserClaimsRole}";
-        }
-        else
-        {
-            msg = $"{fn} - Anonymous guest session.";
-        }
+        //that's fine, that may just mean they weren't in the database. 
+        msg = $"{fn} - username: {sessionUser.UserIdentityName} role: {sessionUser.UserClaimsRole}";
     }
     else
     {
-        msg = $"{fn} - full user session (DB user logged in): <pre>{niceSession}</pre>";
+        msg = $"{fn} - Anonymous guest session.";
     }
-    sb.AppendLine($"<p>{msg}</p>");
-    DBg.d(LogLevel.Information, msg);
     sb.AppendLine($"SuperUser?: {httpContext.User.IsInRole("SuperUser")}");
     sb.AppendLine("<br>");
+    sb.AppendLine($"<p>{msg}</p><pre>{niceSession}</pre>");
+    DBg.d(LogLevel.Information, msg);
+
     sb.AppendLine("</body></html>");
     return Results.Content(sb.ToString(), "text/html");
 }).AllowAnonymous()
@@ -2577,6 +2781,10 @@ using (var scope = app.Services.CreateScope())
     _ = GlobalStatic.GenerateHTMLListIndex(db);
     ProtectedFiles.ReLoadFiles(db);
 }
+
+//BookmarkController.ImportNetscapeBookmarkFile("C:\\Users\\downe\\Desktop\\bookmarks.html");
+//Environment.Exit(0);
+
 app.Run($"http://{GlobalConfig.Bind}:{GlobalConfig.Port}");
 
 

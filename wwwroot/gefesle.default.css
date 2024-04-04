@@ -218,6 +218,15 @@ in imported items from exploding your table.
         
     }
 
+    .importattribution {
+        font-size: smaller;
+        font-style: italic;
+        border: 1px solid blue;
+        border-radius: 3px;
+        display: inline-block;
+        padding: 5px;
+    }
+
     input:disabled, textarea:disabled, select:disabled {
         background-color: grey;
         border: 1px dashed red;

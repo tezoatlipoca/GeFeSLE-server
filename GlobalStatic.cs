@@ -3,6 +3,7 @@ using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using Newtonsoft.Json;
 using Microsoft.AspNetCore.Identity;
+using System.Security.Claims;
 
 public static class GlobalStatic
 {
@@ -19,6 +20,7 @@ public static class GlobalStatic
     public static string microsoftClientId = "7167c2f7-7c2f-4039-8195-a046c6b05032";
     public static string microsoftClientSecret = "Bk98Q~rgkjDANYv8RMoKVQJ0D-1Usa4cBkXBLbbs";
     // secret ID: 504b1740-ce89-40fe-bbbf-b470393259e1
+    public static string microsoftTenantId = "f8cdef31-a31e-4b4a-93e4-5f571e91255a";
 
     public static string mastoClient_Name = "GeFeSLE";
     public static string mastoScopes = "read write:bookmarks";
@@ -124,6 +126,9 @@ public static class GlobalStatic
             sb.AppendLine($"<a href=\"/showusers\">show users</a> | ");
             sb.AppendLine($"<a href=\"/_edituser.html\">edit users</a> | ");
             sb.AppendLine($"<a href=\"/killsession\">nerf session</a> | ");
+            sb.AppendLine($"<a href=\"https://graph.microsoft.com/v1.0/me/MailFolders/notes/messages\">STICKY NOTES (RAW)</a> | ");
+            sb.AppendLine($"<a href=\"https://tasks.googleapis.com/tasks/v1/users/@me/lists\">GOOGLE TASKS (RAW)</a> | ");
+            sb.AppendLine($"<a href=\"/googletasklists\">/googletasklists</a> | ");
         sb.AppendLine("]</p>");
         
         sb.AppendLine($"<p>[ <a href=\"_login.html\">login</a> ]</p>");
@@ -220,6 +225,36 @@ public static class GlobalStatic
             DBg.d(LogLevel.Trace, "**** No JWT token found in Request.Headers *****");
         }
     }
+
+    public static StringBuilder DumpClaims(HttpContext context)
+    {
+        var sb = new StringBuilder();
+
+        foreach (var claim in context.User.Claims)
+        {
+            sb.AppendLine($"Claim Type: {claim.Type}");
+            sb.AppendLine($"Claim Value: {claim.Value}");
+
+            // Deserialize the claim value if it's a JSON string
+            if (claim.ValueType == ClaimValueTypes.String && claim.Value.StartsWith("{"))
+            {
+                try
+                {
+                    var claimObject = JsonConvert.DeserializeObject(claim.Value);
+                    sb.AppendLine($"Deserialized Claim Value: {claimObject}");
+                }
+                catch (Exception ex)
+                {
+                    sb.AppendLine($"Failed to deserialize Claim Value: {ex.Message}");
+                }
+            }
+
+            sb.AppendLine();
+        }
+
+        return sb;
+    }
+   
 
     public static StringBuilder DumpToken(string token)
     {
@@ -327,7 +362,15 @@ async public static Task SeedRoles(IServiceProvider serviceProvider)
     }
 }
 
-
+public static string? ImportAttribution(string username, string whereFrom, string listName) {
+    string fn = "ImportAttribution"; DBg.d(LogLevel.Trace, fn);
+    if(whereFrom == null || listName == null) {
+        DBg.d(LogLevel.Error, $"{fn} - whereFrom or listName is null, this shouldn't happen.");
+        return null;
+    }
+    string attribution = $"<div class=\"importattribution\">Imported from {whereFrom} on {DateTime.Now} by {username} to list {listName}</div>";
+    return attribution;    
+}
 
 }
 
