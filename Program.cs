@@ -1,12 +1,10 @@
 using Microsoft.EntityFrameworkCore;
-// using System.Linq.Expressions;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.MicrosoftAccount;
 using System.Security.Claims;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Authentication.Google;
@@ -16,17 +14,7 @@ using System.Text;
 using Mastonet.Entities;
 using Newtonsoft.Json.Linq;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-// using Microsoft.SqlServer.Server;
 using GeFeSLE;
-using System.IdentityModel.Tokens.Jwt;
-using SQLitePCL;
-using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
-// using Google.Apis.Auth.OAuth2.Flows;
-// using Google.Apis.Auth.OAuth2;
-// using Google.Apis.Util.Store;
-// using Google.Apis.Auth;
-// using Microsoft.AspNetCore.Http.Extensions;
-using Newtonsoft.Json.Serialization;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication.OAuth;
 
@@ -124,6 +112,7 @@ builder.Services.AddAuthentication(options =>
 {
     options.Cookie.Name = GlobalStatic.authCookieName;
     options.ExpireTimeSpan = TimeSpan.FromMinutes(30);
+    // TODO: load session timeout from config file
     options.Cookie.HttpOnly = true;
     options.Cookie.SameSite = SameSiteMode.None; // The authentication cookie can be sent in a cross-site context.
     options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // The authentication cookie is always sent over HTTPS.
@@ -250,17 +239,12 @@ builder.Services.AddAuthentication(options =>
 
         options.Events = new OAuthEvents
         {
-            OnCreatingTicket = async context =>
+            OnCreatingTicket = context =>
             {
                 var accessToken = context.AccessToken;
                 DBg.d(LogLevel.Trace, "Google - OnCreatingTicket - token: " + accessToken);
-                // this is what copilot suggested, but I already have a method
-                // context.Response.Cookies.Append("MicrosoftAccessToken", accessToken, new CookieOptions
-                // {
-                //     HttpOnly = true,
-                //     Secure = true
-                // });
                 UserSessionService.AddAccessToken(context.HttpContext, "Google", accessToken!);
+                return Task.CompletedTask;
             }
         };
 
@@ -297,17 +281,12 @@ builder.Services.AddAuthentication(options =>
     // if we want to make use of it across multiple requests/endpoints.
     options.Events = new OAuthEvents
     {
-        OnCreatingTicket = async context =>
+        OnCreatingTicket = context =>
         {
             var accessToken = context.AccessToken;
             DBg.d(LogLevel.Trace, "Microsoft - OnCreatingTicket - token: " + accessToken);
-            // this is what copilot suggested, but I already have a method
-            // context.Response.Cookies.Append("MicrosoftAccessToken", accessToken, new CookieOptions
-            // {
-            //     HttpOnly = true,
-            //     Secure = true
-            // });
             UserSessionService.AddAccessToken(context.HttpContext, "Microsoft", accessToken!);
+            return Task.CompletedTask;
         }
     };
 
@@ -509,7 +488,7 @@ app.Use(async (context, next) =>
                 {
                     var msg = $"{fn} User {sessionUser.UserIdentityName} is authenticated but not in database. Logging them out!";
                     DBg.d(LogLevel.Warning, msg);
-                    UserSessionService.UserLoggedOut(context);
+                    context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
                     var sb = new StringBuilder();
                     await GlobalStatic.GenerateUnAuthPage(sb, msg);
                     var result = Results.Content(sb.ToString(), "text/html");
@@ -549,7 +528,8 @@ app.Use(async (context, next) =>
         {
             await next.Invoke();
         }
-        catch (BadHttpRequestException ex) when (ex.InnerException is AntiforgeryValidationException)
+        catch (BadHttpRequestException ex) when
+         (ex.InnerException is AntiforgeryValidationException)
         {
             var antiForgeryEx = ex.InnerException as AntiforgeryValidationException;
             // Log the error if needed
@@ -588,134 +568,6 @@ app.UseCors(builder =>
         });
 
 
-
-// app.MapControllerRoute(
-//     name: "default",
-//     pattern: "{controller=Home}/{action=Index}/{id?}");
-
-
-app.MapPost("/login", async (GeFeSLEDb db,
-                    //
-                    HttpContext httpContext,
-                    UserManager<GeFeSLEUser> userManager,
-                    RoleManager<IdentityRole> roleManager) =>
-{
-    // Read the form data
-    var form = await httpContext.Request.ReadFormAsync();
-    DBg.d(LogLevel.Trace, "LOGIN: form data");
-    Dictionary<string, string> formDictionary = form.ToDictionary(x => x.Key, x => x.Value.ToString());
-    string jsonString = JsonConvert.SerializeObject(formDictionary);
-
-
-    DBg.d(LogLevel.Trace, jsonString);
-    string username = form["username"].ToString();
-    string password = form["password"].ToString();
-    string redirectUrl = form["redirectUrl"].ToString(); // this is null from the plugin
-    DBg.d(LogLevel.Trace, $"LOGIN: {username} {password} {redirectUrl}");
-    if (redirectUrl.IsNullOrEmpty())
-    {
-        redirectUrl = "/index.html";
-    }
-    // check the request headers to see if this is coming from the javascript API
-    // should probably make this a method in GlobalStatic
-    bool isJSApi = false;
-    if (httpContext.Request.Headers.ContainsKey("GeFeSLE-XMLHttpRequest") &&
-            (httpContext.Request.Headers["GeFeSLE-XMLHttpRequest"].ToString() == "true"))
-    {
-        DBg.d(LogLevel.Trace, "LOGIN: is JS API");
-        isJSApi = true;
-    }
-
-    StringBuilder sb = new StringBuilder();
-    // if username or password are null, return unauthorized
-    if (username.IsNullOrEmpty() || password.IsNullOrEmpty())
-    {
-        string msg = "LOGIN: Username or password is null.";
-        DBg.d(LogLevel.Trace, msg);
-        if (isJSApi)
-        {
-            DBg.d(LogLevel.Trace, $"LOGIN: RETURNING 400 = {msg}");
-            return Results.BadRequest(msg);
-
-        }
-        else
-        {
-            DBg.d(LogLevel.Trace, "LOGIN: REDIRECTING UNAUTH");
-            await GlobalStatic.GenerateUnAuthPage(sb, msg);
-            return Results.Content(sb.ToString(), "text/html");
-        }
-    } // username or password is null
-    else
-    {
-        // find the user in our userManager by username
-        GeFeSLEUser? user = await userManager.FindByNameAsync(username);
-        if (user is null)
-        {
-            string msg = "LOGIN: Username not found.";
-            DBg.d(LogLevel.Trace, msg);
-            if (isJSApi)
-            {
-                DBg.d(LogLevel.Trace, $"LOGIN: RETURNING 400 = {msg}");
-                return Results.BadRequest(msg);
-
-            }
-            else
-            {
-                DBg.d(LogLevel.Trace, "LOGIN: REDIRECTING UNAUTH");
-                await GlobalStatic.GenerateUnAuthPage(sb, msg);
-                return Results.Content(sb.ToString(), "text/html");
-            }
-        } // user not in db
-        else
-        {
-
-            var result = await userManager.CheckPasswordAsync(user, password!);
-            if (result)
-            {
-                // get the user's role
-                var roles = await userManager.GetRolesAsync(user);
-                var realizedRole = GlobalStatic.FindHighestRole(roles);
-
-
-                if (isJSApi)
-                {
-                    var token = UserSessionService.createToken(username!, realizedRole);
-                    DBg.d(LogLevel.Trace, $"LOGIN: User {username} logged in as {realizedRole} VIA API RETURNING 200 + TOKEN");
-
-                    return Results.Ok(new
-                    {
-                        token = token,
-                        username = username,
-                        role = realizedRole
-                    });
-                } // good login -API
-                else
-                {
-                    UserSessionService.createSession(httpContext, username!, realizedRole);
-                    _ = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-                    DBg.d(LogLevel.Trace, "LOGIN: OK - RETURNING REDIRECT");
-                    return Results.Redirect(redirectUrl!);
-                } // good login - web
-            } // good user pwd
-            else
-            {
-                string msg = $"LOGIN: Username {user} PASSWORD NOT CORRECT.";
-                if (isJSApi)
-                {
-                    DBg.d(LogLevel.Trace, "LOGIN: RETURNING 400");
-                    return Results.BadRequest(msg);
-                } // bad login API
-                else
-                {
-                    DBg.d(LogLevel.Trace, "LOGIN: REDIRECTING UNAUTH");
-                    await GlobalStatic.GenerateUnAuthPage(sb, msg);
-                    return Results.Content(sb.ToString(), "text/html");
-                } // bad login web
-
-            } // bad user pwd
-        } // user IN db
-    } // username and password are not null
-}); // end of MapPost/login
 
 // add an endpoint that adds a user to the database
 app.MapPost("/adduser", async (GeFeSLEUser user, GeFeSLEDb db,
@@ -1618,20 +1470,9 @@ app.MapGet("/regenerate/{listid}", async (int listid,
     Roles = "SuperUser,listowner,contributor"
 });
 
-app.MapGet("/microsoftlogin", async (HttpContext context) =>
-{
-    var properties = new AuthenticationProperties { RedirectUri = $"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/oauthcallback" };
-    DBg.d(LogLevel.Trace, $"microsoftlogin - sending {properties.RedirectUri} challenge");
-    await context.ChallengeAsync(MicrosoftAccountDefaults.AuthenticationScheme, properties);
-});
 
-app.MapGet("/googlelogin", async (HttpContext context) =>
-{
 
-    var properties = new AuthenticationProperties { RedirectUri = $"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/oauthcallback" };
-    DBg.d(LogLevel.Trace, $"googlelogin - sending {properties.RedirectUri} challenge");
-    await context.ChallengeAsync(GoogleDefaults.AuthenticationScheme, properties);
-});
+
 
 app.MapGet("/oauthcallback", async (HttpContext context,
         GeFeSLEDb db,
@@ -1646,7 +1487,7 @@ app.MapGet("/oauthcallback", async (HttpContext context,
     // look for auth success
     if (!auth.Succeeded)
     {
-        msg = "External OAuth authentication error";
+        msg = $"External OAuth authentication error: {auth.Failure?.Message}";
         await GlobalStatic.GenerateUnAuthPage(sb, msg);
         return Results.Content(sb.ToString(), "text/html");
     }
@@ -1705,122 +1546,187 @@ app.MapGet("/oauthcallback", async (HttpContext context,
 
 });
 
-app.MapPost("/mastoconnect", async (HttpContext context) =>
+
+// we cannot use LoginDto directly in the endpoint lambda inputs 
+// because otherwise the middleware will try to bind the incoming
+// request/form body to it, and then it wants an antiforgerytoken
+// and that's a world of pain. Read it manually from the request body. 
+
+app.MapPost("/me", async (HttpContext context,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    RoleManager<IdentityRole> roleManager) =>
 {
-    DBg.d(LogLevel.Trace, "mastoconnect");
-    string? instance = context.Request.Form["instance"];
+    string fn = "/me"; DBg.d(LogLevel.Trace, fn);
 
-    if (instance is null)
+    if (!context.Request.HasFormContentType)
     {
-        return Results.BadRequest("Specified Mastodon instance is null");
+        return Results.BadRequest("No form data.");
     }
-    else
+    var form = await context.Request.ReadFormAsync();
+    var login = new LoginDto
     {
-        var realizedInstance = instance;
-        // if the instance doesn't start with http:// or https://, add it
-        if (!realizedInstance.StartsWith("http://") && !realizedInstance.StartsWith("https://"))
+        Username = form["Username"],
+        Password = form["Password"],
+        OAuthProvider = form["OAuthProvider"],
+        Instance = form["Instance"]
+    };
+
+    if (!login.IsValid())
+    {
+        return Results.BadRequest("Could not deserialize body to LoginDto");
+    }
+    DBg.d(LogLevel.Trace, $"{fn} - login: {System.Text.Json.JsonSerializer.Serialize(login)}");
+
+    if (login.OAuthProvider.IsNullOrEmpty())
+    {
+        // check the request headers to see if this is coming from the javascript API
+        // should probably make this a method in GlobalStatic
+        bool isJSApi = false;
+        if (context.Request.Headers.ContainsKey("GeFeSLE-XMLHttpRequest") &&
+            (context.Request.Headers["GeFeSLE-XMLHttpRequest"].ToString() == "true"))
         {
-            realizedInstance = "https://" + realizedInstance;
+            DBg.d(LogLevel.Trace, $"{fn} LOGIN: is JS API");
+            isJSApi = true;
         }
-        // ping the instance to see if it's up
-        var client = new HttpClient();
-        var response = new HttpResponseMessage();
-        DBg.d(LogLevel.Trace, $"Pinging Mastodon instance {instance}");
-        try
+        StringBuilder sb = new StringBuilder();
+        string msg = null;
+        bool success = false;
+        string? realizedRole = null;
+        // not OAuth, so must be a local login. MUST have login+pwd
+        if (login.Username.IsNullOrEmpty() || login.Password.IsNullOrEmpty())
         {
-            response = client.GetAsync($"{realizedInstance}/api/v1/instance").Result;
-        }
-        catch (Exception e)
-        {
-            return Results.BadRequest($"Mastodon instance {instance} is down/unreachable: {e.Message}");
-        }
-        if (response.IsSuccessStatusCode)
-        {
-            DBg.d(LogLevel.Debug, $"Mastodon instance {instance} is up");
-
-            // construct our redirect Uri using our external hostname and port
-            string redirectUri = Uri.EscapeDataString($"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/mastocallback");
-
-            string scopes = GlobalStatic.mastoScopes;
-
-            string appRegisterUrl = $"{realizedInstance}/api/v1/apps";
-            DBg.d(LogLevel.Trace, $"appRegisterUrl: {appRegisterUrl}");
-
-            string postData = $"client_name={GlobalStatic.mastoClient_Name}&redirect_uris={redirectUri}&scopes={scopes}&website={GlobalStatic.webSite}";
-            DBg.d(LogLevel.Trace, $"postData: {postData}");
-
-            var content = new StringContent(postData, Encoding.UTF8, "application/x-www-form-urlencoded");
-            response = await client.PostAsync(appRegisterUrl, content);
-
-            // response can be OK 200 or 422 Unprocessable Entity
-            // if its 422, WE are going to return a bad request and itemize what could be wrong
-            if (response.StatusCode == System.Net.HttpStatusCode.UnprocessableEntity)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                return Results.BadRequest($"Mastodon instance {instance} returned 422: {error} - REDIRECT URI==HOSTNAME:HOSTPORT/mastocallback - check your config file. Sent: {postData}");
-            }
-            // mastodon API doesn't say anything about any other status code result, 422 and 200.
-            else
-            {
-                // at this point our response contains client_id and client_secret
-                // TODO: we're gonna want to save the client_id and client_secret
-                // on a PER instance basis, we don't want to register a new app for EVERY user 
-                // from that instance. 
-
-                var token = await response.Content.ReadAsStringAsync();
-                Token? tokenObject = JsonConvert.DeserializeObject<Token>(token);
-                // in the deserialized token object we want properties client_id and client_secret
-                if (tokenObject is null) return Results.BadRequest("Mastodon instance returned null token object");
-                var appId = tokenObject.id;
-                var clientId = tokenObject.client_id;
-                var clientSecret = tokenObject.client_secret;
-                DBg.d(LogLevel.Trace, $"clientId: {clientId} clientSecret: {clientSecret}");
-                // now store these in user's cookie session
-                context.Session.SetString("masto.app_id", appId!);
-                context.Session.SetString("masto.client_id", clientId!);
-                context.Session.SetString("masto.client_secret", clientSecret!);
-                context.Session.SetString("masto.instance", instance);
-                context.Session.SetString("masto.realizedInstance", realizedInstance);
-            }
-            // great and all but now we need to actually begin the Oauth2 process
-            return Results.Redirect("/mastologin");
+            msg = $"{fn} LOGIN: Username or password is null.";
+            DBg.d(LogLevel.Trace, msg);
         }
         else
         {
-            return Results.BadRequest($"Mastodon instance {instance} is down/unreachable: {response.StatusCode}");
+            // find the user in our userManager by username
+            GeFeSLEUser? user = await userManager.FindByNameAsync(login.Username);
+            if (user is null)
+            {
+                msg = $"{fn} LOGIN: Username not found in database.";
+                DBg.d(LogLevel.Trace, msg);
+            } // user not in db
+            else
+            {
+                var result = await userManager.CheckPasswordAsync(user, login.Password);
+                if (result)
+                {
+                    // get the user's role
+                    var roles = await userManager.GetRolesAsync(user);
+                    realizedRole = GlobalStatic.FindHighestRole(roles);
+                    success = true;
+
+
+                } // good user pwd
+                else
+                {
+                    msg = $"{fn} LOGIN: Username {user} PASSWORD NOT CORRECT.";
+                    // bad login web
+
+                } // bad user pwd
+            } // user IN db
+        }
+        // ----- return login results
+        if (!success)
+        {
+            if (isJSApi)
+            {
+                DBg.d(LogLevel.Trace, $"{fn} LOGIN: BAD - RETURNING 401");
+                return Results.Unauthorized();
+            } // bad login -API
+            else
+            {
+                DBg.d(LogLevel.Trace, $"{fn} LOGIN: BAD - RETURNING UNAUTH PAGE");
+                await GlobalStatic.GenerateUnAuthPage(sb, msg);
+                return Results.Content(sb.ToString(), "text/html");
+            } // bad login - web
+        }
+        else
+        {
+            if (isJSApi)
+            {
+                var token = UserSessionService.createToken(login.Username, realizedRole);
+                DBg.d(LogLevel.Trace, $"{fn} LOGIN: User {login.Username} logged in as {realizedRole} VIA API RETURNING 200 + TOKEN");
+
+                return Results.Ok(new
+                {
+                    token = token,
+                    username = login.Username,
+                    role = realizedRole
+                });
+            } // good login -API
+            else
+            {
+                UserSessionService.createSession(context, login.Username, realizedRole);
+                _ = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
+                DBg.d(LogLevel.Trace, $"{fn} LOGIN: OK - RETURNING REDIRECT");
+                return Results.Redirect("/");
+            } // good login - web
         }
     }
-
-
-});
-
-app.MapGet("/mastologin", (HttpContext context) =>
-{
-    DBg.d(LogLevel.Trace, "mastologin");
-
-    // unlike the google Oauth2 login, we have to manually construct the POST request to the Mastodon server to get 
-    // the authorization URL
-    // because we don't know what mastodon instance the user's going to specify ahead of time.
-    // but we've already got these stored in the user's session cookie
-
-    string? appId = context.Session.GetString("masto.app_id");
-    string? clientId = context.Session.GetString("masto.client_id");
-    string? clientSecret = context.Session.GetString("masto.client_secret");
-    string? instance = context.Session.GetString("masto.instance");
-    string? realizedInstance = context.Session.GetString("masto.realizedInstance");
-
-    if (appId is null || clientId is null || clientSecret is null || instance is null || realizedInstance is null)
+    // its OAuth
+    DBg.d(LogLevel.Debug, $"{fn} - login.OAuthProvider: {login.OAuthProvider}");
+    AuthenticationProperties properties = new AuthenticationProperties { RedirectUri = $"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/oauthcallback" };
+    string? authorizationScheme = null;
+    switch (login.OAuthProvider)
     {
-        return Results.BadRequest("BAD/MISSING Mastodon parameters in session cookie - dunno, did you forget to _login.html -> /mastoconnect?");
+        case "microsoft":
+            {
+                authorizationScheme = MicrosoftAccountDefaults.AuthenticationScheme;
+                break;
+            }
+        case "google":
+            {
+                authorizationScheme = GoogleDefaults.AuthenticationScheme;
+                break;
+            }
+        case "mastodon":
+            {
+                if (login.Instance is null)
+                {
+                    return Results.BadRequest("Selected OAuth provider Mastodon but missing Mastodon instance.");
+                }
+                (bool isUP, string? ynot) = await MastoController.checkInstance(login.Instance);
+                if (!isUP)
+                {
+                    return Results.BadRequest($"Mastodon instance {login.Instance} is down/unreachable: {ynot}");
+                }
+                else
+                {
+                    string instance = ynot; // steal that before we ovewrite it
+                    (ApplicationToken? appToken, ynot) = await MastoController.registerAppWithInstance(instance);
+                    if (appToken is null)
+                    {
+                        return Results.BadRequest($"Could not register {GlobalStatic.applicationName} with {instance}: {ynot}");
+                    }
+                    else
+                    {
+                        string authorizationUrl = MastoController.getMastodonOAuthUrl(appToken);
+                        if (authorizationUrl is null)
+                        {
+                            return Results.BadRequest($"Could not get authorization URL with this appToken: {appToken}");
+                        }
+                        else
+                        {
+                            return Results.Redirect(authorizationUrl);
+                        }
+                    }
+                }
+            }
+
+        default:
+            {
+                return Results.BadRequest("Unknown OAuth provider");
+
+            }
+
     }
-    string redirectUri = Uri.EscapeDataString($"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/mastocallback");
-    DBg.d(LogLevel.Trace, $"redirectUri: {redirectUri}");
-    string authorizationUrl = $"{realizedInstance}/oauth/authorize?client_id={clientId}&response_type=code&redirect_uri={redirectUri}&scope={Uri.EscapeDataString(GlobalStatic.mastoScopes)}";
-    DBg.d(LogLevel.Trace, $"authorizationUrl: {authorizationUrl}");
+    DBg.d(LogLevel.Trace, $"{fn} {authorizationScheme} OAuth - sending {properties.RedirectUri} challenge");
+    return new CustomChallengeResult(authorizationScheme, properties);
 
-    return Results.Redirect(authorizationUrl);
 });
-
 
 // new endpoint that handles the Mastodon Oauth2 callback
 app.MapGet("/mastocallback", async (string code,
@@ -2031,10 +1937,10 @@ app.MapGet("/googletasklists", async (
         return Results.NotFound($"No Google Task Lists for {me.UserName} found.");
     }
     if (taskLists.Count == 0) return Results.NotFound($"No Google Task Lists for {me.UserName} found.");
-    
-    StringBuilder listChoosePage = await GoogleController.makeTaskListChooser(taskLists,  db, httpContext, userManager, me);
 
-    return Results.Content(listChoosePage.ToString(),"text/html");
+    StringBuilder listChoosePage = await GoogleController.makeTaskListChooser(taskLists, db, httpContext, userManager, me);
+
+    return Results.Content(listChoosePage.ToString(), "text/html");
 
 }).RequireAuthorization(new AuthorizeAttribute
 {
@@ -2064,7 +1970,7 @@ app.MapGet("/googletasklistimport/{glistid}/{listid}", async (
         await GlobalStatic.GenerateUnAuthPage(sb, msg);
         return Results.Content(sb.ToString(), "text/html");
     }
-    if(glistid is null)
+    if (glistid is null)
     {
         return Results.NotFound("No Google Task List ID specified.");
 
@@ -2075,14 +1981,14 @@ app.MapGet("/googletasklistimport/{glistid}/{listid}", async (
 
     List<GeListItem> tasks = await GoogleController.getGoogleTasks(glistid, token);
 
-    if(tasks is null)
+    if (tasks is null)
     {
         return Results.NotFound($"No Google Tasks for {user.UserName} found.");
     }
     int numtasks = tasks.Count;
-    if(numtasks == 0) return Results.NotFound($"No Google Tasks for {user.UserName} found.");
+    if (numtasks == 0) return Results.NotFound($"No Google Tasks for {user.UserName} found.");
 
-    foreach(GeListItem item in tasks)
+    foreach (GeListItem item in tasks)
     {
         item.ListId = list.Id;
         item.Comment += GlobalStatic.ImportAttribution(user.UserName, "Google Task List", list.Name);
@@ -2656,9 +2562,7 @@ app.MapPost("/deletelistuser", async ([FromBody] JsonElement data,
     Roles = "SuperUser,listowner"
 });
 
-app.MapGet("/session", async (HttpContext httpContext,
-    UserManager<GeFeSLEUser> userManager
-    ) =>
+app.MapGet("/session", async (HttpContext httpContext) =>
 {
     string fn = "/session"; DBg.d(LogLevel.Trace, fn);
 
@@ -2692,12 +2596,29 @@ app.MapGet("/session", async (HttpContext httpContext,
 { AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme });
 
 
-// /killsession - destroys any active cookie or jwt session
-app.MapGet("/killsession", (HttpContext httpContext) =>
+// 
+app.MapGet("/me/delete", (HttpContext httpContext) =>
 {
-    DBg.d(LogLevel.Trace, "killsession");
-    UserSessionService.UserLoggedOut(httpContext);
-    return Results.Ok("Session killed");
+    string fn = "/me"; DBg.d(LogLevel.Trace, fn);
+    
+    httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    // delete every Cookie
+    foreach (var cookie in httpContext.Request.Cookies)
+    {
+        httpContext.Response.Cookies.Delete(cookie.Key);
+    }
+    // kill all Session storage
+    httpContext.Session.Clear();
+    // create an html page with javascript that clears localStorage and sessionStorage
+    StringBuilder sb = new StringBuilder();
+    sb.AppendLine("<!DOCTYPE html><html><body>");
+    sb.AppendLine("<script>");
+    sb.AppendLine("localStorage.clear();");
+    sb.AppendLine("sessionStorage.clear();");
+    sb.AppendLine("window.location.href = '/';");
+    sb.AppendLine("</script>");
+    sb.AppendLine("</body></html>");
+    return Results.Content(sb.ToString(), "text/html");
 }).AllowAnonymous()
 .RequireAuthorization(new AuthorizeAttribute
 { AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme });
@@ -2781,9 +2702,6 @@ using (var scope = app.Services.CreateScope())
     _ = GlobalStatic.GenerateHTMLListIndex(db);
     ProtectedFiles.ReLoadFiles(db);
 }
-
-//BookmarkController.ImportNetscapeBookmarkFile("C:\\Users\\downe\\Desktop\\bookmarks.html");
-//Environment.Exit(0);
 
 app.Run($"http://{GlobalConfig.Bind}:{GlobalConfig.Port}");
 

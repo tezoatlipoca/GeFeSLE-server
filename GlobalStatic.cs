@@ -119,20 +119,18 @@ public static class GlobalStatic
         sb.AppendLine($"<title>{pagetitle}</title>");
         sb.AppendLine("</head>");
         sb.AppendLine("<body >");
-        
+
         sb.AppendLine($"<p class=\"debugging\" style=\"display: none;\">[ Debugging is ON |");
-            sb.AppendLine($"<a href=\"/session\">Session</a> |");
-            sb.AppendLine($"<a href=\"/regenerate\">REGEN</a> |");
-            sb.AppendLine($"<a href=\"/showusers\">show users</a> | ");
-            sb.AppendLine($"<a href=\"/_edituser.html\">edit users</a> | ");
-            sb.AppendLine($"<a href=\"/killsession\">nerf session</a> | ");
-            sb.AppendLine($"<a href=\"https://graph.microsoft.com/v1.0/me/MailFolders/notes/messages\">STICKY NOTES (RAW)</a> | ");
-            sb.AppendLine($"<a href=\"https://tasks.googleapis.com/tasks/v1/users/@me/lists\">GOOGLE TASKS (RAW)</a> | ");
-            sb.AppendLine($"<a href=\"/googletasklists\">/googletasklists</a> | ");
+        sb.AppendLine($"<a href=\"/session\">Session</a> |");
+        sb.AppendLine($"<a href=\"/me/delete\">KILL Session</a> | ");
+        sb.AppendLine($"<a href=\"/regenerate\">REGEN</a> |");
+        sb.AppendLine($"<a href=\"/showusers\">show users</a> | ");
+        sb.AppendLine($"<a href=\"/_edituser.html\">edit users</a> | ");
+
         sb.AppendLine("]</p>");
-        
+
         sb.AppendLine($"<p>[ <a href=\"_login.html\">login</a> ]</p>");
-        
+
 
     }
 
@@ -254,7 +252,7 @@ public static class GlobalStatic
 
         return sb;
     }
-   
+
 
     public static StringBuilder DumpToken(string token)
     {
@@ -338,39 +336,41 @@ public static class GlobalStatic
             return roles[0];
         }
     }
-// this make sure we have the desired roles in the database
-// SuperUser - only one who can add admins
-// admins - can add/remove lists; can add/remove users
-// listowner - can add/remove items from a list
-// user - this is anyone who logs in - can view lists and items
+    // this make sure we have the desired roles in the database
+    // SuperUser - only one who can add admins
+    // admins - can add/remove lists; can add/remove users
+    // listowner - can add/remove items from a list
+    // user - this is anyone who logs in - can view lists and items
 
-async public static Task SeedRoles(IServiceProvider serviceProvider)
+    async public static Task SeedRoles(IServiceProvider serviceProvider)
 
-{
-    var roleManager = serviceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-
-    IdentityResult roleResult;
-
-    foreach (var roleName in GlobalStatic.roleNames)
     {
-        var roleExist = await roleManager.RoleExistsAsync(roleName);
-        if (!roleExist)
+        var roleManager = serviceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+
+        IdentityResult roleResult;
+
+        foreach (var roleName in GlobalStatic.roleNames)
         {
-            //create the roles and seed them to the database
-            roleResult = await roleManager.CreateAsync(new IdentityRole(roleName));
+            var roleExist = await roleManager.RoleExistsAsync(roleName);
+            if (!roleExist)
+            {
+                //create the roles and seed them to the database
+                roleResult = await roleManager.CreateAsync(new IdentityRole(roleName));
+            }
         }
     }
-}
 
-public static string? ImportAttribution(string username, string whereFrom, string listName) {
-    string fn = "ImportAttribution"; DBg.d(LogLevel.Trace, fn);
-    if(whereFrom == null || listName == null) {
-        DBg.d(LogLevel.Error, $"{fn} - whereFrom or listName is null, this shouldn't happen.");
-        return null;
+    public static string? ImportAttribution(string username, string whereFrom, string listName)
+    {
+        string fn = "ImportAttribution"; DBg.d(LogLevel.Trace, fn);
+        if (whereFrom == null || listName == null)
+        {
+            DBg.d(LogLevel.Error, $"{fn} - whereFrom or listName is null, this shouldn't happen.");
+            return null;
+        }
+        string attribution = $"<div class=\"importattribution\">Imported from {whereFrom} on {DateTime.Now} by {username} to list {listName}</div>";
+        return attribution;
     }
-    string attribution = $"<div class=\"importattribution\">Imported from {whereFrom} on {DateTime.Now} by {username} to list {listName}</div>";
-    return attribution;    
-}
 
 }
 

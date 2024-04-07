@@ -1,33 +1,46 @@
 <!DOCTYPE html>
 <html>
-    <title>LOGIN PAGE</title>
-        <head>
-            <meta charset="UTF-8">
-        <script>
-            const urlParams = new URLSearchParams(window.location.search);
-            const returnUrl = urlParams.get('ReturnUrl');
-            if(returnUrl) {
-                document.getElementById('loginredirecturl').value = returnUrl;
-            }
-        </script>
-            <link rel="stylesheet" type="text/css" href="/gefesle.default.css">
-            <link rel="icon" href="/gefesle.ff.png">
-        </head>
-        <body>
-            <h1>Login</h1>
-            <p>Please enter your username and password - you SQUID</p>
-            <form method='post' action='/login'>
-                <input type='hidden' name='loginredirecturl' value=''>
-                
-                <label for='username'>Username:</label><br>
-                <input type='text' id='username' name='username'><br>
-                <label for='password'>Password:</label><br>
-                <input type='password' id='password' name='password'><br>
-                <input type='submit' value='Login'>
-            </form>
-            <p>
-                <h2>Or log in with:</h2>
-                <h3><a href="/googlelogin">Google</a> | <a href="/microsoftlogin">Microsoft</a> | <a href="/_mastodon.html">Mastodon</a></h3>
-            </p>
-        </body>
-    </html>
+<title>LOGIN PAGE</title>
+
+<head>
+    <meta charset="UTF-8">
+
+    <link rel="stylesheet" type="text/css" href="/gefesle.default.css">
+    <link rel="icon" href="/gefesle.ff.png">
+</head>
+
+<body>
+    <h1>Login</h1>
+    <form id="loginForm" method="POST" action="/me">
+        <table>
+            <tr>
+                <td>
+
+                    <label for='Username'>Username:</label><br>
+                    <input type='text' id='Username' name='Username'><br>
+                    <label for='Password'>Password:</label><br>
+                    <input type='Password' id='Password' name='Password'><br>
+                    <input type="button" onClick="Login('local');" value='Local login'>
+                </td>
+                <td>
+                    <p>Or login <i>with..</i></it>
+                    </p>
+                    <input type="hidden" id="OAuthProvider" name="OAuthProvider">
+                    <input type="button" onClick="Login('google');" value='Google login'><br>
+                    <input type="button" onClick="Login('microsoft');" value='Microsoft login'><br>
+                    <input type="button" onClick="Login('mastodon');" value='Mastodon login'>
+                    <input type="text" id="Instance" name="Instance"> &lt;- Instance (you do not need http:// or https://)<br>
+                </td>
+            </tr>
+            <tr>
+                <td colspan='2'>
+                    <span id='result'></span>
+            </tr>
+        </table>
+    </form>
+</body>
+<script src="_utils.js"></script>
+<script src="_login.js"></script>
+
+
+</html>

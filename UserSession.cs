@@ -21,14 +21,6 @@ public static class UserSessionService
     //     // Other service registrations...
     // }
 
-    public static void UserLoggedOut(HttpContext context)
-    {
-        // if its not null, get the user name
-        var username = context.User?.Identity?.Name;
-
-        context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        DBg.d(LogLevel.Trace, "UserLoggedOut: " + username);
-    }
 
     public static GeFeSLEUser? UpdateSessionAccessTime(HttpContext context,
             GeFeSLEDb db,
