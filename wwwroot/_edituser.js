@@ -505,7 +505,8 @@ document.addEventListener('DOMContentLoaded', getUsers);
 document.getElementById('edituserform').addEventListener('submit', updateoraddUser);
 
 // add onClick event to the changepassword button
-document.getElementById('setPassword').addEventListener('click', changePassword);
+//document.getElementById('setPassword').addEventListener('click', changePassword);
+//document.getElementById('setPassword').addEventListener('click', sendHARDReset);
 
 // when the radio button neworupdate is changed from update to new, clear the form
 document.getElementById('new').addEventListener('change', function () {

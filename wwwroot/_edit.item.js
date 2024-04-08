@@ -15,7 +15,7 @@ async function getItem() {
         c(RC.BAD_REQUEST);
         return;
         }
-    let [username, role] = await amloggedin();
+    let [id, username, role] = await amloggedin();
         console.debug(fn + ' | username: ' + username);
         console.debug(fn + ' | role: ' + role);
     if (!isSuperUser(role) && !isListOwner(role)){
@@ -170,7 +170,7 @@ async function updateItem(e) {
         c(RC.BAD_REQUEST);
         return;
         }
-    let [username, role] = await amloggedin();
+    let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
     if (!isSuperUser(role) && !isListOwner(role)){

@@ -200,14 +200,14 @@ builder.Services.AddAuthentication(options =>
 
             OnMessageReceived = context =>
             {
-                var fn = "jwt middleware";
-                DBg.d(LogLevel.Trace, $"{fn} - OnMessageReceived");
+                var fn = "_Middleware.JWT_";
+                DBg.d(LogLevel.Trace, $"{fn} OnMessageReceived");
                 return Task.CompletedTask;
             },
             OnChallenge = context =>
             {
-                var fn = "jwt middleware";
-                DBg.d(LogLevel.Trace, $"{fn} - OnChallenge");
+                var fn = "_Middleware.JWT_";
+                DBg.d(LogLevel.Trace, $"{fn} OnChallenge");
                 return Task.CompletedTask;
             },
 
@@ -423,7 +423,7 @@ app.UseAntiforgery();
 
 app.Use(async (context, next) =>
     {
-        var fn = "_Middleware_.Use"; DBg.d(LogLevel.Trace, fn);
+        var fn = "_Middleware.Use_"; DBg.d(LogLevel.Trace, fn);
 
         // like in our authentication redirects above, we want to 
         // detect if this is a CORS preflight request and if so, add the headers
@@ -446,7 +446,7 @@ app.Use(async (context, next) =>
             // Handle preflight request
             if (context.Request.Method == "OPTIONS")
             {
-                DBg.d(LogLevel.Trace, "_CORs Preflight");
+                DBg.d(LogLevel.Trace, $"{fn} _CORs Preflight");
                 context.Response.StatusCode = 200;
                 await context.Response.WriteAsync(string.Empty);
                 return;
@@ -461,17 +461,17 @@ app.Use(async (context, next) =>
         var roleManager = context.RequestServices.GetRequiredService<RoleManager<IdentityRole>>();
 
         var path = context.Request.Path.Value;
-        DBg.d(LogLevel.Trace, $"{fn} - protected file check: {path}");
-        var sessionUser = UserSessionService.amILoggedIn(context);
+        DBg.d(LogLevel.Trace, $"{fn} protected file check: {path}");
+        UserDto sessionUser = UserSessionService.amILoggedIn(context);
 
         if (path != null && ProtectedFiles.ContainsFile(path))
         {
             // is the user logged in? 
 
-            if (!sessionUser.UserIdentityIsAuthenticated)
+            if (!sessionUser.IsAuthenticated)
             {
                 // no - make a nice redirect page like the normal UNAUTH page above. 
-                DBg.d(LogLevel.Debug, $"{fn} - Protected file {path} - requires authenticated user. 401-Reject");
+                DBg.d(LogLevel.Debug, $"{fn} Protected file {path} - requires authenticated user. 401-Reject");
                 var sb = new StringBuilder();
                 string msg = $"401 -You are not authorized to access {path}";
                 await GlobalStatic.GenerateUnAuthPage(sb, msg);
@@ -481,12 +481,12 @@ app.Use(async (context, next) =>
             }
             else
             {
-                var user = await UserSessionService.mapUserNameToDBUser(sessionUser.UserIdentityName!, userManager);
+                var user = await UserSessionService.mapUserNameToDBUser(sessionUser.UserName, userManager);
                 // if the user isn't in the db (null here) but we're authenticated we have an issue
                 // maybe someone deleted them from db after they logged in. 
                 if (user is null)
                 {
-                    var msg = $"{fn} User {sessionUser.UserIdentityName} is authenticated but not in database. Logging them out!";
+                    var msg = $"{fn} User {sessionUser.UserName} is authenticated but not in database. Logging them out!";
                     DBg.d(LogLevel.Warning, msg);
                     context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
                     var sb = new StringBuilder();
@@ -497,11 +497,11 @@ app.Use(async (context, next) =>
                 }
                 else
                 {
-                    (bool isAllowed, string? ynot) = await ProtectedFiles.IsFileVisibleToUser(context, path, user, userManager);
+                    (bool isAllowed, string? ynot) = await ProtectedFiles.IsFileVisibleToUser(path, user, userManager);
                     if (!isAllowed)
                     {
                         // no - make a nice redirect page like the normal UNAUTH page using the ynot message  
-                        DBg.d(LogLevel.Debug, $"{fn} - Protected file {path} - UNAUTH: {ynot}");
+                        DBg.d(LogLevel.Debug, $"{fn} Protected file {path} - UNAUTH: {ynot}");
                         var sb = new StringBuilder();
                         string msg = $"401 -You are not authorized to access {path}<br>{ynot}";
                         await GlobalStatic.GenerateUnAuthPage(sb, msg);
@@ -519,7 +519,7 @@ app.Use(async (context, next) =>
         }
         else
         {
-            string msg = $"{path} <-- {sessionUser.UserIdentityName ?? "anonymous"} [{sessionUser.UserClaimsRole ?? "no role"}] from {remoteIpAddress}";
+            string msg = $"{path} <-- {sessionUser.UserName ?? "anonymous"} [{sessionUser.Role ?? "no role"}] from {remoteIpAddress}";
             DBg.d(LogLevel.Information, msg);
         }
 
@@ -570,18 +570,17 @@ app.UseCors(builder =>
 
 
 // add an endpoint that adds a user to the database
-app.MapPost("/adduser", async (GeFeSLEUser user, GeFeSLEDb db,
+app.MapPost("/users", async (GeFeSLEUser user, GeFeSLEDb db,
 
             HttpContext httpContext,
             UserManager<GeFeSLEUser> userManager,
             RoleManager<IdentityRole> roleManager) =>
 {
-    // Read the form data
-    DBg.d(LogLevel.Trace, $"adduser: {user.UserName} {user.Email}");
+    string fn = "/users (POST)"; DBg.d(LogLevel.Trace, $"{fn}: {user.UserName} {user.Email}");
     // if username AND email are null, return bad request
     if (user.UserName.IsNullOrEmpty() && user.Email.IsNullOrEmpty())
     {
-        DBg.d(LogLevel.Trace, "adduser: username AND email is null ==> 400");
+        DBg.d(LogLevel.Trace, $"{fn} username AND email are both null ==> 400");
         return Results.BadRequest();
     }
     else
@@ -591,20 +590,21 @@ app.MapPost("/adduser", async (GeFeSLEUser user, GeFeSLEDb db,
         {
             user.UserName = user.Email;
         }
-        // we should probably catch if the pwd is blank but for now, meh. 
         try
         {
             var result = await userManager.CreateAsync(user);
             if (result.Succeeded)
             {
-                DBg.d(LogLevel.Trace, "adduser: user created");
-                return Results.Created($"/showusers/{user.Id}", user);
+                // var token = await userManager.GeneratePasswordResetTokenAsync(user);
+                // var result = await userManager.ResetPasswordAsync(user, token, newpassword!);
+                DBg.d(LogLevel.Trace, $"{fn} user created");
+                return Results.Created($"/users/{user.Id}", user);
             }
             else
             {
                 foreach (var error in result.Errors)
                 {
-                    DBg.d(LogLevel.Trace, $"adduser - Error: {error.Code}, Description: {error.Description}");
+                    DBg.d(LogLevel.Trace, $"{fn} - Error: {error.Code}, Description: {error.Description}");
                 }
                 return Results.BadRequest(result.Errors);
             }
@@ -623,8 +623,8 @@ app.MapPost("/adduser", async (GeFeSLEUser user, GeFeSLEDb db,
 
 
 // add an endpoint that modifies a user in the database
-app.MapPut("/modifyuser", async (GeFeSLEUser user, GeFeSLEDb db,
-
+app.MapPut("/modifyuser", async (GeFeSLEUser user,
+            GeFeSLEDb db,
             HttpContext httpContext,
             UserManager<GeFeSLEUser> userManager,
             RoleManager<IdentityRole> roleManager) =>
@@ -774,63 +774,143 @@ app.MapGet("/showusers", async (GeFeSLEDb db,
     Roles = "SuperUser,listowner"
 });
 
+// If a user is in the database (and they have successfully logged in)
+// generates a pwd reset token
+// NOTE: that by requiring authentication this does mean that
+// if a user has forgotten their pwd, a SuperUser can HARD reset it
+// but they can't request a pwd reset themselves
+// This is deliberate until we have outbound email and checks to ensure
+// all local users have actual email accounts (we need verification etc.)
 
-app.MapPost("/setpassword", async ([FromBody] JsonElement data,
+app.MapGet("/users/{userid}/password", async (string userid,
+    HttpContext context,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager) =>
+{
+    string fn = "/users/{userid}/password (GET)"; DBg.d(LogLevel.Trace, fn);
+    GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
+
+    var user = await userManager.FindByIdAsync(userid);
+    if (user is null)
+    {
+        DBg.d(LogLevel.Trace, $"{fn} user {userid} not found");
+        return Results.NotFound();
+    }
+    else
+    {
+        var token = await userManager.GeneratePasswordResetTokenAsync(user);
+        return Results.Ok(token);
+    }
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser, listowner, contributor"
+});
+
+// A SuperUser can reset a user's password to an arbitrary value
+app.MapDelete("/users/{userid}/password", async (string userid,
+        [FromBody] PasswordChangeDto passwordChangeDto,
         GeFeSLEDb db,
-
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    DBg.d(LogLevel.Trace, "setpassword");
+    string fn = "/users/{userid}/password (DEL)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-
-    try
+    string msg;
+    var user = await userManager.FindByIdAsync(userid);
+    if (user is null)
     {
-        string? username = data.GetProperty("userName").GetString();
-        string? newpassword = data.GetProperty("newPassword").GetString();
-        // if either of these is null, return bad request
-        if (username.IsNullOrEmpty() || newpassword.IsNullOrEmpty())
+        msg = $"{fn} user {userid} not found";
+        DBg.d(LogLevel.Trace, msg);
+        return Results.NotFound();
+    }
+    else if (passwordChangeDto.NewPassword.IsNullOrEmpty())
+    {
+        msg = $"{fn} new password is null";
+        DBg.d(LogLevel.Trace, msg);
+        return Results.BadRequest(msg);
+    }
+    // else if (passwordChangeDto.ResetToken.IsNullOrEmpty())
+    // {
+    //    msg = $"{fn} reset token is null";
+    //    DBg.d(LogLevel.Trace, msg);
+    //    return Results.BadRequest(msg);
+    //}
+    else
+    {
+        var token = await userManager.GeneratePasswordResetTokenAsync(user);
+        var result = await userManager.ResetPasswordAsync(user, token, passwordChangeDto.NewPassword);
+        if (result.Succeeded)
         {
-            return Results.BadRequest();
+            return Results.Ok();
         }
         else
         {
-
-            // Get the user from UserManager
-            var user = await userManager.FindByNameAsync(username!);
-            if (user is null)
+            foreach (var error in result.Errors)
             {
-                return Results.NotFound();
+                DBg.d(LogLevel.Trace, $"Error: {error.Code}, Description: {error.Description}");
             }
-            else
-            {
-                var token = await userManager.GeneratePasswordResetTokenAsync(user);
-                var result = await userManager.ResetPasswordAsync(user, token, newpassword!);
-                if (result.Succeeded)
-                {
-                    return Results.Ok();
-                }
-                else
-                {
-                    foreach (var error in result.Errors)
-                    {
-                        DBg.d(LogLevel.Trace, $"Error: {error.Code}, Description: {error.Description}");
-                    }
-                    return Results.BadRequest(result.Errors);
-                }
-            }
+            return Results.BadRequest(result.Errors);
         }
     }
-    catch (Exception e)
-    {
-        DBg.d(LogLevel.Error, e.Message);
-        return Results.Problem(e.Message, statusCode: 500);
-    }
 
-    // change this so it can only be invoked by SuperUser/leave open for now until
-    // rework this to see what invoker's role is - all users can change THEIR password
-    // but only SuperUser or admin can change other's
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser"
+});
+
+// a user who has previous requested the reset token can change it
+// here. Again, like with the pwd reset token endpoint, this is 
+// limited to users who have already authenticated.
+// no "I forget my pwd" requests here. Have to be reset by SuperUsers.
+// (because we have no email validation in place yet)
+app.MapPost("/users/{userid}/password", async (string userid,
+        [FromBody] PasswordChangeDto passwordChangeDto,
+        GeFeSLEDb db,
+        HttpContext httpContext,
+        UserManager<GeFeSLEUser> userManager,
+        RoleManager<IdentityRole> roleManager) =>
+{
+    string fn = "/users/{userid}/password (POST)"; DBg.d(LogLevel.Trace, fn);
+    GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    string msg;
+    var user = await userManager.FindByIdAsync(userid);
+    if (user is null)
+    {
+        msg = $"{fn} user {userid} not found";
+        DBg.d(LogLevel.Trace, msg);
+        return Results.NotFound();
+    }
+    else if (passwordChangeDto.NewPassword.IsNullOrEmpty())
+    {
+        msg = $"{fn} new password is null";
+        DBg.d(LogLevel.Trace, msg);
+        return Results.BadRequest(msg);
+    }
+    else if (passwordChangeDto.ResetToken.IsNullOrEmpty())
+    {
+        msg = $"{fn} reset token is null";
+        DBg.d(LogLevel.Trace, msg);
+        return Results.BadRequest(msg);
+    }
+    else
+    {
+        var result = await userManager.ResetPasswordAsync(user, passwordChangeDto.ResetToken, passwordChangeDto.NewPassword);
+        if (result.Succeeded)
+        {
+            return Results.Ok();
+        }
+        else
+        {
+            foreach (var error in result.Errors)
+            {
+                DBg.d(LogLevel.Trace, $"Error: {error.Code}, Description: {error.Description}");
+            }
+            return Results.BadRequest(result.Errors);
+        }
+    }
 
 }).RequireAuthorization(new AuthorizeAttribute
 {
@@ -1414,9 +1494,6 @@ app.MapDelete("/deletelist/{id}", async (int id,
 });
 
 
-
-app.MapGet("/heartbeat", () => "OK  " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "(server time)");
-
 // add and endpoint that regenerates the html page for all lists
 app.MapGet("/regenerate", async (GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
@@ -1536,8 +1613,9 @@ app.MapGet("/oauthcallback", async (HttpContext context,
         var roles = await userManager.GetRolesAsync(user);
         realizedRole = GlobalStatic.FindHighestRole(roles);
         msg = $"Welcome {username}! You are logged in as {realizedRole}";
+
     }
-    UserSessionService.createSession(context, username, realizedRole);
+    UserSessionService.createSession(context, user.Id ?? "OAuth", username, realizedRole);
     UserSessionService.storeProvider(context, provider!);
     UserSessionService.AddAccessToken(context, provider!, accessToken!);
     await GlobalStatic.GenerateLoginResult(sb, msg);
@@ -1554,6 +1632,7 @@ app.MapGet("/oauthcallback", async (HttpContext context,
 
 app.MapPost("/me", async (HttpContext context,
     GeFeSLEDb db,
+    IAntiforgery antiforgery,
     UserManager<GeFeSLEUser> userManager,
     RoleManager<IdentityRole> roleManager) =>
 {
@@ -1583,13 +1662,13 @@ app.MapPost("/me", async (HttpContext context,
         // check the request headers to see if this is coming from the javascript API
         // should probably make this a method in GlobalStatic
         bool isJSApi = false;
-        if (context.Request.Headers.ContainsKey("GeFeSLE-XMLHttpRequest") &&
-            (context.Request.Headers["GeFeSLE-XMLHttpRequest"].ToString() == "true"))
+        if (GlobalStatic.IsAPIRequest(context.Request))
         {
             DBg.d(LogLevel.Trace, $"{fn} LOGIN: is JS API");
             isJSApi = true;
         }
         StringBuilder sb = new StringBuilder();
+        GeFeSLEUser? user = null; 
         string msg = null;
         bool success = false;
         string? realizedRole = null;
@@ -1602,7 +1681,7 @@ app.MapPost("/me", async (HttpContext context,
         else
         {
             // find the user in our userManager by username
-            GeFeSLEUser? user = await userManager.FindByNameAsync(login.Username);
+            user = await userManager.FindByNameAsync(login.Username);
             if (user is null)
             {
                 msg = $"{fn} LOGIN: Username not found in database.";
@@ -1647,19 +1726,21 @@ app.MapPost("/me", async (HttpContext context,
         {
             if (isJSApi)
             {
-                var token = UserSessionService.createToken(login.Username, realizedRole);
+                var token = UserSessionService.createJWToken(login.Username, realizedRole);
+                var antiforgerytoken = antiforgery.GetAndStoreTokens(context);
                 DBg.d(LogLevel.Trace, $"{fn} LOGIN: User {login.Username} logged in as {realizedRole} VIA API RETURNING 200 + TOKEN");
 
                 return Results.Ok(new
                 {
-                    token = token,
+                    token,
+                    antiforgerytoken,
                     username = login.Username,
-                    role = realizedRole
+                    role = realizedRole,
                 });
             } // good login -API
             else
             {
-                UserSessionService.createSession(context, login.Username, realizedRole);
+                UserSessionService.createSession(context, user.Id, user.UserName, realizedRole);
                 _ = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
                 DBg.d(LogLevel.Trace, $"{fn} LOGIN: OK - RETURNING REDIRECT");
                 return Results.Redirect("/");
@@ -1819,7 +1900,7 @@ app.MapGet("/mastocallback", async (string code,
 
             if (localuser is null)
             {
-                UserSessionService.createSession(httpContext, username!, "anonymous");
+                UserSessionService.createSession(httpContext, null, username!, "anonymous");
                 var msg = $"Hi {username} from the fediverse; You've been logged in with role: anonymous. All this means is you can't modify anything, but at least now you show up in our server logs.";
                 await GlobalStatic.GenerateLoginResult(sb, msg);
                 return Results.Content(sb.ToString(), "text/html");
@@ -1829,7 +1910,7 @@ app.MapGet("/mastocallback", async (string code,
                 // they're in there, which means we've added them, probably to assign them a role
                 var roles = await userManager.GetRolesAsync(localuser);
                 var realizedRole = GlobalStatic.FindHighestRole(roles);
-                UserSessionService.createSession(httpContext, localuser.UserName!, realizedRole);
+                UserSessionService.createSession(httpContext, localuser.Id, localuser.UserName!, realizedRole);
                 var msg = $"Hi {username} from the fediverse; You've been logged in with role: {realizedRole}.";
                 await GlobalStatic.GenerateLoginResult(sb, msg);
                 return Results.Content(sb.ToString(), "text/html");
@@ -2170,22 +2251,14 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid,
 });
 
 
-app.MapGet("/amloggedin", (HttpContext httpContext) =>
+app.MapGet("/me", (HttpContext httpContext) =>
 {
-    var fn = "/amloggedin"; DBg.d(LogLevel.Trace, fn);
+    var fn = "/me"; DBg.d(LogLevel.Trace, fn);
 
-    var sessionUser = UserSessionService.amILoggedIn(httpContext);
-    if (sessionUser.UserIdentityIsAuthenticated)
-    {
-        DBg.d(LogLevel.Information, $"{fn} --> username: {sessionUser.UserIdentityName} role: {sessionUser.UserClaimsRole}");
-        return Results.Ok(new { username = sessionUser.UserIdentityName, sessionUser.UserClaimsRole });
-    }
-    else
-    {
-        DBg.d(LogLevel.Information, $"{fn} --> username: null role: null");
-        return Results.Ok(new { username = (string?)null, role = (string?)null });
-    }
-})
+    UserDto sessionUser = UserSessionService.amILoggedIn(httpContext);
+    DBg.d(LogLevel.Information, $"{fn} --> {sessionUser}");
+    return Results.Ok(sessionUser);
+    })
 .AllowAnonymous()
 .RequireAuthorization(new AuthorizeAttribute
 { AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme });
@@ -2233,11 +2306,11 @@ app.MapGet("/getlistisee", async (
     var fn = "/getlistisee"; DBg.d(LogLevel.Trace, fn);
     var sessionUser = UserSessionService.amILoggedIn(httpContext);
     GeFeSLEUser? me = null;
-    if (sessionUser.UserIdentityIsAuthenticated)
+    if (sessionUser.IsAuthenticated)
     {
         me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     }
-    if (!sessionUser.UserIdentityIsAuthenticated || me is null)
+    if (!sessionUser.IsAuthenticated || me is null)
     {
         DBg.d(LogLevel.Trace, $"{fn} username is null/notlogged in // Only public lists");
         // user can only see lists that are .Visibility== GeListvisibility.Public
@@ -2248,8 +2321,8 @@ app.MapGet("/getlistisee", async (
     }
     else
     {
-        bool isSuperUser = await userManager.IsInRoleAsync(me, "SuperUser");
-        if (isSuperUser)
+        IList<string> roles = await userManager.GetRolesAsync(me);
+        if (roles.Contains("SuperUser"))
         {
             DBg.d(LogLevel.Trace, $"{fn}: SuperUser {me.UserName} // All lists");
             var listNames = await db.Lists.Select(l => l.Name).ToListAsync();
@@ -2263,7 +2336,7 @@ app.MapGet("/getlistisee", async (
 
             foreach (GeList list in lists)
             {
-                (bool canISee, string? ynot) = await ProtectedFiles.IsListVisibleToUser(httpContext, list, me, userManager);
+                (bool canISee, string? ynot) = ProtectedFiles.IsListVisibleToUser(list, me, roles);
                 if (canISee)
                 {
                     listnames.Add(list.Name!);
@@ -2575,14 +2648,14 @@ app.MapGet("/session", async (HttpContext httpContext) =>
 
     string? msg = null;
 
-    if (sessionUser.UserIdentityIsAuthenticated)
+    if (sessionUser.IsAuthenticated)
     {
         //that's fine, that may just mean they weren't in the database. 
-        msg = $"{fn} - username: {sessionUser.UserIdentityName} role: {sessionUser.UserClaimsRole}";
+        msg = $"{fn} --> username: {sessionUser.UserName} role: {sessionUser.Role}";
     }
     else
     {
-        msg = $"{fn} - Anonymous guest session.";
+        msg = $"{fn} --> Anonymous guest session.";
     }
     sb.AppendLine($"SuperUser?: {httpContext.User.IsInRole("SuperUser")}");
     sb.AppendLine("<br>");
@@ -2600,7 +2673,7 @@ app.MapGet("/session", async (HttpContext httpContext) =>
 app.MapGet("/me/delete", (HttpContext httpContext) =>
 {
     string fn = "/me"; DBg.d(LogLevel.Trace, fn);
-    
+
     httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     // delete every Cookie
     foreach (var cookie in httpContext.Request.Cookies)
@@ -2676,18 +2749,6 @@ app.MapPost("/fileuploadxfer", async (IFormFile file,
     Roles = "SuperUser,listowner,contributor"
 });
 
-
-app.MapGet("/antiforgerytoken", (IAntiforgery antiforgery,
-    HttpContext httpContext) =>
-{
-    DBg.d(LogLevel.Trace, "antiforgerytoken");
-    var token = antiforgery.GetAndStoreTokens(httpContext);
-    return Results.Ok(token);
-}).RequireAuthorization(new AuthorizeAttribute
-{
-    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
-    Roles = "SuperUser,listowner,contributor"
-});
 
 
 // lets always generate index.html once before we start

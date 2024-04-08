@@ -248,7 +248,7 @@ async function moveItem(itemid, listid) {
         c(RC.BAD_REQUEST);
         return;
         }
-    let [username, role] = await amloggedin();
+    let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
     if (!isSuperUser(role) && !isListOwner(role)){
@@ -379,7 +379,7 @@ async function addTag(itemid, tag) {
         c(RC.BAD_REQUEST);
         return;
         }
-    let [username, role] = await amloggedin();
+    let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
     if (!isSuperUser(role) && !isListOwner(role)){
@@ -464,7 +464,7 @@ async function removeTag(itemid, tag) {
         c(RC.BAD_REQUEST);
         return;
         }
-    let [username, role] = await amloggedin();
+    let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
     if (!isSuperUser(role) && !isListOwner(role)){
@@ -549,9 +549,17 @@ window.onload = async function () {
         localStorage.removeItem('result');
     }
 
-    let [username, role] = await amloggedin();
+    let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
+
+    if(username != null) {
+        console.debug(fn + ' | logged in');
+        links = document.getElementsByClassName('pwdchangelink');
+        for (let l of links) { l.style.display = ''; }
+        links = document.getElementsByClassName('loginlink');
+        for (let l of links) { l.style.display = 'none'; }
+        }
 
     if(isSuperUser(role) || isListOwner(role) ) {
         console.debug(fn + ' | logged in and either isSuperUser or isListOwner');

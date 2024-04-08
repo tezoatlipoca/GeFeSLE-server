@@ -231,9 +231,10 @@ public static class GoogleController
         sb.AppendLine("<p>Destination list</p>");
         sb.AppendLine("<select name=\"destinationList\">");
         List<GeList> lists = await db.Lists.ToListAsync();
+        IList<string> myRoles = await userManager.GetRolesAsync(me);
         foreach (GeList list in lists)
         {
-            (bool canISee, string? ynot) = await ProtectedFiles.IsListVisibleToUser(httpContext, list, me, userManager);
+            (bool canISee, string? ynot) = ProtectedFiles.IsListVisibleToUser(list, me, myRoles);
             if (canISee)
             {
                 sb.AppendLine($"<option value=\"{list.Id}\">{list.Name}</option>");

@@ -29,9 +29,9 @@ public static class UserSessionService
         var fn = "UpdateSessionAccessTime"; DBg.d(LogLevel.Trace, fn);
 
         var sessionUser = amILoggedIn(context);
-        if (sessionUser.UserIdentityIsAuthenticated)
+        if (sessionUser.IsAuthenticated)
         {
-            GeFeSLEUser? user = mapUserNameToDBUser(sessionUser.UserIdentityName!, userManager).Result;
+            GeFeSLEUser? user = userManager.FindByIdAsync(sessionUser.Id).Result;
             if (user != null)
             {
                 user.LastAccessTime = DateTime.UtcNow;
@@ -46,7 +46,7 @@ public static class UserSessionService
             {
                 // could be an anonymous OAuth user - someone who has logged in via an OAuth source 
                 // but they're not in our database (i.e. have been invited/added by a legit usesr)
-                DBg.d(LogLevel.Information, $"{fn}: User {sessionUser.UserIdentityName} (OAuth guest) [{sessionUser.UserClaimsRole}] to {context.Request.Path} from {context.Connection.RemoteIpAddress}");
+                DBg.d(LogLevel.Information, $"{fn}: User {sessionUser.UserName} (OAuth guest) [{sessionUser.Role}] to {context.Request.Path} from {context.Connection.RemoteIpAddress}");
                 return null;
             } // user NOT in db.
 
@@ -60,7 +60,7 @@ public static class UserSessionService
     }
 
 
-    public static string createToken(string username, string role)
+    public static string createJWToken(string username, string role)
     {
         // create a claims identity
         var claims = new List<Claim>
@@ -103,12 +103,13 @@ public static class UserSessionService
     }
 
 
-    public static void createSession(HttpContext httpContext, string username, string role)
+    public static void createSession(HttpContext httpContext, string userid, string username, string role)
     {
         DBg.d(LogLevel.Trace, "createSession");
         // create a claims identity
         var claims = new List<Claim>
         {
+            new Claim(ClaimTypes.NameIdentifier, userid),
             new Claim(ClaimTypes.Name, username),
             new Claim(ClaimTypes.Role, role)
         };
@@ -208,26 +209,20 @@ public static class UserSessionService
     // TODO: handle missing context.User/Identity gracefully
     // TODO: in all uses, see if we check for username == null and isAuthenticated == false; if so, 
     //       can we even have .isAuthenticated with a non-nul username? i.e. can we just check isAuthenticated?
-    public static (string? UserIdentityName, bool UserIdentityIsAuthenticated, string? UserClaimsRole) amILoggedIn(HttpContext context)
+    public static UserDto amILoggedIn(HttpContext context)
     {
         string fn = "amILoggedIn"; DBg.d(LogLevel.Trace, fn);
+        UserDto sessionUser = new UserDto();
         //GlobalStatic.dumpRequest(httpContext);
+        sessionUser.Id = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
+        sessionUser.UserName = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name)?.Value;
+        //DBg.d(LogLevel.Trace, $"{fn} username: {username}");
+        sessionUser.IsAuthenticated = context.User.Identity?.IsAuthenticated ?? false;
+        //DBg.d(LogLevel.Trace, $"{fn} isAuthenticated: {isAuthenticated}");
+        sessionUser.Role = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
+        DBg.d(LogLevel.Debug, $"{fn} returning {sessionUser}");
+        return sessionUser;
 
-        var username = context.User?.Identity?.Name ?? null;
-        DBg.d(LogLevel.Trace, $"{fn} username: {username}");
-        bool isAuthenticated = context.User.Identity?.IsAuthenticated ?? false;
-        DBg.d(LogLevel.Trace, $"{fn} isAuthenticated: {isAuthenticated}");
-
-        string? role = null;
-        if (isAuthenticated == true && !string.IsNullOrEmpty(username))
-        {
-            DBg.d(LogLevel.Trace, $"{fn} - valid cookie/jwt session");
-            role = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
-        }
-
-        var returnTuple = (username, isAuthenticated, role);
-        DBg.d(LogLevel.Debug, $"{fn} returning {{ username: {returnTuple.username}, isAuthenticated: {returnTuple.isAuthenticated}, role: {returnTuple.role} }}");
-        return returnTuple;
     }
 
 
@@ -239,14 +234,14 @@ public static class UserSessionService
         var claims = context.User?.Claims.Select(c => new { c.Type, c.Value });
         var cookies = context.Request.Headers["Cookie"].ToString();
         var prettyCookies = PrettifyCookieHeader(cookies);
-        context.Request.Headers["Cookie"] = "<have been prettified - see below>";
+        context.Request.Headers["Cookie"] = "have been prettified - see below";
 
         // also get the session data:
         var sessionData = new Dictionary<string, string>();
         foreach (var key in context.Session.Keys)
-            {
+        {
             sessionData[key] = context.Session.GetString(key);
-            }
+        }
 
 
         var serializableContext = new
@@ -278,15 +273,15 @@ public static class UserSessionService
             prettyCookies,
             Session = sessionData
         };
-        
-        
+
+
         var session = JsonConvert.SerializeObject(serializableContext, new JsonSerializerSettings
         {
             ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
             Formatting = Formatting.Indented
         });
 
-        DBg.d(LogLevel.Trace, $"{fn}: {session}");
+        //DBg.d(LogLevel.Trace, $"{fn}: {session}");
         return session;
     }
 

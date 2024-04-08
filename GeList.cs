@@ -57,17 +57,17 @@ public class GeList
         else if (oldVisibility > GeListVisibility.Public && newvisibility == GeListVisibility.Public)
         {
             ProtectedFiles.RemoveList(this);
-            
+
         }
 
-        
+
     }
 
 
     async public Task GenerateHTMLListPage(GeFeSLEDb db)
     {
         DBg.d(LogLevel.Trace, $"GenerateHTMLListPage: {Id}");
-        
+
 
         // create a new file in wwwroot with the name of the list
         var filename = $"{Name}.html";
@@ -80,7 +80,7 @@ public class GeList
 
         var sb = new StringBuilder();
         await GlobalStatic.GenerateHTMLHead(sb, $"{GlobalConfig.sitetitle}:{Name}");
-        
+
         if (GlobalConfig.bodyHeader != null)
         {
             var header = await File.ReadAllTextAsync(GlobalConfig.bodyHeader);
@@ -89,11 +89,12 @@ public class GeList
         sb.AppendLine($"<h1 class=\"listtitle\"><a class=\"indexlink\" href=\"index.html\">&lt;-</a> {Name}</h1>");
         sb.AppendLine($"<p class=\"listcreated\">Created: {CreatedDate.ToString("yyyy-MM-dd HH:mm:ss")}");
         sb.AppendLine($"Modified: {ModifiedDate.ToString("yyyy-MM-dd HH:mm:ss")}</p>");
-        if(Comment != null) {
+        if (Comment != null)
+        {
             var md = Markdown.ToHtml(Comment);
             sb.AppendLine($"<p class=\"listcomment\">{md}</p>");
         }
-        
+
         sb.AppendLine($"<p><a class=\"editlink\" href=\"_edit.list.html?listid={Id}\" style=\"display: none;\">Edit this list</a>");
         sb.AppendLine($" <a class=\"edititemlink\" href=\"_edit.item.html?listid={Id}\" style=\"display: none;\">Add new item</a>");
         sb.AppendLine($" <a class=\"mastoimportlink\" href=\"_mastobookmark.html?listId={Id}\" style=\"display: none;\">import Masto bookmarks 2 here</a>");
@@ -102,7 +103,7 @@ public class GeList
         sb.AppendLine($" [ <a class=\"rsslink\" href=\"rss-{Name}.xml\">RSS Feed</a>");
         sb.AppendLine($" |  <a class=\"exportlink\" id=\"exportlink\" href=\"{Name}.json\">JSON</a> ]");
         sb.AppendLine("</p>");
-        
+
         // display a form with a text box for the text and tags search parameters
         sb.AppendLine($"<span class=\"result\" id=\"result\"></span>");
         sb.AppendLine($"<span class=\"textsearch\"><form>Search Text (space separated)");
@@ -113,20 +114,22 @@ public class GeList
         sb.AppendLine("</form></span>");
         sb.AppendLine("<hr>");
         sb.AppendLine("<table class=\"itemtable\" id=\"itemtable\">");
-        
-  
+
+
         foreach (var item in items)
         {
             sb.AppendLine($"<tr class=\"itemrow\" id=\"{item.Id}\">");
             sb.AppendLine($"<td class=\"namecell\">{item.Name}</td>");
 
-            if(item.Comment != null) {
+            if (item.Comment != null)
+            {
                 var itemmd = Markdown.ToHtml(item.Comment);
                 sb.AppendLine($"<td class=\"commentcell\">{itemmd}</td>");
             }
-            else {
+            else
+            {
                 sb.AppendLine($"<td class=\"commentcell\"></td>");
-            }            
+            }
 
             sb.AppendLine($"<td class=\"tagscell\">");
             // wrap each tag in a span with a class of tag
@@ -151,7 +154,7 @@ public class GeList
         sb.AppendLine("<script src=\"_list_view.js\"></script>");
         //sb.AppendLine("<script src=\"_mastobookmark.js\"></script>");
 
-        
+
         await GlobalStatic.GeneratePageFooter(sb);
         DBg.d(LogLevel.Trace, $"Writing to {dest}");
         await File.WriteAllTextAsync(dest, sb.ToString());
@@ -213,7 +216,7 @@ public class GeList
         {
             var options = new JsonSerializerOptions
             {
-            WriteIndented = true // Set WriteIndented to true for pretty formatting
+                WriteIndented = true // Set WriteIndented to true for pretty formatting
             };
             var json = JsonSerializer.Serialize(items);
             var filename = $"{list.Name}.json";
@@ -222,5 +225,59 @@ public class GeList
             var link = $"/{Path.GetFileName(dest)}";
             DBg.d(LogLevel.Trace, $"JSON generated. Link: {link}");
         }
+    }
+
+    public (bool, string?) IsUserAllowedToView(GeFeSLEUser user)
+    {
+        string fn = "IsUserAllowedToViewList"; DBg.d(LogLevel.Trace, $"{fn} {user.UserName}");
+        string? ynot = null;
+        bool allowed = false;
+        switch (Visibility)
+        {
+            case GeListVisibility.Contributors:
+                if (Contributors.Contains(user) || ListOwners.Contains(user) || Creator == user)
+                {
+                    allowed = true;
+                    ynot =  $"Related list is CONTRIB access. User is a contributor/owner/creator.";
+                }
+                else
+                {
+                    ynot = $"User {user.UserName} is not a contributor/list owner/creator of list {Name}";
+                }
+                break;
+            case GeListVisibility.ListOwners:
+                if (ListOwners.Contains(user) || Creator == user)
+                {
+                    allowed = true;
+                    ynot = $"Related list is OWNER access. User is a list owner/creator.";
+                                    }
+                else
+                {
+                    ynot = $"User {user.UserName} is not a list owner/creator of list {Name}";
+                }
+                break;
+            case GeListVisibility.Private:
+
+                if (Creator == user)
+                {
+                    ynot =  $"Related list is PRIVATE access. User is the creator.";
+                    allowed = true;
+                }
+                else
+                {
+                    ynot = $"User {user.UserName} is not the creator of list {Name}";
+                }
+                break;
+            case GeListVisibility.Public:
+            {
+                ynot = "List is public";
+                allowed = true;
+                break;
+            }
+
+        }
+        DBg.d(LogLevel.Debug, $"{fn} {user.UserName} allowed: {allowed} - {ynot}");
+        return (allowed, ynot);
+
     }
 }

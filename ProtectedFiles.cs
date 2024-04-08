@@ -8,7 +8,7 @@ using Newtonsoft.Json; // Add this import statement
 public static class ProtectedFiles
 {
     // define a bunch of defaults: List<string>
-    private static readonly Dictionary<string,string> internalFiles = new Dictionary<string,string> { 
+    private static readonly Dictionary<string, string> internalFiles = new Dictionary<string, string> {
        { "/_edit.item.html", "contributor" },
        { "/_edit.item.js", "contributor" },
        { "/_edit.list.js", "listowner" },
@@ -17,7 +17,7 @@ public static class ProtectedFiles
        { "/_edituser.js", "SuperUser" },
        { "/_mastobookmark.html", "listowner" },
        { "/_mastobookmark.js", "listowner" }
-       
+
     };
 
 
@@ -102,69 +102,46 @@ public static class ProtectedFiles
         return false;
     }
 
-    public static async Task<(bool, string?)> IsFileVisibleToUser(HttpContext context,
-        string path,
+    public static async Task<(bool, string?)> IsFileVisibleToUser(string path,
         GeFeSLEUser user,
         UserManager<GeFeSLEUser> userManager)
     {
         var fn = "IsFileVisibleToUser"; DBg.d(LogLevel.Trace, fn);
-        //var serializedFiles = JsonConvert.SerializeObject(Files, Formatting.Indented);
-        //DBg.d(LogLevel.Trace, $"{fn} HERE DA FILES: {serializedFiles}");
 
-        string? ynot = null;
-        
+        string? ynot;
+
         Files.TryGetValue(path, out var listName);
-        GeList? list = null;
-        // get user's highest realizedRole
-            var roles = await userManager.GetRolesAsync(user);
-        switch (listName)
-        {
-            case "SuperUser":
-                if (roles.Contains("SuperUser"))
-                {
-                    return (true, "User is a super user");
-                }
-                else
-                {
-                    return (false, "User is not a super user");
-                }
-            case "listowner":
-                if (roles.Contains("SuperUser") || roles.Contains("listowner"))
-                {
-                    return (true, "User is a super user or list owner");
-                }
-                else
-                {
-                    return (false, "User is not a super user or list owner");
-                }
-            case "contributor":
-                if (roles.Contains("SuperUser") || roles.Contains("listowner") || roles.Contains("contributor"))
-                {
-                    return (true, "User is a super user, list owner, or contributor");
-                }
-                else
-                {
-                    return (false, "User is not a super user, list owner, or contributor");
-                }
-            default:
-                break; // not one of these; do the other thing
 
+        // get user's highest realizedRole
+        IList<string> roles = await userManager.GetRolesAsync(user);
+        if (IsInternalProtected(listName))
+        {
+            if (IsInternalProtectedVisibleToUser(listName, roles, out ynot))
+            {
+                ynot = $"{fn} file {path} is internal protected file: {ynot}";
+                return (true, ynot);
+            }
+            else
+            {
+                ynot = $"{fn} file {path} is internal protected file: {ynot}";
+                return (false, ynot);
+            }
         }
-        DBg.d(LogLevel.Trace, $"ProtectedFiles.IsFileVisibleToUser: {path} - not a special protected file");
-        
-        list = Lists.TryGetValue(listName!, out var tempList)
+
+        DBg.d(LogLevel.Trace, $"{fn} file {path} is not an interal protected file.");
+        GeList? list = Lists.TryGetValue(listName!, out var tempList)
             ? tempList
             : null;
         // did we get a list? 
         if (list == null)
         {
-            DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: {path} - {user.UserName} - NO LIST ASSOCIATED - WHY AM I HERE?");
+            DBg.d(LogLevel.Critical, $"{fn}: {path} - {user.UserName} - NO LIST ASSOCIATED - WHY AM I HERE?");
             ynot = "No list associated with this file! Why am I here?";
             return (false, ynot);
         }
 
-        (bool isVis, ynot) = await IsListVisibleToUser(context, list, user, userManager);
-        if(isVis)
+        (bool isVis, ynot) = IsListVisibleToUser(list, user, roles);
+        if (isVis)
         {
             ynot = $"Path {path} is visible: {ynot}";
             return (isVis, ynot);
@@ -172,81 +149,101 @@ public static class ProtectedFiles
         else
         {
             ynot = $"Path {path} is NOT visible: {ynot}";
-            return (isVis,ynot);
+            return (isVis, ynot);
 
         };
     }
 
-    public static async Task<(bool, string?)> IsListVisibleToUser(HttpContext context,
+    public static bool IsInternalProtected(string listName)
+    {
+        string fn = "IsInternalProtected"; DBg.d(LogLevel.Trace, fn);
+        if (listName == "SuperUser" || listName == "listowner" || listName == "contributor")
+        {
+            return true;
+        }
+        else return false;
+    }
+
+    // For "protected" files like the edit and modify pages, internal .js files
+    // we protect them with listnames==role_required_to_view
+    // if a file's "listname" is one of these, compare with user's role
+    public static bool IsInternalProtectedVisibleToUser(string listName, IList<string> roles, out string ynot)
+    {
+        string fn = "IsInternalProtectedVisibleToUser"; DBg.d(LogLevel.Trace, fn);
+        bool isVis = false;
+        switch (listName)
+        {
+            case "SuperUser":
+                if (roles.Contains("SuperUser"))
+                {
+                    isVis = true;
+                    ynot = "User is a super user";
+                }
+                else ynot = "User is not a super user";
+                break;
+            case "listowner":
+                if (roles.Contains("SuperUser") || roles.Contains("listowner"))
+                {
+                    isVis = true;
+                    ynot = "User is a super user or list owner";
+                }
+                else ynot = "User is not a super user or list owner";
+                break;
+            case "contributor":
+                if (roles.Contains("SuperUser") || roles.Contains("listowner") || roles.Contains("contributor"))
+                {
+                    isVis = true;
+                    ynot = "User is a super user, list owner, or contributor";
+                }
+                else
+                {
+                    ynot = "User is not a super user, list owner, or contributor";
+                }
+                break;
+            default:
+                ynot = "File is not internal protected file";
+                break;
+        }
+        return isVis;
+    }
+
+    public static (bool, string?) IsListVisibleToUser(
         GeList list,
         GeFeSLEUser user,
-        UserManager<GeFeSLEUser> userManager)
+        IList<string> roles)
     {
-        // so we got a list. 
-        // is the list public?
-        string? ynot = null;
+        string fn = "IsListVisibleToUser"; DBg.d(LogLevel.Trace, fn);
+        string? ynot;
+        bool isVis = false;
         if (list.Visibility == GeListVisibility.Public)
         {
-            DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: - {user.UserName} - LIST IS PUBLIC - WHY AM I HERE? ");
+            DBg.d(LogLevel.Critical, $"{fn}: - {user.UserName} - LIST IS PUBLIC - WHY AM I HERE? ");
             ynot = "List is public";
-            return (true, ynot);
+            isVis = true;
         }
-
-        bool isSuperUser = await userManager.IsInRoleAsync(user, "SuperUser");
-        if (isSuperUser)
+        else if (roles.Contains("SuperUser"))
         {
-            DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: - {user.UserName} - USER IS SUPERUSER");
+            DBg.d(LogLevel.Trace, $"{fn}: - {user.UserName} - USER IS SUPERUSER");
             ynot = "User is a super user";
-            return (true, ynot);
+            isVis = true;
         }
-
-        switch (list.Visibility)
+        else
         {
-            case GeListVisibility.Contributors:
-                if (list.Contributors.Contains(user) || list.ListOwners.Contains(user) || list.Creator == user)
-                {
-                    DBg.d(LogLevel.Trace, $"Related list is CONTRIB access. User is a contributor/owner/creator.");
-                    return (true, ynot);
-                }
-                else
-                {
-                    ynot = $"User {user.UserName} is not a contributor/list owner/creator of list {list.Name}";
-                    return (false, ynot);
-                }
-            case GeListVisibility.ListOwners:
-                if (list.ListOwners.Contains(user) || list.Creator == user)
-                {
-                    DBg.d(LogLevel.Trace, $"Related list is OWNER access. User is a list owner/creator.");
-                    return (true, ynot);
-                }
-                else
-                {
-                    ynot = $"User {user.UserName} is not a list owner/creator of list {list.Name}";
-                    return (false, ynot);
-                }
-            case GeListVisibility.Private:
-
-                if (list.Creator == user)
-                {
-                    DBg.d(LogLevel.Trace, $"Related list is PRIVATE access. User is the creator.");
-                    return (true, ynot);
-                }
-                else
-                {
-                    ynot = $"User {user.UserName} is not the creator of list {list.Name}";
-                    return (false, ynot);
-                }
-            case GeListVisibility.Public:
-                ynot = "List is public";
-                return (true, ynot);
-
+            (bool allowed, ynot) = list.IsUserAllowedToView(user);
+            if (allowed)
+            {
+                DBg.d(LogLevel.Trace, $"{fn}: - {user.UserName} - USER IS EXPLICITLY ALLOWED TO VIEW LIST");
+                isVis = true;
+            }
+            else
+            {
+                DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: - HOW WE GET HERE? {user.UserName} {list.Name}");
+            }
         }
-        DBg.d(LogLevel.Critical, $"ProtectedFiles.IsFileVisibleToUser: - HOW WE GET HERE? {user.UserName} {list.Name}");
-        ynot = "How did we get here?";
-        return (false, ynot);
+        return (isVis, ynot);
     }
 }
-        
-    
 
-    
+
+
+

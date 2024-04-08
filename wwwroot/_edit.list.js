@@ -13,7 +13,7 @@ async function getList() {
         return;
     }
 
-    let [username, role] = await amloggedin();
+    let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
     
@@ -102,7 +102,7 @@ async function updateList(e) {
         return;
     }
 
-    let [username, role] = await amloggedin();
+    let [userid, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
     if (!isSuperUser(role) && !isListOwner(role)){
@@ -246,7 +246,7 @@ async function getAllUsers() {
         return;
     }
 
-    let [username, role] = await amloggedin();
+    let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
     if (!isSuperUser(role) && !isListOwner(role)){
@@ -311,7 +311,7 @@ async function getListUsers() {
         return;
     }
 
-    let [username, role] = await amloggedin();
+    let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
     if (!isSuperUser(role) && !isListOwner(role)){
@@ -397,7 +397,7 @@ async function assignUser2List(e) {
         return;
     }
 
-    let [username, role] = await amloggedin();
+    let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
     if (!isSuperUser(role) && !isListOwner(role)){
@@ -476,7 +476,7 @@ async function removeUserFromList(e) {
         return;
     }
 
-    let [username, role] = await amloggedin();
+    let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
     if (!isSuperUser(role) && !isListOwner(role)){

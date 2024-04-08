@@ -99,69 +99,7 @@ function c(RC) {
 }
 
 
-// we don't want to hit the backend for every page load.
-// on a successful login, we'll store the role in local storage. 
-// we'll have to rely on backend .NET core authentication
-// to ensure that a) the user session/token is still good and b)
-// the user still has the same role, or at least sufficient role 
-// to do the thing. 
-// so really all this does is return what's in local storage.
 
-
-async function getRole() {
-    console.info('getRole');
-    let role = 'anonymous';
-
-    // get the role from local storage
-    role = localStorage.getItem('role');
-    if (Boolean(role)) {
-        console.debug(' | GETROLE - Role found in local storage: ' + role);
-        return role;
-    }
-    else {
-        // we will ONCE to get the role from the server
-        // and then store it in local storage
-        let apiUrl = '/getmyrole';
-        await fetch(apiUrl, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                "GeFeSLE-XMLHttpRequest": "true"
-            },
-        })
-        .then(response => {
-            if(response.ok) {
-                return response.text();
-            }
-            else if (response.status == RC.UNAUTHORIZED) {
-                console.debug(' | GETMYROLE - Not authorized to get role');
-                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else if (response.status == RC.FORBIDDEN) {
-                console.debug(' | GETMYROLE - Forbidden to get role');
-                throw new Error('Forbidden! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else {
-                throw new Error(' | GETMYROLE - url: ' + apiUrl + ' returned: ' + response.status + ' - ' + response.statusText);
-            }})
-        .then(text => {
-            text = text.replace(/^"|"$/g, ''); // Remove quotation marks at the start and end of the string
-            console.log('GETROLE Response IS:', text);
-            localStorage.setItem('role', text);
-            return text;
-        })
-        .catch((error) => {
-                console.error('Error:', error);
-                d(error);
-                c(RC.ERROR);
-                return role;
-            });
-
-
-        
-    }
-
-}
 
 function showDebuggingElements() {
     let fn = "showDebuggingElements";
@@ -189,6 +127,7 @@ function showListSecrets() {
     for (let l of links) { l.style.display = ''; }
     links = document.getElementsByClassName('stickynoteslink');
     for (let l of links) { l.style.display = ''; }
+    
     
 }
 
@@ -253,7 +192,7 @@ async function amloggedin() {
 
     try {
         let serverUrl = window.location.origin;
-        apiUrl = serverUrl + '/amloggedin/'
+        apiUrl = serverUrl + '/me/'
         console.debug(fn + ' | API URL: ' + apiUrl);
 
         // Perform a GET request
@@ -280,19 +219,14 @@ async function amloggedin() {
 
             })
             .then(json => {
-                let username = json.username;
-                let role = json.userClaimsRole;
+                let id = json.id;
+                let userName = json.userName;
+                let role = json.role;
                 console.debug(fn + ' | API Response: ' + JSON.stringify(json));
-                if ((username == null) || (role == null)) {
-                    console.debug(fn + ' | returning null value!');
-                    return [null, null];
+
+                return [id, userName, role];
                 }
-                else {
-                    console.debug(fn + ' | returning [ ' + username + ',' + role + ' ]');
-                    return [username, role];
-                }
-                
-            });
+            );
     } catch (error) {
         console.error('Error:', error);
         d('Error: ' + error);

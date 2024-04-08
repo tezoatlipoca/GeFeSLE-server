@@ -24,9 +24,9 @@
     <input type="text" id="userid" name="userid" readonly><br>
     <label for="username">Username:</label>
     <input type="text" id="username" name="username"><br>
-    <label for="password">Password:</label>
-    <input type="text" id="password" name="password">
-    <button type="button" id="setPassword">Set/Change Password</button><br>    
+    <label for="newPassword">New Password:</label>
+    <input type="text" id="newPassword" name="newPassword">
+    <button type="button" id="setPassword" onClick="sendHARDReset(event);">Set/Change Password</button><br>    
     <label for="email">Email:</label>
     <input type="text" id="email" name="email"><br>
     <label for="role">Role:</label>
@@ -44,5 +44,6 @@
   </form>
   <script src="_utils.js"></script>
   <script src="_edituser.js"></script>
+  <script src="_password.change.js"></script>
 </body>
 </html>

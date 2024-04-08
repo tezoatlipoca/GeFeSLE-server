@@ -129,8 +129,8 @@ public static class GlobalStatic
 
         sb.AppendLine("]</p>");
 
-        sb.AppendLine($"<p>[ <a href=\"_login.html\">login</a> ]</p>");
-
+        sb.AppendLine($"<p class=\"loginlink\">[ <a href=\"_login.html\">login</a> ]</p>");
+        sb.AppendLine($"<p class=\"pwdchangelink\" style=\"display: none;\">[ <a href=\"_password.change.html\">change password</a> ]</p>");
 
     }
 
@@ -309,7 +309,9 @@ public static class GlobalStatic
         }
         DBg.d(LogLevel.Trace, sb.ToString());
     }
-    public static string FindHighestRole(IList<string> roles)
+    
+    //TODO: move this to GeFeSLEUser class. 
+        public static string FindHighestRole(IList<string> roles)
     {
         if (roles.Count == 0)
         {
