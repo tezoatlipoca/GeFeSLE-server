@@ -94,8 +94,8 @@ This service will only be about making, and hosting, _lists of things_ and will 
 
 ### TODO Before v0.1.0 MVP:
 - Refactor API according to CRUD and HATEOAS; ensure meaningful HTTP error codes and consistent data returns; consistent access restriction on endpoints by user role; probably should verson control too e.g. `/endpoint` -> `/api/v1/endpoint`. 
-- lock down all static file serving, restricting access on basis of list viewership (images/media uploads currently are not considered protected files) #2
-- #72
-- #74
+- lock down all static file serving, restricting access on basis of list viewership (images/media uploads currently are not considered protected files) :[#2](https://github.com/tezoatlipoca/GeFeSLE-server/issues/2)
+- (https://github.com/tezoatlipoca/GeFeSLE-server/issues/72)
+- (https://github.com/tezoatlipoca/GeFeSLE-server/issues/74)
 
 
