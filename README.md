@@ -83,7 +83,8 @@ This service will only be about making, and hosting, _lists of things_ and will 
 (as of 2024-04-08)
 **Working towards v0.1.0 MVP**
 - GeFeSLE engine is an ASP.NET 8.0 C# executable (yes, we totally started with the ASP.NET 8.0 Core "Minimal API" tutorial)
-- GeFeSLE FireFox plugin `<link>` CURRENTLY BROKEN (API refactoring)- only allows login, list selection and addition of items (body in Markdown); does have "receipt mode" where it takes a snip of the open browser tab, uploads it to server and adds the image link to the item Markdown. 
+- GeFeSLE FireFox plugin `<link>` CURRENTLY BROKEN (API refactoring)- only allows login, list selection and addition of items (body in Markdown); does have "receipt mode" where it takes a snip of the open browser tab, uploads it to server and adds the image link to the item Markdown.
+ (all other functionality below is for the self-hosted web UI):
 - lists can be created, modified and removed; list description is Markdown
 - list items can be created, modified and removed; item body is Markdown
 - when viewing a list with appropriate permissions, tags can be one-click added/removed; items can be one-click moved to another list (that you likewise have permission on)
@@ -93,7 +94,8 @@ This service will only be about making, and hosting, _lists of things_ and will 
 - users can log in from OAuth: Mastodon, Microsoft and Google (although they have to ALSO be lised in the database to have a role assigned and do anything)
 
 ### TODO Before v0.1.0 MVP:
-- Refactor API according to CRUD and HATEOAS; ensure meaningful HTTP error codes and consistent data returns; consistent access restriction on endpoints by user role; probably should verson control too e.g. `/endpoint` -> `/api/v1/endpoint`. 
+- Refactor API according to CRUD and HATEOAS; ensure meaningful HTTP error codes and consistent data returns; consistent access restriction on endpoints by user role; probably should verson control too e.g. `/endpoint` -> `/api/v1/endpoint`.
+- .. and then fix the browser plugin. 
 - lock down all static file serving, restricting access on basis of list viewership (images/media uploads currently are not considered protected files) :[#2](https://github.com/tezoatlipoca/GeFeSLE-server/issues/2)
 - (https://github.com/tezoatlipoca/GeFeSLE-server/issues/72)
 - (https://github.com/tezoatlipoca/GeFeSLE-server/issues/74)
