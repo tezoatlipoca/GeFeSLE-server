@@ -36,24 +36,24 @@ public static class UserSessionService
             {
                 user.LastAccessTime = DateTime.UtcNow;
                 _ = db.SaveChangesAsync();
-                var roles = userManager.GetRolesAsync(user).Result;
-                string realizedRole = GlobalStatic.FindHighestRole(roles);
+                // var roles = userManager.GetRolesAsync(user).Result;         //TODO: use role from DTo not this
+                // string realizedRole = GlobalStatic.FindHighestRole(roles);
 
-                DBg.d(LogLevel.Information, $"{fn}: User {user.UserName} [{realizedRole}] TO {context.Request.Path} FROM {context.Connection.RemoteIpAddress}");
+                DBg.d(LogLevel.Debug, $"{fn}: User {sessionUser.UserName} [{sessionUser.Role}] TO {context.Request.Path} FROM {context.Connection.RemoteIpAddress}");
                 return user;
             } // user in db 
             else
             {
                 // could be an anonymous OAuth user - someone who has logged in via an OAuth source 
                 // but they're not in our database (i.e. have been invited/added by a legit usesr)
-                DBg.d(LogLevel.Information, $"{fn}: User {sessionUser.UserName} (OAuth guest) [{sessionUser.Role}] to {context.Request.Path} from {context.Connection.RemoteIpAddress}");
+                DBg.d(LogLevel.Debug, $"{fn}: User {sessionUser.UserName} (OAuth guest) [{sessionUser.Role}] to {context.Request.Path} from {context.Connection.RemoteIpAddress}");
                 return null;
             } // user NOT in db.
 
         }
         else // not authenticated
         {
-            DBg.d(LogLevel.Information, $"{fn}: Anonymous access TO {context.Request.Path} FROM {context.Connection.RemoteIpAddress}");
+            DBg.d(LogLevel.Debug, $"{fn}: Anonymous access TO {context.Request.Path} FROM {context.Connection.RemoteIpAddress}");
             return null;
         }
 

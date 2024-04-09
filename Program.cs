@@ -918,35 +918,37 @@ app.MapPost("/users/{userid}/password", async (string userid,
     Roles = "SuperUser,listowner,contributor"
 });
 
-
-app.MapGet("/getrole/{username}", async (string username,
+// return List<string> of all assigned APPLICATION roles for a user
+// Note these are for base API access, access to individual lists
+// will depend on list owner/creator, list ownership and contributor assignments
+app.MapGet("/users/{userid}/roles", async (string userid,
         GeFeSLEDb db,
-
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    DBg.d(LogLevel.Trace, "getrole");
+    string fn = $"/users/{userid}/roles (GET)"; DBg.d(LogLevel.Trace, fn);
+    
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
-    var user = await userManager.FindByNameAsync(username);
+    var user = await userManager.FindByIdAsync(userid);
     if (user is null)
     {
-        DBg.d(LogLevel.Trace, $"getrole: user {username} not found");
+        DBg.d(LogLevel.Information, $"{fn} --> {userid} not found");
         return Results.NotFound();
     }
     else
     {
-        var role = await userManager.GetRolesAsync(user);
-        if (role.Count == 0)
+        IList<string> roles = await userManager.GetRolesAsync(user);
+        if (roles.Count == 0)
         {
-            DBg.d(LogLevel.Trace, $"getrole: user {username} has no role");
-            return Results.Ok();
+            DBg.d(LogLevel.Information, $"{fn} --> {user.UserName} has no role");
+            return Results.Ok(); //TODO: change to no content
         }
         else
         {
-            DBg.d(LogLevel.Trace, $"getrole: user {username} has roles {string.Join(", ", role)}");
-            return Results.Ok(role);
+            DBg.d(LogLevel.Information, $"{fn} --> {user.UserName} has roles {System.Text.Json.JsonSerializer.Serialize(roles)}");
+            return Results.Ok(roles);
         }
     }
 
@@ -958,64 +960,63 @@ app.MapGet("/getrole/{username}", async (string username,
 });
 
 
-app.MapGet("/getmyrole", (
+
+app.MapPost("/users/{userid}/roles", async (string userid,
+        [FromBody] IList<string> roles,
         GeFeSLEDb db,
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    DBg.d(LogLevel.Trace, "getMyrole");
-    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-    if (user is null)
-    {
-        DBg.d(LogLevel.Trace, $"getmyrole: user not found");
-        return Results.NotFound();
-    }
-    else
-    {
-        var roles = userManager.GetRolesAsync(user).Result;
-        var realizedRole = GlobalStatic.FindHighestRole(roles);
-        DBg.d(LogLevel.Trace, $"getmyrole: user {user.UserName} has role {realizedRole}");
-        return Results.Ok(realizedRole);
-    }
-}).RequireAuthorization(new AuthorizeAttribute
-{
-    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
-    Roles = "SuperUser,listowner,contributor"
-});
-
-
-
-app.MapGet("/setrole/{username}/{role}", async (string username,
-        string role,
-        GeFeSLEDb db,
-
-        HttpContext httpContext,
-        UserManager<GeFeSLEUser> userManager,
-        RoleManager<IdentityRole> roleManager) =>
-{
-    DBg.d(LogLevel.Trace, "setrole");
+    string fn = $"/users/{userid}/roles (POST)";
+    DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    var sessionUser = UserSessionService.amILoggedIn(httpContext);
 
-    // dont need checks for username==null, will 404 on that anyway
-    var user = await userManager.FindByNameAsync(username);
+    var user = await userManager.FindByIdAsync(userid);
     if (user is null)
     {
-        DBg.d(LogLevel.Trace, $"setrole: user {username} not found");
+        DBg.d(LogLevel.Trace, $"{fn} user {userid} not found");
         return Results.NotFound();
     }
     else
     {
-        var result = await userManager.AddToRoleAsync(user, role);
-        if (result.Succeeded)
+        // for each role in the list, add the user to the role
+        // note AddToRoleAsync will not add a user to a role they are already in
+        bool success = true;
+        List<string> added = new List<string>();
+        var errors = new List<IdentityError>();
+        foreach (var role in roles)
         {
-            DBg.d(LogLevel.Trace, $"setrole: user {username} ASSIGNED to role {role}");
+            if(sessionUser.Role != "SuperUser" && role == "SuperUser")
+            {
+                DBg.d(LogLevel.Trace, $"{fn} user {userid} NOT ASSIGNED to role {role}: Insufficient permissions");
+                errors.Add(new IdentityError { Code = "403", Description = "Insufficient permissions" });
+                success = false;
+                continue;
+            }
+            var result = await userManager.AddToRoleAsync(user, role);
+            if (!result.Succeeded)
+            {
+                DBg.d(LogLevel.Trace, $"{fn} user {userid} NOT ASSIGNED to role {role}: {result.Errors}");
+                foreach (IdentityError error in result.Errors)
+                {
+                    errors.Add(error);
+                }
+                success = false;
+            }
+            else {
+                added.Add(role);
+            
+            }
+        }
+        if (success) {
+            DBg.d(LogLevel.Information, $"{fn} -> user {userid} assigned to roles {System.Text.Json.JsonSerializer.Serialize(added)}");
             return Results.Ok();
         }
-        else
-        {
-            DBg.d(LogLevel.Trace, $"setrole: user {username} NOT ASSIGNED to role {role}");
-            return Results.BadRequest(result.Errors);
+        else {
+            DBg.d(LogLevel.Information, $"{fn} -> user {userid} NOT ASSIGNED to roles {System.Text.Json.JsonSerializer.Serialize(roles)}");
+            return Results.BadRequest(errors);
         }
     }
 }
