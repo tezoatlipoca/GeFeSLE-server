@@ -4,8 +4,11 @@ Yet _another_ list making tool? Yes. **BUT** with the primary goals of:
 * self-hosted: lightweight and self-contained single binary (except for the runtime environment)
 * simple html+css presentation: view lists on any device (if it can run a browser)
   * human readable static addressing (1) e.g. `myserver.mydomain.org/Big Fat List Of The Year.html`
+  * customize your site with page headers/footers and your own CSS stylesheet (without a plugin; eat _that_ WordPress)
+  * filter lists by text or keywords (hashtags)
+  * one-click add/remove tags; one-click move items between lists (permissions allowing of course)
 * single-user mode: lists just for you, or
-  *   multi-user: create local accounts if you want, or allow friends to login from other platforms with OAuth
+  *   multi-user: create local accounts if you want, or allow friends to login from other platforms with OAuth (Google, Microsoft and Mastodon)
 * get ur data **IN**: import lists from anywhere
   * json, xml
   * Mastodon Bookmarks
@@ -15,10 +18,11 @@ Yet _another_ list making tool? Yes. **BUT** with the primary goals of:
 * get ur data **OUT**:
   * html+css (and a little bit of javascript for filtering); and it prints to PDF just fine without any funny stuff
   * json, xml, text, Excel
+  * .. write your own!
 * self-hosted web interface for administration and list curation
   * browser plugins (Firefox for now) to quickly add new list items - no matter what page you're on; take a snip of the current browser tab to add to your new item
   * Windows systray widget to add new list items - wouldn't it be nice if you could add an item to Trello without opening Trello?
-  * fully documented REST API - don't like our apps? write your own.
+  * (soon to be fully documented) REST API - don't like our apps? write your own.
 
 (1) so long as you don't change the list name
  
@@ -42,3 +46,35 @@ e.g. `Steve's List of Where To Eat In Cleveland` -> `@cleveland_eats@gefesle.bla
 Every new list item (or update or deletion) puts an appropriate toot into your feed.
 Replies to those toots, get threaded as comments on the lists (subject to various controls and settings
 to make sure noone's toots are recorded forever someplace they didn't intend). 
+
+## Future Work (v0.3.0+)
+- accessibility and localization support (those are table stakes)
+- list flavours & behaviours:
+  - a list of websites is a webring is it not?
+  - a list of songs or videos _could_ be a playlist
+- list items get "garnishes" to qualify, reinforce, refute or challenge an item (or a whole list) e.g:
+  - "we ate here the food was excellent"
+  - "I just checked this link it 404'd" or "last verified: `<date>`"
+  - "this author said `<insert objectionable behaviour here>`, may want to think about their inclusion on this list"
+  - "I can provide a second source for this quotation: `<link>`"  
+- "in a box" configuration. Taking inspiration from the [Mail-in-a-box](https://mailinabox.email/) and similar one-click-self-host-setup projects, GeFeSLE will be able to self-configure (or hand hold the user) to:
+  - install from a package on the host of your choice
+  - configure firewalls (and help with reverse proxy if necessary)
+  - custom domain registration
+  - dynamic dns setup + test
+  - external ping-back "am I reachable?" checks
+  - certificates registration and management
+  - master instance lists of lists (opt-in of course) for list discovery and Federation
+  - search engine friendly: robots.txt, sitemaps, crawl-me requests
+ - GeFeSLE already hosts static pages with _file level_ access control restrictions and file uploading capabilities. Its a hop, skip and a jump from here to having a single binary webserver for static HTML and Javascript hosting. Bring back Web 1.0 (just with better CSS support)!
+
+## Um, ok. But Why? 
+I left Twitter in November of 2022 and discovered the Fediverse. I noticed that - because there's no algorithm.. or rather YOU and your network are the algorithm - discovery is somewhat manual. When Twitter started suspending journalists, many folks started "Lists of Journalists to follow on Mastodon/the Fediverse". Other people started curating really amazing lists of Very Cool Things. These lists were in a WordPress blog, a Substack or maybe a Google Sheet - what if someone starts a list that one of those services took objection to, like "Alternatives to WordPress"? Or if the user switched platforms (like the recent Substack exodus), links TO the list would bork. 
+
+After a few months of using Mastodon, and bookmarking so many interesting toots, I realized that I had no way to curate them! There's no export from your Mastodon bookmarks outside of using the API and exporting the raw JSON. (There is the excellent [Pocket Toots FIrefox plugin](https://addons.mozilla.org/en-US/firefox/addon/pockettoots/) which exports _new_ bookmarks to Pocket, but its not retroactive.)
+
+Have your grocery list in Trello? Great! Now you have to use the Trello app to access your grocery list! Ok, I just need to add milk- TOO BAD! Its now time for two factor authentication! Can't remember that email address password? TWO two-factor authentications (ah ah ah!) arrg. Ill just write "milk" on my arm in Sharpie. _Ok smart guy just use a note app on your smartphone!_ Sure, now my family can't add stuff - or rather my grocery list is now a string of text messages. We can do better. 
+
+Lastly, there is the (**enshittification** problem)[https://pluralistic.net/2023/01/21/potemkin-ai/#hey-guys]: what happens to your content when the platform that hosts it turns evil: spams your readers with too many ads, invites the nazis in or just removes or bans your content because of something you said? (That should be up to YOUR readers to decide, not the platform!) The way to fight enshittification is to **self-host**. 
+
+This service will only be about making, and hosting, _lists of things_ and will only add features in service of that end.  
