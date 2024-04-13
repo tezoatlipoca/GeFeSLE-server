@@ -1,77 +1,80 @@
 function setRoles() {
-    console.log('SETROLES');
-    if(islocal()) return;
+    let fn = "setRoles"; console.debug(fn);
+    if (islocal()) return;
+
 
     // get the username from the form
+    let userid = document.getElementById('userid').value;
     let username = document.getElementById('username').value;
     // get the selected role from the roles dropdown
     let role = document.getElementById('role').value;
-    console.debug('SETROLES: ' + username + ' - ' + role);
+    console.debug(fn + ': ' + username + ' - ' + role);
 
-    if(username == null || username == '' || role == null || role == ''){
+    if (username == null || username == '' || role == null || role == '') {
         d('Cant set role for user: user/role cannot be blank!');
         c(RC.ERROR);
     }
 
-    // assume this page is ON the server with the API
-    // get the url of the API from the current page url
-    apiUrl = window.location.href;
-    // get just the hostname and port from the url
-    apiUrl = apiUrl.substring(0, apiUrl.indexOf('/_edituser.html'));
+    let apiUrl = '/users/' + userid + '/roles';
     
-    // Get the list data from the API
-    apiUrl = apiUrl + '/setrole/' + username + '/' + role;
-    console.debug('SETROLES - calling: ' + apiUrl);
-    fetch(apiUrl, {headers: {
-        "GeFeSLE-XMLHttpRequest": "true"
-    }})
-    .then(response => {
-        if (response.status == RC.NOT_FOUND) {
-            console.debug('SETROLES - User ' + username + ' not found!');
-            throw new Error('User ' + username + ' not found!')
-        }
-        else if (response.status == RC.OK) {
-            d('Role ' + role + 'for ' + username + ' SET!');
-            c(RC.OK);
-            // wait 3 seconds then call getRoles to refresh the roles list
-            setTimeout(getRoles, 3000);
-            return;
-            
-        }
-        else if (response.status == RC.UNAUTHORIZED) {
-            console.debug('SETROLES - Not authorized to set roles for user ' + username);
-            throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-        }
-        else if (response.status == RC.FORBIDDEN) {
-            console.debug('SETROLES - Forbidden to get user ' + username);
-            throw new Error('Forbidden! Are you logged in as an admin?');
-        }
-        else if (response.status == RC.BAD_REQUEST) {
+    let postdata = [ role ];
+    console.debug(fn + ' calling: ' + apiUrl + ' with data: ' + JSON.stringify(postdata));
+    fetch(apiUrl,
+        {
+            method: 'POST',
+            headers: {
+                "GeFeSLE-XMLHttpRequest": "true",
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(postdata)
+        })
+        .then(response => {
+            if (response.status == RC.NOT_FOUND) {
+                console.debug(fn + ' User ' + username + ' not found!');
+                throw new Error('User ' + username + ' not found!')
+            }
+            else if (response.status == RC.OK) {
+                d('Role ' + role + 'for ' + username + ' SET!');
+                c(RC.OK);
+                // wait 3 seconds then call getRoles to refresh the roles list
+                setTimeout(getRoles, 3000);
+                return;
 
-            response.json().then(data => {
+            }
+            else if (response.status == RC.UNAUTHORIZED) {
+                console.debug('SETROLES - Not authorized to set roles for user ' + username);
+                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
+            }
+            else if (response.status == RC.FORBIDDEN) {
+                console.debug('SETROLES - Forbidden to get user ' + username);
+                throw new Error('Forbidden! Are you logged in as an admin?');
+            }
+            else if (response.status == RC.BAD_REQUEST) {
 
-                // its gonna be a collection of code/description pairs
-                console.debug('SETROLES - bad something: ' + JSON.stringify(data));
-                // iterate over data - its going to be an array
-                let msg = '';
-                data.forEach((item) => {
-                    msg += 'Error: ' + item.code + ' - ' + item.description + '<br>';
-                })
-                d(msg);
-                c(RC.BAD_REQUEST);
+                response.json().then(data => {
 
-            });
-        }
-        else {
-            console.debug('SETROLES - Error Setting user roles' + username);
-            throw new Error('Error Setting roles for ' + username);
-        }
-    })
-    .catch((error) => {
-        console.error('Error:', error);
-        d(error);
-        c(RC.ERROR);
-    });
+                    // its gonna be a collection of code/description pairs
+                    console.debug('SETROLES - bad something: ' + JSON.stringify(data));
+                    // iterate over data - its going to be an array
+                    let msg = '';
+                    data.forEach((item) => {
+                        msg += 'Error: ' + item.code + ' - ' + item.description + '<br>';
+                    })
+                    d(msg);
+                    c(RC.BAD_REQUEST);
+
+                });
+            }
+            else {
+                console.debug('SETROLES - Error Setting user roles' + username);
+                throw new Error('Error Setting roles for ' + username);
+            }
+        })
+        .catch((error) => {
+            console.error('Error:', error);
+            d(error);
+            c(RC.ERROR);
+        });
 
 
 
@@ -81,73 +84,71 @@ function setRoles() {
 
 
 function getRoles() {
-    console.log('GETROLES');
-    if(islocal()) return;
+    let fn = 'GETROLES'; console.debug(fn);
+    
+    if (islocal()) return;
 
     // get the username from the form
-    let username = document.getElementById('username').value;
-    console.debug('GETROLES: ' + username);
-    if(username == null || username == ''){
+    let userid = document.getElementById('userid').value;
+    console.debug(fn + userid);
+    if (userid == null || userid == '') {
         return;
     }
-    // assume this page is ON the server with the API
-    // get the url of the API from the current page url
-    apiUrl = window.location.href;
-    // get just the hostname and port from the url
-    apiUrl = apiUrl.substring(0, apiUrl.indexOf('/_edituser.html'));
     
     // Get the list data from the API
-    apiUrl = apiUrl + '/getrole/' + username;
-    console.debug('GETROLES - calling: ' + apiUrl);
-    fetch(apiUrl, {headers: {
-        "GeFeSLE-XMLHttpRequest": "true"
-    }})
-    .then(response => {
-        if (response.status == RC.NOT_FOUND) {
-            console.debug('GETROLES - User ' + username + ' not found!');
-            throw new Error('User ' + username + ' not found!')
-        }
-        else if (response.status == RC.OK) {
-            console.debug('GETROLES - User ' + username + ' roles retreived!');
-            return response.text();
-        }
-        else if (response.status == RC.UNAUTHORIZED) {
-            console.debug('GETROLES - Not authorized to get roles for user ' + username);
-            throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-        }
-        else if (response.status == RC.FORBIDDEN) {
-            console.debug('GETROLES - Forbidden to get user ' + username);
-            throw new Error('Forbidden! Are you logged in as an admin?');
-        }
-        else {
-            console.debug('GETUSER - Error getting user roles' + username);
-            throw new Error('Error getting roles for ' + username);
+    let apiUrl = '/users/' + userid + '/roles';
+    console.debug(fn + ' calling: ' + apiUrl);
+    fetch(apiUrl, {
+        headers: {
+            "GeFeSLE-XMLHttpRequest": "true"
         }
     })
-    .then(data => {
-        // the data is going to be a list of the roles
-        // highlight the values in the roles dropdown that match the roles in the data
-        if(data == null || data == '') {
-            d('No roles for user ' + username);
-            c(RC.OK);
-        }
-        else {
-            return data ? JSON.parse(data) : {};
-        }
-        
-        
-    })
-    .then(json => {
-        let userroles = document.getElementById('userroles');
-        
-        // write the roles into the userroles span
-        userroles.innerHTML = json;
-    })
-    .catch((error) => {
-        console.error('Error:', error);
-        d(error);
-        c(RC.ERROR);
-    });
+        .then(response => {
+            if (response.status == RC.NOT_FOUND) {
+                console.debug(fn + ' User ' + userid + ' not found!');
+                throw new Error('User ' + userid + ' not found!')
+            }
+            else if (response.status == RC.OK) {
+                console.debug(fn + ' User ' + userid + ' roles retreived!');
+                return response.text();
+            }
+            else if (response.status == RC.UNAUTHORIZED) {
+                console.debug(fn + ' Not authorized to get roles for user ' + userid);
+                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
+            }
+            else if (response.status == RC.FORBIDDEN) {
+                console.debug(fn + ' Forbidden to get user ' + userid);
+                throw new Error('Forbidden! Are you logged in as an admin?');
+            }
+            else {
+                console.debug(fn + '- Error getting user roles' + userid);
+                throw new Error('Error getting roles for ' + userid);
+            }
+        })
+        .then(data => {
+            // the data is going to be a list of the roles
+            // highlight the values in the roles dropdown that match the roles in the data
+            if (data == null || data == '') {
+                d('No roles for user ' + userid);
+                c(RC.OK);
+            }
+            else {
+                return data ? JSON.parse(data) : {};
+            }
+
+
+        })
+        .then(json => {
+            let userroles = document.getElementById('userroles');
+
+            // write the roles into the userroles span
+            userroles.innerHTML = json;
+        })
+        .catch((error) => {
+            console.error('Error:', error);
+            d(error);
+            c(RC.ERROR);
+        });
 
 }
 
@@ -173,9 +174,11 @@ function getUser() {
     console.debug('GETUSER - calling: ' + apiUrl);
     // Get the list data from the API
 
-    fetch(apiUrl, {headers: {
-        "GeFeSLE-XMLHttpRequest": "true"
-        }})
+    fetch(apiUrl, {
+        headers: {
+            "GeFeSLE-XMLHttpRequest": "true"
+        }
+    })
         .then(response => {
             if (response.status == RC.NOT_FOUND) {
                 console.debug('GETUSER - User ' + username + ' not found!');
@@ -294,7 +297,7 @@ async function changePassword(e) {
             }
             else if (response.status == RC.FORBIDDEN) {
                 throw new Error('Forbidden! Are you logged in as an admin?');
-            }   
+            }
 
 
             else if (response.status == RC.BAD_REQUEST) {
@@ -329,24 +332,20 @@ async function changePassword(e) {
 
 
 async function addUser(e) {
+    let fn = 'ADDUSER'; console.debug(fn);
+
     e.preventDefault();
     if (islocal()) return;
-    console.log('ADDUSER');
-    let apiUrl = "";
 
-
-    apiUrl = window.location.href;
-    // get just the hostname and port from the url
-    apiUrl = apiUrl.substring(0, apiUrl.indexOf('/_edituser.html'));
-    apiUrl = apiUrl + '/adduser';
+    let apiUrl = '/users';
     // construct the IdentityUser object
     let user = {
         userName: document.getElementById('username').value,
         email: document.getElementById('email').value,
-        password: document.getElementById('password').value
+        password: document.getElementById('newPassword').value
     };
 
-    console.info('ADDUSER -- Calling API: ' + apiUrl + ' with data: ' + JSON.stringify(user));
+    console.debug(fn + ' calling API: ' + apiUrl + ' with data: ' + JSON.stringify(user));
     fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -355,72 +354,72 @@ async function addUser(e) {
         },
         body: JSON.stringify(user)
     })
-    .then(response => {
-        //uname/pwd is null --> bad request
-        //<created>-> 201.created
-        //<not created>->bad request + collection <errors>
-        //anything else  -> bad request/500
-        if(response.ok){
-            console.debug('ADDUSER - new user ADD ok!')
-            d('User added:' + JSON.stringify(user));
-            c(RC.CREATED);
-            response.json().then(data => {
-                // get the value of the radio button in the form
-                let neworupdated = document.querySelector('input[name="neworupdate"]:checked').value;
-                console.debug('ADDUSER | neworupdated: ' + neworupdated);
-                if (neworupdated == 'new') {
-                    // clear the form
-                    document.getElementById('username').value = '';
-                    document.getElementById('password').value = '';
-                    document.getElementById('email').value = '';
-                }
-                else {
-                    // now that we have newID, populdate the id field in the form
-                    document.getElementById('userid').value = data.id;
-                    document.getElementById('username').value = data.userName;
-                    document.getElementById('password').value = '';
-                    document.getElementById('email').value = data.email;
-                
-                    // and update the url in the browser to include the new username
-                    // RECONSIDER THIS
-                    let newUrl = window.location.href;
-                    newUrl = newUrl.substring(0, newUrl.indexOf('?'));
-                    newUrl = newUrl + '?username=' + data.userName;
-                    window.history.pushState({}, '', newUrl);
-                    console.debug('ADDUSER | New URL: ' + newUrl);
-                }
+        .then(response => {
+            //uname/pwd is null --> bad request
+            //<created>-> 201.created
+            //<not created>->bad request + collection <errors>
+            //anything else  -> bad request/500
+            if (response.ok) {
+                console.debug('ADDUSER - new user ADD ok!')
+                d('User added:' + JSON.stringify(user));
+                c(RC.CREATED);
+                response.json().then(data => {
+                    // get the value of the radio button in the form
+                    let neworupdated = document.querySelector('input[name="neworupdate"]:checked').value;
+                    console.debug('ADDUSER | neworupdated: ' + neworupdated);
+                    if (neworupdated == 'new') {
+                        // clear the form
+                        document.getElementById('username').value = '';
+                        document.getElementById('newPassword').value = '';
+                        document.getElementById('email').value = '';
+                    }
+                    else {
+                        // now that we have newID, populdate the id field in the form
+                        document.getElementById('userid').value = data.id;
+                        document.getElementById('username').value = data.userName;
+                        document.getElementById('newPassword').value = '';
+                        document.getElementById('email').value = data.email;
 
-            })
-        }
-        else if(response.status == RC.BAD_REQUEST){
-            console.debug('ADDUSER - bad request');
-            response.json().then(data => {
-                let msg = '';
-                data.forEach((item) => {
-                    msg += 'Error: ' + item.code + ' - ' + item.description + '<br>';
+                        // and update the url in the browser to include the new username
+                        // RECONSIDER THIS
+                        let newUrl = window.location.href;
+                        newUrl = newUrl.substring(0, newUrl.indexOf('?'));
+                        newUrl = newUrl + '?username=' + data.userName;
+                        window.history.pushState({}, '', newUrl);
+                        console.debug('ADDUSER | New URL: ' + newUrl);
+                    }
+
                 })
-                d(msg);
-                c(RC.BAD_REQUEST);
-            });
-        }
-        else if (response.status == RC.UNAUTHORIZED) {
-            console.debug('ADDUSER - Not authorized to add user ' + user.userName);
-            throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-        }
-        else if (response.status == RC.FORBIDDEN) {
-            console.debug('ADDUSER - Forbidden to add user ' + user.userName);
-            throw new Error('Forbidden! Are you logged in as an admin?');
-        }
-        else {
-            console.debug('ADDUSER - Error adding user ' + user.userName);
-            throw new Error('Error adding user ' + user.userName + ' - ' + response.status);
-        }
-    })
-    .catch(error => {
-        d(error);
-        c(RC.ERROR);
-        console.error('Error:', error);
-    });  
+            }
+            else if (response.status == RC.BAD_REQUEST) {
+                console.debug('ADDUSER - bad request');
+                response.json().then(data => {
+                    let msg = '';
+                    data.forEach((item) => {
+                        msg += 'Error: ' + item.code + ' - ' + item.description + '<br>';
+                    })
+                    d(msg);
+                    c(RC.BAD_REQUEST);
+                });
+            }
+            else if (response.status == RC.UNAUTHORIZED) {
+                console.debug('ADDUSER - Not authorized to add user ' + user.userName);
+                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
+            }
+            else if (response.status == RC.FORBIDDEN) {
+                console.debug('ADDUSER - Forbidden to add user ' + user.userName);
+                throw new Error('Forbidden! Are you logged in as an admin?');
+            }
+            else {
+                console.debug('ADDUSER - Error adding user ' + user.userName);
+                throw new Error('Error adding user ' + user.userName + ' - ' + response.status);
+            }
+        })
+        .catch(error => {
+            d(error);
+            c(RC.ERROR);
+            console.error('Error:', error);
+        });
 }
 
 async function modifyUser(e) {
@@ -511,7 +510,7 @@ document.getElementById('edituserform').addEventListener('submit', updateoraddUs
 // when the radio button neworupdate is changed from update to new, clear the form
 document.getElementById('new').addEventListener('change', function () {
     document.getElementById('username').value = '';
-    document.getElementById('password').value = '';
+    document.getElementById('newPassword').value = '';
     document.getElementById('email').value = '';
     document.getElementById('userid').value = '';
 });
@@ -524,7 +523,7 @@ document.getElementById('deleteRole').addEventListener('click', deleteRole);
 
 function getUsers() {
     console.log('GETUSERS');
-    if(islocal()) return;
+    if (islocal()) return;
 
     // assume this page is ON the server with the API
     // get the url of the API from the current page url
@@ -535,56 +534,58 @@ function getUsers() {
     console.debug('GETUSERS - calling: ' + apiUrl);
 
     // Get the list data from the API
-    fetch(apiUrl, {headers: {
-        "GeFeSLE-XMLHttpRequest": "true"
+    fetch(apiUrl, {
+        headers: {
+            "GeFeSLE-XMLHttpRequest": "true"
 
-    }})
-    .then(response => {
-        if (response.status == RC.NOT_FOUND) {
-            console.debug('GETUSERS - No users found!');
-            throw new Error('No users found!');
-        }
-        else if (response.status == RC.OK) {
-            console.debug('GETUSERS - Users retreived!');
-            return response.json();
-        }
-        else if (response.status == RC.UNAUTHORIZED) {
-            console.debug('GETUSERS - Not authorized to get users');
-            throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-        }
-        else if (response.status == RC.FORBIDDEN) {
-            console.debug('GETUSERS - Forbidden to get users');
-            throw new Error('Forbidden! Are you logged in as an admin?');
-        }
-        else {
-            console.debug('GETUSERS - Error getting users');
-            throw new Error('Error getting users');
         }
     })
-    .then(data => {
-        let users = document.getElementById('userlistgrid');
-        
-        // if there are no results in data
-        if (data.length == 0) {
-            users.innerHTML = 'No users!';
-            d('No users found!');
-            c(RC.NOTFOUND);
-            return;
-        }
-        // populate the users list
-        let userlist = '<ol>';
-        data.forEach((user) => {
-            userlist += '<li><a href=\"_edituser.html?username=' + user.userName + '\">' + user.userName + '</a>';
-            userlist += ' - email: ' + user.email + ' <-- <a href="/deleteuser/' + user.id +'">DELETE</a></li>';
+        .then(response => {
+            if (response.status == RC.NOT_FOUND) {
+                console.debug('GETUSERS - No users found!');
+                throw new Error('No users found!');
+            }
+            else if (response.status == RC.OK) {
+                console.debug('GETUSERS - Users retreived!');
+                return response.json();
+            }
+            else if (response.status == RC.UNAUTHORIZED) {
+                console.debug('GETUSERS - Not authorized to get users');
+                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
+            }
+            else if (response.status == RC.FORBIDDEN) {
+                console.debug('GETUSERS - Forbidden to get users');
+                throw new Error('Forbidden! Are you logged in as an admin?');
+            }
+            else {
+                console.debug('GETUSERS - Error getting users');
+                throw new Error('Error getting users');
+            }
+        })
+        .then(data => {
+            let users = document.getElementById('userlistgrid');
+
+            // if there are no results in data
+            if (data.length == 0) {
+                users.innerHTML = 'No users!';
+                d('No users found!');
+                c(RC.NOTFOUND);
+                return;
+            }
+            // populate the users list
+            let userlist = '<ol>';
+            data.forEach((user) => {
+                userlist += '<li><a href=\"_edituser.html?username=' + user.userName + '\">' + user.userName + '</a>';
+                userlist += ' - email: ' + user.email + ' <-- <a href="/deleteuser/' + user.id + '">DELETE</a></li>';
+            });
+            userlist += '</ol>';
+            users.innerHTML = userlist;
+        })
+        .catch((error) => {
+            console.error('Error:', error);
+            d(error);
+            c(RC.ERROR);
         });
-        userlist += '</ol>';
-        users.innerHTML = userlist;
-    })
-    .catch((error) => {
-        console.error('Error:', error);
-        d(error);
-        c(RC.ERROR);
-    });
 
 
 
@@ -592,7 +593,7 @@ function getUsers() {
 
 function deleteRole() {
     console.log('DELETEROLE');
-    if(islocal()) return;
+    if (islocal()) return;
 
     // get the username from the form
     let username = document.getElementById('username').value;
@@ -600,7 +601,7 @@ function deleteRole() {
     let role = document.getElementById('role').value;
     console.debug('DELETEROLE: ' + username + ' - ' + role);
 
-    if(username == null || username == '' || role == null || role == ''){
+    if (username == null || username == '' || role == null || role == '') {
         d('Cant delete role for user: user/role cannot be blank!');
         c(RC.ERROR);
     }
@@ -610,60 +611,62 @@ function deleteRole() {
     apiUrl = window.location.href;
     // get just the hostname and port from the url
     apiUrl = apiUrl.substring(0, apiUrl.indexOf('/_edituser.html'));
-    
+
     // Get the list data from the API
     apiUrl = apiUrl + '/deleterole/' + username + '/' + role;
     console.debug('DELETEROLE - calling: ' + apiUrl);
-    fetch(apiUrl, {headers: {
-        "GeFeSLE-XMLHttpRequest": "true"
-    }})
-    .then(response => {
-        if (response.status == RC.NOT_FOUND) {
-            console.debug('DELETEROLE - User ' + username + ' not found!');
-            throw new Error('User ' + username + ' not found!')
-        }
-        else if (response.status == RC.OK) {
-            d('Role ' + role + 'for ' + username + ' UNASSIGNED!');
-            c(RC.OK);
-            // wait 3 seconds then call getRoles to refresh the roles list
-            setTimeout(getRoles, 3000);
-            return;
-            
-        }
-        else if (response.status == RC.UNAUTHORIZED) {
-            console.debug('DELETEROLE - Not authorized to set roles for user ' + username);
-            throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-        }
-        else if (response.status == RC.FORBIDDEN) {
-            console.debug('DELETEROLE - Forbidden to get user ' + username);
-            throw new Error('Forbidden! Are you logged in as an admin?');
-        }
-        else if (response.status == RC.BAD_REQUEST) {
-
-            response.json().then(data => {
-
-                // its gonna be a collection of code/description pairs
-                console.debug('DELETEROLE - bad something: ' + JSON.stringify(data));
-                // iterate over data - its going to be an array
-                let msg = '';
-                data.forEach((item) => {
-                    msg += 'Error: ' + item.code + ' - ' + item.description + '<br>';
-                })
-                d(msg);
-                c(RC.BAD_REQUEST);
-
-            });
-        }
-        else {
-            console.debug('DELETEROLE - Error Setting user roles' + username);
-            throw new Error('Error Setting roles for ' + username);
+    fetch(apiUrl, {
+        headers: {
+            "GeFeSLE-XMLHttpRequest": "true"
         }
     })
-    .catch((error) => {
-        console.error('Error:', error);
-        d(error);
-        c(RC.ERROR);
-    });
+        .then(response => {
+            if (response.status == RC.NOT_FOUND) {
+                console.debug('DELETEROLE - User ' + username + ' not found!');
+                throw new Error('User ' + username + ' not found!')
+            }
+            else if (response.status == RC.OK) {
+                d('Role ' + role + 'for ' + username + ' UNASSIGNED!');
+                c(RC.OK);
+                // wait 3 seconds then call getRoles to refresh the roles list
+                setTimeout(getRoles, 3000);
+                return;
+
+            }
+            else if (response.status == RC.UNAUTHORIZED) {
+                console.debug('DELETEROLE - Not authorized to set roles for user ' + username);
+                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
+            }
+            else if (response.status == RC.FORBIDDEN) {
+                console.debug('DELETEROLE - Forbidden to get user ' + username);
+                throw new Error('Forbidden! Are you logged in as an admin?');
+            }
+            else if (response.status == RC.BAD_REQUEST) {
+
+                response.json().then(data => {
+
+                    // its gonna be a collection of code/description pairs
+                    console.debug('DELETEROLE - bad something: ' + JSON.stringify(data));
+                    // iterate over data - its going to be an array
+                    let msg = '';
+                    data.forEach((item) => {
+                        msg += 'Error: ' + item.code + ' - ' + item.description + '<br>';
+                    })
+                    d(msg);
+                    c(RC.BAD_REQUEST);
+
+                });
+            }
+            else {
+                console.debug('DELETEROLE - Error Setting user roles' + username);
+                throw new Error('Error Setting roles for ' + username);
+            }
+        })
+        .catch((error) => {
+            console.error('Error:', error);
+            d(error);
+            c(RC.ERROR);
+        });
 
 
 

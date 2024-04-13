@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using GeFeSLE;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication.OAuth;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 
 
@@ -310,13 +311,23 @@ builder.Services.AddAntiforgery(options =>
 
 });
 
+builder.Services.AddControllers().AddNewtonsoftJson();
+
 builder.Services.AddControllersWithViews();
 
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
-
+builder.Services.Configure<KestrelServerOptions>(options =>
+{
+    //$"http://{GlobalConfig.Bind}:{GlobalConfig.Port}
+    options.ListenAnyIP(GlobalConfig.Port, listenOptions =>
+    {
+        listenOptions.UseHttps("d:\\repos\\GeFeSLE-server\\cert.pfx", "Kagero99$");
+    });
+});
 
 var app = builder.Build();
+
 
 // SeedRoles makes sure our roles in the IdentifyUser system are created
 // here's where we would add any default database stuffing as well
@@ -528,7 +539,7 @@ app.Use(async (context, next) =>
         {
             await next.Invoke();
         }
-        catch (BadHttpRequestException ex) when
+        catch (Microsoft.AspNetCore.Http.BadHttpRequestException ex) when
          (ex.InnerException is AntiforgeryValidationException)
         {
             var antiForgeryEx = ex.InnerException as AntiforgeryValidationException;
@@ -623,36 +634,34 @@ app.MapPost("/users", async (GeFeSLEUser user, GeFeSLEDb db,
 
 
 // add an endpoint that modifies a user in the database
-app.MapPut("/modifyuser", async (GeFeSLEUser user,
+app.MapPut("/users/{userid}", async (GeFeSLEUser user,
             GeFeSLEDb db,
             HttpContext httpContext,
             UserManager<GeFeSLEUser> userManager,
             RoleManager<IdentityRole> roleManager) =>
 {
-    // Read the form data
-    DBg.d(LogLevel.Trace, "modifyuser");
-    DBg.d(LogLevel.Trace, $"modifyuser: {user.UserName} {user.Email}");
+    string fn = "/users/{userid} (PUT)"; DBg.d(LogLevel.Trace, fn);
+    
+    DBg.d(LogLevel.Trace, $"modifyuser: {user}");
 
     var moduser = await userManager.FindByIdAsync(user.Id);
     if (moduser is null) return Results.NotFound();
 
     moduser.UserName = user.UserName;
     moduser.Email = user.Email;
-    moduser.PhoneNumber = user.PhoneNumber;
+    
 
     try
     {
         var result = await userManager.UpdateAsync(moduser);
         if (result.Succeeded)
         {
-            DBg.d(LogLevel.Trace, "modifyuser: user modified");
-            // if the role is not null, add the user to the role
-
+            DBg.d(LogLevel.Trace, $"{fn} user modified");
             return Results.Ok();
         }
         else
         {
-            DBg.d(LogLevel.Trace, "modifyuser: user not modified: ");
+            DBg.d(LogLevel.Trace, $"{fn} user not modified: ");
             foreach (var error in result.Errors)
             {
                 DBg.d(LogLevel.Trace, $"Error: {error.Code}, Description: {error.Description}");
@@ -674,17 +683,15 @@ app.MapPut("/modifyuser", async (GeFeSLEUser user,
 
 
 // deleteuser endpoint
-app.MapGet("/deleteuser/{id}", async (string id, GeFeSLEDb db,
-
+app.MapDelete("/users/{userid}", async (string userid, 
+            GeFeSLEDb db,
             HttpContext httpContext,
             UserManager<GeFeSLEUser> userManager,
             RoleManager<IdentityRole> roleManager) =>
 {
-    // Read the form data
-    DBg.d(LogLevel.Trace, "deleteuser");
-    DBg.d(LogLevel.Trace, $"deleteuser: {id}");
-
-    var deluser = await userManager.FindByIdAsync(id);
+    string fn = "/users/{userid} (DEL)"; DBg.d(LogLevel.Trace, fn);
+    
+    var deluser = await userManager.FindByIdAsync(userid);
     if (deluser is null) return Results.NotFound();
 
     try
@@ -692,12 +699,12 @@ app.MapGet("/deleteuser/{id}", async (string id, GeFeSLEDb db,
         var result = await userManager.DeleteAsync(deluser);
         if (result.Succeeded)
         {
-            DBg.d(LogLevel.Trace, "deleteuser: user deleted");
-            return Results.Redirect("/_edituser.html");
+            DBg.d(LogLevel.Trace, $"{fn} user deleted");
+            return Results.Ok();
         }
         else
         {
-            DBg.d(LogLevel.Trace, "deleteuser: user not deleted: ");
+            DBg.d(LogLevel.Trace, $"{fn} user not deleted: ");
             foreach (var error in result.Errors)
             {
                 DBg.d(LogLevel.Trace, $"Error: {error.Code}, Description: {error.Description}");
@@ -719,17 +726,14 @@ app.MapGet("/deleteuser/{id}", async (string id, GeFeSLEDb db,
 
 
 
-app.MapGet("/showusers/{username}", async (string username,
+app.MapGet("/users/{username}", async (string username,
         GeFeSLEDb db,
-
         HttpContext httpContext,
-        UserManager<GeFeSLEUser> userManager,
-        RoleManager<IdentityRole> roleManager) =>
+        UserManager<GeFeSLEUser> userManager) =>
 {
-    DBg.d(LogLevel.Trace, "showusers");
+    string fn = "/users/{username} (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
-    DBg.d(LogLevel.Trace, $"showusers: {username}");
     var user = await userManager.FindByNameAsync(username);
     if (user is not null)
     {
@@ -747,21 +751,18 @@ app.MapGet("/showusers/{username}", async (string username,
 });
 
 
-app.MapGet("/showusers", async (GeFeSLEDb db,
-
+app.MapGet("/users", async (GeFeSLEDb db,
         HttpContext httpContext,
-        UserManager<GeFeSLEUser> userManager,
-        RoleManager<IdentityRole> roleManager) =>
+        UserManager<GeFeSLEUser> userManager) =>
 {
-    DBg.d(LogLevel.Trace, "showusers");
+    string fn = "/users (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-    DBg.d(LogLevel.Trace, "showusers: all users");
-    // that's fine return ALL users in UserManager
+    
     var users = await userManager.Users.ToListAsync();
     // if there are no users,
     if (users.Count == 0)
     {
-        return Results.NotFound();
+        return Results.NoContent();
     }
     else
     {
@@ -962,13 +963,13 @@ app.MapGet("/users/{userid}/roles", async (string userid,
 
 
 app.MapPost("/users/{userid}/roles", async (string userid,
-        [FromBody] IList<string> roles,
+        [FromBody] List<string> roles,
         GeFeSLEDb db,
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    string fn = $"/users/{userid}/roles (POST)";
+    string fn = "/users/{userid}/roles (POST)";
     DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var sessionUser = UserSessionService.amILoggedIn(httpContext);
@@ -981,6 +982,12 @@ app.MapPost("/users/{userid}/roles", async (string userid,
     }
     else
     {
+        // print out the roles IList
+        
+
+        // ...
+
+        DBg.d(LogLevel.Trace, $"{fn} roles: {JsonConvert.SerializeObject(roles)}");
         // for each role in the list, add the user to the role
         // note AddToRoleAsync will not add a user to a role they are already in
         bool success = true;
@@ -1026,35 +1033,43 @@ app.MapPost("/users/{userid}/roles", async (string userid,
     Roles = "SuperUser,listowner"
 });
 
-app.MapGet("/deleterole/{username}/{role}", async (string username,
+app.MapDelete("/users/{userid}/roles", async (string userid,
         string role,
         GeFeSLEDb db,
-
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    DBg.d(LogLevel.Trace, "deleterole");
+    string fn = "/users/{userid}/roles (DEL)";
+    DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    var sessionUser = UserSessionService.amILoggedIn(httpContext);
 
     // dont need checks for username==null, will 404 on that anyway
-    var user = await userManager.FindByNameAsync(username);
+    var user = await userManager.FindByIdAsync(userid);
     if (user is null)
     {
-        DBg.d(LogLevel.Trace, $"deleterole: user {username} not found");
+        DBg.d(LogLevel.Trace, $"{fn} user {userid} not found");
         return Results.NotFound();
     }
     else
     {
+        // get the sessionUser's role
+        if(sessionUser.Role != "SuperUser" && role == "SuperUser")
+        {
+            DBg.d(LogLevel.Trace, $"{fn} user {userid} NOT UNASSIGNED from role {role}: Insufficient permissions");
+            return Results.BadRequest("Insufficient permissions");
+        }
+        
         var result = await userManager.RemoveFromRoleAsync(user, role);
         if (result.Succeeded)
         {
-            DBg.d(LogLevel.Trace, $"deleterole: user {username} UNASSIGNED from role {role}");
+            DBg.d(LogLevel.Trace, $"deleterole: user {userid} UNASSIGNED from role {role}");
             return Results.Ok();
         }
         else
         {
-            DBg.d(LogLevel.Trace, $"deleterole: user {username} NOT UNASSIGNED to role {role}");
+            DBg.d(LogLevel.Trace, $"deleterole: user {userid} NOT UNASSIGNED to role {role}");
             return Results.BadRequest(result.Errors);
         }
     }
@@ -1065,37 +1080,32 @@ app.MapGet("/deleterole/{username}/{role}", async (string username,
     Roles = "SuperUser,listowner"
 });
 
-app.MapGet("/showlists", async (GeFeSLEDb db, HttpContext httpContext) =>
+app.MapGet("/lists", async (GeFeSLEDb db, 
+    HttpContext httpContext) =>
 {
-    DBg.d(LogLevel.Trace, "showlists");
+    string fn = "/showlists (GET)"; DBg.d(LogLevel.Trace, fn);
 
     var userManager = httpContext.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
-    return await db.Lists.ToListAsync();
-
+    List<GeList> lists = await db.Lists.ToListAsync();
+    List<GeList> visibleLists = new List<GeList>();
+    foreach (GeList list in lists)
+    {
+        (bool isAllowed, string? ynot) = list.IsUserAllowedToView(me);
+        if (isAllowed)
+        {
+            visibleLists.Add(list);
+        }
+    }
+    if(visibleLists.Count == 0)
+    {
+        return Results.NoContent();
+    }
+    else {
+        return Results.Ok(visibleLists);
+    }
 });
-
-app.MapGet("/showlists/{id}", async (int id,
-            GeFeSLEDb db,
-            UserManager<GeFeSLEUser> userManager,
-            HttpContext httpContext) =>
-   {
-       DBg.d(LogLevel.Trace, $"showlists/{id}");
-       GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-       var showlist = await db.Lists.FindAsync(id);
-       // if showlist is not null, then return it
-       if (showlist is not null)
-       {
-           DBg.d(LogLevel.Trace, $"showlists/{id} found: {showlist}");
-           return Results.Ok(showlist);
-       }
-       else
-       {
-           DBg.d(LogLevel.Trace, $"showlists/{id} not found");
-           return Results.NotFound();
-       }
-   });
 
 app.MapPost("/addlist", async (GeList newlist,
     GeFeSLEDb db,
@@ -2765,7 +2775,7 @@ using (var scope = app.Services.CreateScope())
     ProtectedFiles.ReLoadFiles(db);
 }
 
-app.Run($"http://{GlobalConfig.Bind}:{GlobalConfig.Port}");
+app.Run();
 
 
 
