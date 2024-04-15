@@ -19,6 +19,14 @@ public enum GeListVisibility
     Private          // restricted to only creator and SU
 }
 
+public class GeListDto
+{
+    public int Id { get; set; }
+    public string? Name { get; set; }
+    public string? Comment { get; set; }
+    public GeListVisibility Visibility { get; set; } = GeListVisibility.Public;
+}
+
 public class GeList
 {
     public int Id { get; set; }
@@ -238,7 +246,7 @@ public class GeList
                 if (Contributors.Contains(user) || ListOwners.Contains(user) || Creator == user)
                 {
                     allowed = true;
-                    ynot =  $"Related list is CONTRIB access. User is a contributor/owner/creator.";
+                    ynot = $"Related list is CONTRIB access. User is a contributor/owner/creator.";
                 }
                 else
                 {
@@ -250,7 +258,7 @@ public class GeList
                 {
                     allowed = true;
                     ynot = $"Related list is OWNER access. User is a list owner/creator.";
-                                    }
+                }
                 else
                 {
                     ynot = $"User {user.UserName} is not a list owner/creator of list {Name}";
@@ -260,7 +268,7 @@ public class GeList
 
                 if (Creator == user)
                 {
-                    ynot =  $"Related list is PRIVATE access. User is the creator.";
+                    ynot = $"Related list is PRIVATE access. User is the creator.";
                     allowed = true;
                 }
                 else
@@ -269,13 +277,42 @@ public class GeList
                 }
                 break;
             case GeListVisibility.Public:
-            {
-                ynot = "List is public";
-                allowed = true;
-                break;
-            }
+                {
+                    ynot = "List is public";
+                    allowed = true;
+                    break;
+                }
 
         }
+        DBg.d(LogLevel.Debug, $"{fn} {user.UserName} allowed: {allowed} - {ynot}");
+        return (allowed, ynot);
+
+    }
+
+    // Who can MODIFY a LIST or ITEMS IN IT? 
+    // 0. SuperUser - ALWAYS // though this fn does not check for that - CALLER MUST CHECK
+    // 1. Creator of the list - ALWAYS
+    // 2. List Owners - if they're in the ListOwners list (regardless of what role they have)
+    // 3. Contributors - if they're in the Contributors list (regardless of what role they have)
+    // 4. anonymous - never // this fn will never see that, only way to get that is OAuth login
+    //    where OAuth user is not also in the db
+    // note that this is independent of the visibility of the list
+
+    public (bool, string?) IsUserAllowedToModify(GeFeSLEUser user)
+    {
+        string fn = "IsUserAllowedToModify"; DBg.d(LogLevel.Trace, $"{fn} {user.UserName}");
+        string? ynot = null;
+        bool allowed = false;
+        if (Contributors.Contains(user) || ListOwners.Contains(user) || Creator == user)
+        {
+            allowed = true;
+            ynot = $"User {user.UserName} is a contributor/owner/creator of list {Name}.";
+        }
+        else
+        {
+            ynot = $"User {user.UserName} is not a contributor/list owner/creator of list {Name}";
+        }
+
         DBg.d(LogLevel.Debug, $"{fn} {user.UserName} allowed: {allowed} - {ynot}");
         return (allowed, ynot);
 

@@ -35,14 +35,10 @@ async function getList() {
     }
 
 
-    // assume this page is ON the server with the API
-    // get the url of the API from the current page url
-    apiUrl = window.location.href;
-    // get just the hostname and port from the url
-    apiUrl = apiUrl.substring(0, apiUrl.indexOf('/_edit.list.html'));
-    console.debug(' | API URL: ' + apiUrl);
+    let apiUrl = "/lists/" + listid;
+    console.debug(fn + ' API URL: ' + apiUrl);
     // Get the list data from the API
-    fetch(apiUrl + '/showlists/' + listid)
+    fetch(apiUrl)
         .then(response => {
             console.log('Response IS:', response);
             if (response.status == RC.UNAUTHORIZED) {
@@ -79,7 +75,7 @@ async function getList() {
             // change the url back to the NEW name of the list page on rename.
             easymde.value(json.comment);
             //document.getElementById('list.comment').value = json.comment;
-            document.getElementById('back2list').href = apiUrl + '/' + json.name + '.html';
+            document.getElementById('back2list').href = json.name + '.html';
             d('List ' + json.id + ' retreived!');
             c(RC.OK);
             getListUsers();
@@ -111,16 +107,6 @@ async function updateList(e) {
         return;
     }
 
-
-    let apiUrl = "";
-
-
-    apiUrl = window.location.href;
-    // get just the hostname and port from the url
-    apiUrl = apiUrl.substring(0, apiUrl.indexOf('/_edit.list.html'));
-    myUrl = apiUrl;
-    console.debug(' | API URL: ' + apiUrl);
-
     let id = document.getElementById('list.id').value;
     let name = document.getElementById('list.name').value;
     //let comment = document.getElementById('list.comment').value;
@@ -133,8 +119,8 @@ async function updateList(e) {
     let addNotModify = false;
     // if id is null or empty, then this is a new list
     // and we need to call the API to create a new list
+    let apiUrl = '/lists';
     if (id == null || id == '') {
-        apiUrl = apiUrl + '/addlist';
         data = { name, comment, visibility };
         apiMethod = 'POST';
         addNotModify = true;
@@ -142,7 +128,6 @@ async function updateList(e) {
     else {
         // if id is not null or empty, then this is an existing list
         // and we need to call the API to update the list
-        apiUrl = apiUrl + '/modifylist';
         data = { id, name, comment, visibility };
         apiMethod = 'PUT';
     }
@@ -216,7 +201,7 @@ async function updateList(e) {
                     c(RC.OK);
                     // if the name has changed, then we need to update back2list
                     if (document.getElementById('list.name.original').value != name) {
-                        document.getElementById('back2list').href = myUrl + '/' + name + '.html';
+                        document.getElementById('back2list').href = name + '.html';
                         console.debug(' | back2list.href: ' + document.getElementById('back2list').href);
                     }
                 });
@@ -255,8 +240,8 @@ async function getAllUsers() {
         return;
     }
 
-    let apiUrl = "/showusers";
-    console.debug(' | API URL: ' + apiUrl);
+    let apiUrl = "/users";
+    console.debug(fn + ' | API URL: ' + apiUrl);
     await fetch(apiUrl, {
         method: 'GET',
         headers: {

@@ -19,6 +19,7 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 
+using GeFeSLE.Controllers;
 
 
 // check a bunch of stuff; we MUST have a configuration file AND
@@ -325,6 +326,9 @@ builder.Services.Configure<KestrelServerOptions>(options =>
         listenOptions.UseHttps("d:\\repos\\GeFeSLE-server\\cert.pfx", "Kagero99$");
     });
 });
+
+// lastly register our own controller services so they play nicely with the DI system
+builder.Services.AddScoped<GeListController>();
 
 var app = builder.Build();
 
@@ -641,7 +645,7 @@ app.MapPut("/users/{userid}", async (GeFeSLEUser user,
             RoleManager<IdentityRole> roleManager) =>
 {
     string fn = "/users/{userid} (PUT)"; DBg.d(LogLevel.Trace, fn);
-    
+
     DBg.d(LogLevel.Trace, $"modifyuser: {user}");
 
     var moduser = await userManager.FindByIdAsync(user.Id);
@@ -649,7 +653,7 @@ app.MapPut("/users/{userid}", async (GeFeSLEUser user,
 
     moduser.UserName = user.UserName;
     moduser.Email = user.Email;
-    
+
 
     try
     {
@@ -683,14 +687,14 @@ app.MapPut("/users/{userid}", async (GeFeSLEUser user,
 
 
 // deleteuser endpoint
-app.MapDelete("/users/{userid}", async (string userid, 
+app.MapDelete("/users/{userid}", async (string userid,
             GeFeSLEDb db,
             HttpContext httpContext,
             UserManager<GeFeSLEUser> userManager,
             RoleManager<IdentityRole> roleManager) =>
 {
     string fn = "/users/{userid} (DEL)"; DBg.d(LogLevel.Trace, fn);
-    
+
     var deluser = await userManager.FindByIdAsync(userid);
     if (deluser is null) return Results.NotFound();
 
@@ -757,7 +761,7 @@ app.MapGet("/users", async (GeFeSLEDb db,
 {
     string fn = "/users (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-    
+
     var users = await userManager.Users.ToListAsync();
     // if there are no users,
     if (users.Count == 0)
@@ -929,7 +933,7 @@ app.MapGet("/users/{userid}/roles", async (string userid,
         RoleManager<IdentityRole> roleManager) =>
 {
     string fn = $"/users/{userid}/roles (GET)"; DBg.d(LogLevel.Trace, fn);
-    
+
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     var user = await userManager.FindByIdAsync(userid);
@@ -983,7 +987,7 @@ app.MapPost("/users/{userid}/roles", async (string userid,
     else
     {
         // print out the roles IList
-        
+
 
         // ...
 
@@ -995,7 +999,7 @@ app.MapPost("/users/{userid}/roles", async (string userid,
         var errors = new List<IdentityError>();
         foreach (var role in roles)
         {
-            if(sessionUser.Role != "SuperUser" && role == "SuperUser")
+            if (sessionUser.Role != "SuperUser" && role == "SuperUser")
             {
                 DBg.d(LogLevel.Trace, $"{fn} user {userid} NOT ASSIGNED to role {role}: Insufficient permissions");
                 errors.Add(new IdentityError { Code = "403", Description = "Insufficient permissions" });
@@ -1012,16 +1016,19 @@ app.MapPost("/users/{userid}/roles", async (string userid,
                 }
                 success = false;
             }
-            else {
+            else
+            {
                 added.Add(role);
-            
+
             }
         }
-        if (success) {
+        if (success)
+        {
             DBg.d(LogLevel.Information, $"{fn} -> user {userid} assigned to roles {System.Text.Json.JsonSerializer.Serialize(added)}");
             return Results.Ok();
         }
-        else {
+        else
+        {
             DBg.d(LogLevel.Information, $"{fn} -> user {userid} NOT ASSIGNED to roles {System.Text.Json.JsonSerializer.Serialize(roles)}");
             return Results.BadRequest(errors);
         }
@@ -1055,12 +1062,12 @@ app.MapDelete("/users/{userid}/roles", async (string userid,
     else
     {
         // get the sessionUser's role
-        if(sessionUser.Role != "SuperUser" && role == "SuperUser")
+        if (sessionUser.Role != "SuperUser" && role == "SuperUser")
         {
             DBg.d(LogLevel.Trace, $"{fn} user {userid} NOT UNASSIGNED from role {role}: Insufficient permissions");
             return Results.BadRequest("Insufficient permissions");
         }
-        
+
         var result = await userManager.RemoveFromRoleAsync(user, role);
         if (result.Succeeded)
         {
@@ -1080,10 +1087,10 @@ app.MapDelete("/users/{userid}/roles", async (string userid,
     Roles = "SuperUser,listowner"
 });
 
-app.MapGet("/lists", async (GeFeSLEDb db, 
+app.MapGet("/lists", async (GeFeSLEDb db,
     HttpContext httpContext) =>
 {
-    string fn = "/showlists (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/lists (GET)"; DBg.d(LogLevel.Trace, fn);
 
     var userManager = httpContext.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
@@ -1098,22 +1105,43 @@ app.MapGet("/lists", async (GeFeSLEDb db,
             visibleLists.Add(list);
         }
     }
-    if(visibleLists.Count == 0)
+    if (visibleLists.Count == 0)
     {
         return Results.NoContent();
     }
-    else {
+    else
+    {
         return Results.Ok(visibleLists);
     }
 });
 
-app.MapPost("/addlist", async (GeList newlist,
+app.MapGet("/lists/{listid}", async (GeFeSLEDb db,
+    int listid,
+    HttpContext httpContext) =>
+{
+    string fn = "/lists/{listid} (GET)"; DBg.d(LogLevel.Trace, fn);
+
+    var userManager = httpContext.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
+    GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+
+    GeList list = await db.Lists.FindAsync(listid);
+    if(list is null)
+    {
+        return Results.NotFound();
+    }
+    else
+    {
+        return Results.Ok(list);
+    }
+});
+
+app.MapPost("/lists", async (GeList newlist,
     GeFeSLEDb db,
     HttpContext httpContext,
     UserManager<GeFeSLEUser> userManager,
     RoleManager<IdentityRole> roleManager) =>
 {
-    var fn = "/addlist"; DBg.d(LogLevel.Trace, fn);
+    var fn = "/lists (POST)"; DBg.d(LogLevel.Trace, fn);
 
     // if the newlist.Name is null, return bad request
     if (newlist.Name.IsNullOrEmpty())
@@ -1145,8 +1173,7 @@ app.MapPost("/addlist", async (GeList newlist,
     await newlist.GenerateRSSFeed(db);
     await newlist.GenerateJSON(db);
     _ = GlobalStatic.GenerateHTMLListIndex(db);
-
-    string msg = $"/showlists/{newlist.Id}";
+    string msg = $"/lists/{newlist.Id}";
     return Results.Created(msg, newlist);
 }).RequireAuthorization(new AuthorizeAttribute
 {
@@ -1155,61 +1182,19 @@ app.MapPost("/addlist", async (GeList newlist,
 });
 
 
-app.MapPut("/modifylist", async (GeList inputList,
+app.MapPut("/lists", async (HttpContext context,
+    GeListDto inputList,
     GeFeSLEDb db,
     UserManager<GeFeSLEUser> userManager,
-    HttpContext httpContext) =>
-{
-    string dumpList = System.Text.Json.JsonSerializer.Serialize(inputList);
-
-    DBg.d(LogLevel.Trace, $"modifylist: {dumpList}");
-    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-    var modlist = await db.Lists.FindAsync(inputList.Id);
-    var namechange = false;
-    if (modlist is null) return Results.NotFound();
-
-    // if the name of the list has changed, delete the old html file; new one is created below anyway
-    if (modlist.Name != inputList.Name)
+    RoleManager<IdentityRole> roleManager,
+    GeListController geListController) =>
     {
-
-        var filename = $"{modlist.Name}.html";
-        var dest = Path.Combine(GlobalConfig.wwwroot!, filename);
-        if (File.Exists(dest))
-        {
-            DBg.d(LogLevel.Trace, $"Deleting {dest}");
-            File.Delete(dest);
-        }
-        // also delete the rss feed
-        filename = $"rss-{modlist.Name}.xml";
-        dest = Path.Combine(GlobalConfig.wwwroot!, filename);
-        if (File.Exists(dest))
-        {
-            DBg.d(LogLevel.Trace, $"Deleting {dest}");
-            File.Delete(dest);
-        }
-
-        namechange = true;
-    }
-
-    modlist.Name = inputList.Name;
-    modlist.Comment = inputList.Comment;
-    modlist.ModifiedDate = DateTime.Now;
-    modlist.SetVisibility(inputList.Visibility);
-
-    await db.SaveChangesAsync();
-    await modlist.GenerateHTMLListPage(db);
-    await modlist.GenerateRSSFeed(db);
-    await modlist.GenerateJSON(db);
-    if (namechange)
+        await geListController.ListsPut(context, inputList);
+    }).RequireAuthorization(new AuthorizeAttribute
     {
-        await GlobalStatic.GenerateHTMLListIndex(db);
-    }
-    return Results.Ok();
-}).RequireAuthorization(new AuthorizeAttribute
-{
-    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
-    Roles = "SuperUser,listowner"
-});
+        AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+        Roles = "SuperUser,listowner"
+    });
 
 
 app.MapGet("/showitems/{listId}", async (int listId,
@@ -1679,7 +1664,7 @@ app.MapPost("/me", async (HttpContext context,
             isJSApi = true;
         }
         StringBuilder sb = new StringBuilder();
-        GeFeSLEUser? user = null; 
+        GeFeSLEUser? user = null;
         string msg = null;
         bool success = false;
         string? realizedRole = null;
@@ -2269,7 +2254,7 @@ app.MapGet("/me", (HttpContext httpContext) =>
     UserDto sessionUser = UserSessionService.amILoggedIn(httpContext);
     DBg.d(LogLevel.Information, $"{fn} --> {sessionUser}");
     return Results.Ok(sessionUser);
-    })
+})
 .AllowAnonymous()
 .RequireAuthorization(new AuthorizeAttribute
 { AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme });
