@@ -107,17 +107,8 @@ async function getItem() {
                 if (response.ok) {
                     return response.json();
                 }
-                else if (response.status == RC.NOT_FOUND) {
-                    throw new Error('GeFeSLE server ' + storconfig.url + ' Not Found - check your settings');
-                }
-                else if (response.status == RC.UNAUTHORIZED) {
-                    throw new Error('Not authorized - have you logged in yet? <a href="' + storconfig.url + '/login">Login</a>');
-                }
-                else if (response.status == RC.FORBIDDEN) {
-                    throw new Error('Forbidden - have you logged in yet? <a href="' + storconfig.url + '/login">Login</a>');
-                }
-                else {
-                    throw new Error('Error ' + response.status + ' - ' + response.statusText);
+                else  {
+                    throw new Error(`${fn} - ${response.status}:${response.statusText}`);
                 }
             })
             //.then(response => response.json())
@@ -134,11 +125,11 @@ async function getItem() {
                 // write any error to the span with id="result"
                 d(error);
                 c(RC.ERROR);
-                console.error('Error:', error);
+                console.error(error);
             });
     }
     // Get the list NAME for the "back to list page" link
-    fetch(apiUrl + '/showlists/' + listid)
+    fetch('/lists/' + listid)
         .then(response => response.json())
         .then(data => {
             console.log('Success:', data);
@@ -301,7 +292,7 @@ async function updateItem(e) {
     catch (error) {
         d(error);
         c(RC.ERROR);
-        console.error('Error:', error);
+        console.error(error);
     }
 
 }

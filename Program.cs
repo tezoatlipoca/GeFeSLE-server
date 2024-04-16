@@ -319,13 +319,15 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.Configure<KestrelServerOptions>(options =>
-{
-    //$"http://{GlobalConfig.Bind}:{GlobalConfig.Port}
-    options.ListenAnyIP(GlobalConfig.Port, listenOptions =>
-    {
-        listenOptions.UseHttps("d:\\repos\\GeFeSLE-server\\cert.pfx", "Kagero99$");
-    });
-});
+ {
+     //$"http://{GlobalConfig.Bind}:{GlobalConfig.Port}
+     options.ListenAnyIP(GlobalConfig.Port);
+     // UNCOMMET THIS FOR SSL SUPPORT
+     //, listenOptions =>
+//     {
+//         listenOptions.UseHttps("d:\\repos\\GeFeSLE-server\\cert.pfx", "Kagero99$");
+//     });
+ });
 
 // lastly register our own controller services so they play nicely with the DI system
 builder.Services.AddScoped<GeListController>();

@@ -3,9 +3,7 @@ let globalCanEditList = false;
 
 
 function deleteItem(listId, itemid) {
-    let fn="deleteItem / ";
-
-    console.log(fn);
+    let fn="deleteItem"; console.log(fn);
     if (islocal()) return;
     if (confirm('Are you sure you want to delete this item?')) {
         let apiUrl = 'deleteitem/' + listId + '/' + itemid;
@@ -146,16 +144,14 @@ function filterUpdate() {
 
 // function to retreive a list of listids and listnames from the REST API
 async function loadLists() {
-    let fn = 'loadLists'; console.debug(fn);    
-    let apiUrl = '/showlists';
+    let fn = '/lists'; console.debug(fn);    
+    let apiUrl = '/lists';
     let tuples = [];
 
     try {
         let response = await fetch(apiUrl);
         if (!response.ok) {
-            d('No lists found at this URL: ' + apiUrl);
-            console.error(' | Error calling API: ' + response.status + ' ' + response.statusText);
-            return;
+            throw new Error(`${fn}: ${response.status}:${response.statusText}`);
         }
         let data = await response.json();
         console.debug(`${fn} ${apiUrl} -> ${JSON.stringify(data)}`);
@@ -164,8 +160,9 @@ async function loadLists() {
         }
         return tuples;
     } catch (error) {
-        d('EXCEPTION loading lists - no lists found at this URL:' + apiUrl);
-        console.error(' | EXCEPTION calling API: ' + error);
+        d(error);
+        c(RC.ERROR);
+        console.error(fn + error);
     }
 }
 
