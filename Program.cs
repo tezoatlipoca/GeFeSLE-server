@@ -88,11 +88,13 @@ builder.Services.AddSession(options =>
 {
     options.IdleTimeout = TimeSpan.FromMinutes(30); // The session timeout.
     // TODO: load session timeout from config file
-    options.Cookie.HttpOnly = true; // The session cookie is accessible only from the server side, not via JavaScript.
-    options.Cookie.IsEssential = true; // The session cookie is essential, meaning it doesn't need user consent.
     options.Cookie.Name = GlobalStatic.sessionCookieName;
-    options.Cookie.SameSite = SameSiteMode.None; // The session cookie can be sent in a cross-site context.
-    options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // The session cookie is always sent over HTTPS.
+    
+    options.Cookie.HttpOnly = true; // prevent client from accessing the cookie
+    options.Cookie.IsEssential = true; //user must accept this cookie
+    options.Cookie.SameSite = SameSiteMode.None;
+    options.Cookie.SecurePolicy = GlobalConfig.isSecure ? CookieSecurePolicy.Always : CookieSecurePolicy.None;
+    options.Cookie.Domain = GlobalConfig.CookieDomain;
 });
 builder.Services.AddAuthentication(options =>
 {
@@ -115,9 +117,12 @@ builder.Services.AddAuthentication(options =>
     options.Cookie.Name = GlobalStatic.authCookieName;
     options.ExpireTimeSpan = TimeSpan.FromMinutes(30);
     // TODO: load session timeout from config file
-    options.Cookie.HttpOnly = true;
-    options.Cookie.SameSite = SameSiteMode.None; // The authentication cookie can be sent in a cross-site context.
-    options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // The authentication cookie is always sent over HTTPS.
+    
+    options.Cookie.HttpOnly = true; // prevent client from accessing the cookie
+    options.Cookie.IsEssential = true; //user must accept this cookie
+    options.Cookie.SameSite = SameSiteMode.None;
+    options.Cookie.SecurePolicy = GlobalConfig.isSecure ? CookieSecurePolicy.Always : CookieSecurePolicy.None;
+    options.Cookie.Domain = GlobalConfig.CookieDomain;
     options.LoginPath = "/_login.html"; // Change this to your desired login path
     // this redirects any failure from the .RequireAuthorization() on endpoints.
     options.Events.OnRedirectToAccessDenied = async context =>
@@ -186,7 +191,7 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
     {
-        string bearerRealm = $"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}";
+        string bearerRealm = $"{GlobalConfig.Hostname}";
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -203,13 +208,13 @@ builder.Services.AddAuthentication(options =>
             OnMessageReceived = context =>
             {
                 var fn = "_Middleware.JWT_";
-                DBg.d(LogLevel.Trace, $"{fn} OnMessageReceived");
+                //DBg.d(LogLevel.Trace, $"{fn} OnMessageReceived");
                 return Task.CompletedTask;
             },
             OnChallenge = context =>
             {
                 var fn = "_Middleware.JWT_";
-                DBg.d(LogLevel.Trace, $"{fn} OnChallenge");
+                //DBg.d(LogLevel.Trace, $"{fn} OnChallenge");
                 return Task.CompletedTask;
             },
 
@@ -440,7 +445,7 @@ app.UseAntiforgery();
 
 app.Use(async (context, next) =>
     {
-        var fn = "_Middleware.Use_"; DBg.d(LogLevel.Trace, fn);
+        var fn = "_Middleware.Use_"; //DBg.d(LogLevel.Trace, fn);
 
         // like in our authentication redirects above, we want to 
         // detect if this is a CORS preflight request and if so, add the headers
@@ -455,7 +460,7 @@ app.Use(async (context, next) =>
             }
         }
         var remoteIpAddress = context.Connection.RemoteIpAddress;
-        DBg.d(LogLevel.Trace, $"{fn} Request origin: {origin} - from {remoteIpAddress}");
+        //DBg.d(LogLevel.Trace, $"{fn} Request origin: {origin} - from {remoteIpAddress}");
         //GlobalStatic.dumpRequest(context);
         if (GlobalStatic.IsCorsRequest(context.Request))
         {
@@ -478,7 +483,7 @@ app.Use(async (context, next) =>
         var roleManager = context.RequestServices.GetRequiredService<RoleManager<IdentityRole>>();
 
         var path = context.Request.Path.Value;
-        DBg.d(LogLevel.Trace, $"{fn} protected file check: {path}");
+        //DBg.d(LogLevel.Trace, $"{fn} protected file check: {path}");
         UserDto sessionUser = UserSessionService.amILoggedIn(context);
 
         if (path != null && ProtectedFiles.ContainsFile(path))
@@ -578,7 +583,8 @@ app.UseStaticFiles();
 
 app.UseCors(builder =>
         {
-            builder.AllowAnyHeader()
+            builder.WithOrigins(GlobalConfig.Hostname)
+                    .AllowAnyHeader()
                    .AllowAnyMethod()
                    .AllowCredentials();
 
@@ -950,7 +956,7 @@ app.MapGet("/users/{userid}/roles", async (string userid,
         if (roles.Count == 0)
         {
             DBg.d(LogLevel.Information, $"{fn} --> {user.UserName} has no role");
-            return Results.Ok(); //TODO: change to no content
+            return Results.NoContent(); 
         }
         else
         {
@@ -1042,7 +1048,7 @@ app.MapPost("/users/{userid}/roles", async (string userid,
     Roles = "SuperUser,listowner"
 });
 
-app.MapDelete("/users/{userid}/roles", async (string userid,
+app.MapDelete("/users/{userid}/roles/{role}", async (string userid,
         string role,
         GeFeSLEDb db,
         HttpContext httpContext,
@@ -1470,25 +1476,17 @@ app.MapPost("/addtag", async (
 
 
 // add an endpoint that DELETEs a list
-app.MapDelete("/deletelist/{id}", async (int id,
+app.MapDelete("/lists/{id}", async (int id,
         GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
-        HttpContext httpContext) =>
+        HttpContext httpContext, 
+        GeListController geListController) =>
 {
-    DBg.d(LogLevel.Trace, $"deletelist/{id}");
-    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-    var dellist = await db.Lists.FindAsync(id);
-    if (dellist is null) return Results.NotFound();
-    db.Lists.Remove(dellist);
-    // also delete all items in the list
-    var delitems = await db.Items.Where(item => item.ListId == id).ToListAsync();
-    await db.SaveChangesAsync();
-    await GlobalStatic.GenerateHTMLListIndex(db);
-    return Results.Ok();
+    await geListController.ListsDelete(httpContext, id);
 }).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
-    Roles = "SuperUser"
+    Roles = "SuperUser, listowner"
 });
 
 
@@ -1747,7 +1745,7 @@ app.MapPost("/me", async (HttpContext context,
     }
     // its OAuth
     DBg.d(LogLevel.Debug, $"{fn} - login.OAuthProvider: {login.OAuthProvider}");
-    AuthenticationProperties properties = new AuthenticationProperties { RedirectUri = $"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/oauthcallback" };
+    AuthenticationProperties properties = new AuthenticationProperties { RedirectUri = $"{GlobalConfig.Hostname}/oauthcallback" };
     string? authorizationScheme = null;
     switch (login.OAuthProvider)
     {
@@ -1789,6 +1787,8 @@ app.MapPost("/me", async (HttpContext context,
                         }
                         else
                         {
+                            // store the appToken in the session cookie
+                            MastoController.storeMastoToken(context, appToken);
                             return Results.Redirect(authorizationUrl);
                         }
                     }
@@ -1818,21 +1818,21 @@ app.MapGet("/mastocallback", async (string code,
     DBg.d(LogLevel.Trace, $"code: {code}");
 
     // now finally we have the code, we can use it to get the access token
-    // manually construct the POST request to the Mastodon server to get the access token
-    string? clientId = httpContext.Session.GetString("masto.client_id");
-    string? clientSecret = httpContext.Session.GetString("masto.client_secret");
-    string? instance = httpContext.Session.GetString("masto.instance");
-    string? realizedInstance = httpContext.Session.GetString("masto.realizedInstance");
-    if (clientId is null || clientSecret is null || instance is null || realizedInstance is null)
+    
+    // retrieve the application token from the session cookie
+    ApplicationToken? appToken = MastoController.getMastoToken(httpContext);
+
+    
+    if (appToken is null)
     {
         return Results.BadRequest("BAD/MISSING Mastodon parameters in session cookie - dunno, did you forget to _login.html -> /mastoconnect -> /mastologin?");
     }
 
-    string redirectUri = Uri.EscapeDataString($"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/mastocallback");
+    string redirectUri = Uri.EscapeDataString($"{GlobalConfig.Hostname}/mastocallback");
 
     string grantType = "authorization_code";
-    string tokenUrl = $"{realizedInstance}/oauth/token";
-    string postData = $"client_id={clientId}&client_secret={clientSecret}&grant_type={grantType}&code={code}&redirect_uri={redirectUri}&scope={GlobalStatic.mastoScopes}";
+    string tokenUrl = $"{appToken.instance}/oauth/token";
+    string postData = $"client_id={appToken.client_id}&client_secret={appToken.client_secret}&grant_type={grantType}&code={code}&redirect_uri={redirectUri}&scope={GlobalStatic.mastoScopes}";
     // create httpClient
     var client = new HttpClient();
     var content = new StringContent(postData, Encoding.UTF8, "application/x-www-form-urlencoded");
@@ -1846,7 +1846,7 @@ app.MapGet("/mastocallback", async (string code,
     if (response.StatusCode != System.Net.HttpStatusCode.OK)
     {
         var error = await response.Content.ReadAsStringAsync();
-        return Results.BadRequest($"Mastodon instance {instance} returned 422: {error} - Sent: {postData}");
+        return Results.BadRequest($"Mastodon instance {appToken.instance} returned 422: {error} - Sent: {postData}");
     }
     else
     {
@@ -1859,7 +1859,7 @@ app.MapGet("/mastocallback", async (string code,
         UserSessionService.AddAccessToken(httpContext, "mastodon", accessToken);
         // we STILL don't know who this user is, and we haven't
         // LOGGED them in. 
-        string credentialsUrl = $"{realizedInstance}/api/v1/accounts/verify_credentials";
+        string credentialsUrl = $"{appToken.instance}/api/v1/accounts/verify_credentials";
 
         // handle this better
         if (token is null) return Results.Unauthorized();
@@ -1870,7 +1870,7 @@ app.MapGet("/mastocallback", async (string code,
         if (response.StatusCode != System.Net.HttpStatusCode.OK)
         {
             var error = await response.Content.ReadAsStringAsync();
-            return Results.BadRequest($"Mastodon instance {instance} returned 422: {error} - requested {credentialsUrl}");
+            return Results.BadRequest($"Mastodon instance {appToken.instance} returned 422: {error} - requested {credentialsUrl}");
         }
         else
         {
@@ -1886,7 +1886,9 @@ app.MapGet("/mastocallback", async (string code,
             //return Results.Content($"<!DOCTYPE html><html><body><pre>{accountDump}</pre></body></html>", "text/html");
 
             // the username that WE will use will be their username on the mastodon instance
-            var username = $"{account.UserName}@{instance}";
+            // if the instance has http:// or https:// in it, strip it out
+            var instancename = appToken.instance.Replace("http://", "").Replace("https://", "");
+            var username = $"{account.UserName}@{instancename}";
             DBg.d(LogLevel.Trace, $"username: {username}");
             // look this username up in the database, see if they exist
             // if so, get the roles and log them in
@@ -2131,8 +2133,7 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid,
 
 
 
-    var instance = httpContext.Session.GetString("masto.instance");
-    var realizedInstance = httpContext.Session.GetString("masto.realizedInstance");
+    ApplicationToken appToken = MastoController.getMastoToken(httpContext);
 
     // array of strings to hold the status IDs of the statuses to unbookmark
     List<string> unbookmarkIDs = new List<string>();
@@ -2144,7 +2145,7 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid,
     int numGot = 0;
     client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
 
-    var apiUrl = $"{realizedInstance}/api/v1/bookmarks";
+    var apiUrl = $"{appToken.instance}/api/v1/bookmarks";
 
     while (stillMorePages && (numGot < num2Get))
     {
@@ -2209,7 +2210,7 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid,
                     // add the bookmark status class to the list
                     var item = new GeListItem();
                     item.ParseMastoStatus(status, listid);
-                    item.Comment += GlobalStatic.ImportAttribution(user.UserName, $"Mastodon ({realizedInstance})", list.Name);
+                    item.Comment += GlobalStatic.ImportAttribution(user.UserName, $"Mastodon ({appToken.instance})", list.Name);
 
                     db.Items.Add(item);
 
@@ -2236,7 +2237,7 @@ app.MapGet("/mastobookmarks/{listid}", async (int listid,
     _ = list.GenerateRSSFeed(db);
     _ = list.GenerateJSON(db);
 
-    _ = MastoController.unbookmarkMastoItems(token, realizedInstance, unbookmarkIDs);
+    _ = MastoController.unbookmarkMastoItems(token, appToken.instance, unbookmarkIDs);
 
 
 
@@ -2730,7 +2731,7 @@ app.MapPost("/fileuploadxfer", async (IFormFile file,
             await file.CopyToAsync(stream);
         }
         // we want to return the URL of the file that was uploaded
-        string url = $"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/uploads/{user.UserName}/{file.FileName}";
+        string url = $"{GlobalConfig.Hostname}/uploads/{user.UserName}/{file.FileName}";
 
 
 

@@ -53,7 +53,7 @@ async function mastodonGO(e){
         c(RC.BAD_REQUEST);
         return;
     }
-    let [username, role] = await amloggedin();
+    let [userid, username, role, isauth] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
     if(!isSuperUser(role) && !isListOwner(role) && !isContributor(role)){

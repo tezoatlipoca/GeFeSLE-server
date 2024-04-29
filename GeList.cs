@@ -186,12 +186,12 @@ public class GeList
                     new XAttribute("version", "2.0"),
                     new XElement("channel",
                         new XElement("title", $"{Name}"),
-                        new XElement("link", $"http://{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/rss/{Id}"),
+                        new XElement("link", $"http://{GlobalConfig.Hostname}/rss/{Id}"),
                         new XElement("description", $"{Comment}"),
                         items.Select(item =>
                             new XElement("item",
                                 new XElement("title", item.Name),
-                                new XElement("link", $"http://{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/showitems/{Id}/{item.Id}"),
+                                new XElement("link", $"http://{GlobalConfig.Hostname}/showitems/{Id}/{item.Id}"),
                                 new XElement("description", item.Comment),
                                 new XElement("pubDate", item.CreatedDate.ToString("r"))
                             )

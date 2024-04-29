@@ -21,12 +21,12 @@ public static class UserSessionService
     //     // Other service registrations...
     // }
 
-
+    
     public static GeFeSLEUser? UpdateSessionAccessTime(HttpContext context,
             GeFeSLEDb db,
             UserManager<GeFeSLEUser> userManager)
     {
-        var fn = "UpdateSessionAccessTime"; DBg.d(LogLevel.Trace, fn);
+        var fn = "UpdateSessionAccessTime"; //DBg.d(LogLevel.Trace, fn);
 
         var sessionUser = amILoggedIn(context);
         if (sessionUser.IsAuthenticated)
@@ -75,7 +75,7 @@ public static class UserSessionService
         DBg.d(LogLevel.Trace, "Token Create Time: " + DateTime.UtcNow.ToString());
         var expiretime = DateTime.UtcNow.Add(GlobalConfig.apiTokenDuration);
         DBg.d(LogLevel.Trace, "Token Expires: " + expiretime.ToString());
-        string bearerRealm = $"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}";
+        string bearerRealm = $"{GlobalConfig.Hostname}";
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = principal.Identity as ClaimsIdentity,
@@ -211,7 +211,7 @@ public static class UserSessionService
     //       can we even have .isAuthenticated with a non-nul username? i.e. can we just check isAuthenticated?
     public static UserDto amILoggedIn(HttpContext context)
     {
-        string fn = "amILoggedIn"; DBg.d(LogLevel.Trace, fn);
+        string fn = "amILoggedIn"; //DBg.d(LogLevel.Trace, fn);
         UserDto sessionUser = new UserDto();
         //GlobalStatic.dumpRequest(httpContext);
         sessionUser.Id = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
@@ -220,7 +220,7 @@ public static class UserSessionService
         sessionUser.IsAuthenticated = context.User.Identity?.IsAuthenticated ?? false;
         //DBg.d(LogLevel.Trace, $"{fn} isAuthenticated: {isAuthenticated}");
         sessionUser.Role = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
-        DBg.d(LogLevel.Debug, $"{fn} returning {sessionUser}");
+        //DBg.d(LogLevel.Debug, $"{fn} returning {sessionUser}");
         return sessionUser;
 
     }

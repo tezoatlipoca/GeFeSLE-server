@@ -91,10 +91,11 @@ window.onload = async function () {
 
 
 function deleteList(listId) {
-    console.log('deleteList');
+    let fn = "deleteList"; console.debug(`${fn} - ${listId}`);
     if (islocal()) return;
     if (confirm('Are you sure you want to delete this LIST?')) {
-        let apiUrl = 'deletelist/' + listId;
+        let apiUrl = '/lists/' + listId;
+        console.debug(`${fn} --> ${apiUrl}`);
         fetch(apiUrl, {
             method: 'DELETE',
             headers: {
@@ -112,22 +113,13 @@ function deleteList(listId) {
                     // just refresh the page
                     location.reload();
                 }
-                else if (response.status == RC.UNAUTHORIZED) {
-                    console.debug('DELETELIST - Not authorized to delete lists');
-                    throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-                }
-                else if (response.status == RC.FORBIDDEN) {
-                    console.debug('DELETELIST - Forbidden to get user ' + username);
-                    throw new Error('Forbidden! Are you logged in as an admin?');
-                }
                 else {
-                    d('Error: ' + response.statusText);
-                    c(RC.ERROR);
+                    throw new Error(`${fn} <-- ${response.status} - ${response.statusText} - ${response.url}`);
                 }
 
             })
             .catch((error) => {
-                console.error('Error:', error);
+                console.error(error);
                 d(error);
                 c(RC.ERROR);
             });

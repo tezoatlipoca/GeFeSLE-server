@@ -5,14 +5,18 @@ using GeFeSLE;
 public static class GlobalConfig
 {
     // define get and set methods for port, bind, hostname, and hostport
-    // the difference between Bind+Port and Hostname+Hostport is that Bind+Port is the address that the server listens on, 
-    //while Hostname+Hostport is the address that the server tells clients to connect to
-    // to handle reverse proxies, nats etc. 
+    // the difference between Bind+Port and Hostname is that Bind+Port is the address that the server listens on, 
+    //while Hostname is the address (and port) that the server tells clients to connect to
+    // to handle reverse proxies, nats etc. redirects blah blah
     // its the latter that gets written to HTML and RSS and Federation elements; i.e. the valid back reference to this instance.
     public static int Port { get; set; }
     public static string? Bind { get; set; }
     public static string? Hostname { get; set; }
-    public static int Hostport { get; set; }
+
+    public static bool isSecure { get; set; } = false;
+
+    public static string? CookieDomain { get; set; }
+    
     public static string? wwwroot { get; set; }
 
     public static LogLevel CURRENT_LEVEL { get; set; }
@@ -50,8 +54,20 @@ public static class GlobalConfig
         if (Bind == null) Bind = "localhost";
         Hostname = config.GetValue<string>("ServerSettings:Hostname");
         if (Hostname == null) Hostname = "http://localhost";
-        Hostport = config.GetValue<int>("ServerSettings:Port");
-        if (Hostport == 0) Hostport = 5000;
+        
+        // parse hostname. if it starts with https://, then we're secure
+        if (Hostname.StartsWith("https://"))
+        {
+            isSecure = true;
+        }
+
+
+        // the cookie domain for the site is Hostname without the protocol
+        CookieDomain = Hostname.Replace("http://", "").Replace("https://", "");
+        // the cookie domain should have any port number removed
+        CookieDomain = CookieDomain.Split(':')[0];
+
+
         wwwroot = config.GetValue<string>("ServerSettings:wwwroot");
         if (wwwroot == null) wwwroot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
         // if wwwroot doesn't exist, create it
@@ -62,7 +78,6 @@ public static class GlobalConfig
         DBg.d(LogLevel.Debug, $"Port: {Port}");
         DBg.d(LogLevel.Debug, $"Bind: {Bind}");
         DBg.d(LogLevel.Debug, $"Hostname: {Hostname}");
-        DBg.d(LogLevel.Debug, $"Hostport: {Hostport}");
         DBg.d(LogLevel.Debug, $"wwwroot: {wwwroot}");
 
         // get filenames for static html head, body header and body footer from the config file

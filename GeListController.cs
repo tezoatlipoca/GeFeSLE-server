@@ -20,6 +20,61 @@ namespace GeFeSLE.Controllers
             _roleManager = roleManager;
         }
 
+        public async Task<IActionResult> ListsDelete(HttpContext httpContext,
+            int id)
+        {
+            string fn = "/lists (DELETE)";
+            DBg.d(LogLevel.Trace, fn);
+
+            GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, _db, _userManager);
+            var sessionUser = UserSessionService.amILoggedIn(httpContext);
+            var modlist = await _db.Lists.FindAsync(id);
+            if (modlist is null)
+            {
+                return NotFound();
+            }
+            (bool canMod, string? whyNot) = modlist.IsUserAllowedToModify(user);
+            if (!canMod && sessionUser.Role != "SuperUser")
+            {
+                ContentResult cr = new ContentResult();
+                cr.StatusCode = StatusCodes.Status403Forbidden;
+                cr.Content = whyNot;
+                return cr;
+            }
+
+            var filename = $"{modlist.Name}.html";
+            var dest = Path.Combine(GlobalConfig.wwwroot!, filename);
+            if (System.IO.File.Exists(dest))
+            {
+                DBg.d(LogLevel.Trace, $"{fn} Deleting {dest}");
+                System.IO.File.Delete(dest);
+            }
+            // also delete the rss feed
+            filename = $"rss-{modlist.Name}.xml";
+            dest = Path.Combine(GlobalConfig.wwwroot!, filename);
+            if (System.IO.File.Exists(dest))
+            {
+                DBg.d(LogLevel.Trace, $"{fn} Deleting {dest}");
+                System.IO.File.Delete(dest);
+            }
+             // also delete the rss feed
+            filename = $"{modlist.Name}.json";
+            dest = Path.Combine(GlobalConfig.wwwroot!, filename);
+            if (System.IO.File.Exists(dest))
+            {
+                DBg.d(LogLevel.Trace, $"{fn} Deleting {dest}");
+                System.IO.File.Delete(dest);
+            }
+            _db.Lists.Remove(modlist);
+            // also delete all items in the list
+            _db.Items.Where(item => item.ListId == id);
+    
+            await _db.SaveChangesAsync();
+            _ = GlobalStatic.GenerateHTMLListIndex(_db);
+            return Ok();
+        }
+
+
         public async Task<IActionResult> ListsPut(HttpContext httpContext,
             GeListDto inputList)
         {

@@ -1,7 +1,7 @@
 function islocal() {
     // determine if this page is a local file i.e. file://
     let isLocal = window.location.protocol == 'file:';
-    console.debug(' | isLocal: ' + isLocal);
+    console.debug('>isLocal: ' + isLocal);
     if (isLocal) {
         d('Cannot call API from a local file!');
         c(RC.BAD_REQUEST);
@@ -105,9 +105,9 @@ function showDebuggingElements() {
     let fn = "showDebuggingElements";
     console.info(fn);
     let links = document.getElementsByClassName('debugging');
-        for (l of links) {
-            l.style.display = '';
-        }
+    for (l of links) {
+        l.style.display = '';
+    }
 }
 
 function showListSecrets() {
@@ -127,8 +127,8 @@ function showListSecrets() {
     for (let l of links) { l.style.display = ''; }
     links = document.getElementsByClassName('stickynoteslink');
     for (let l of links) { l.style.display = ''; }
-    
-    
+
+
 }
 
 // convenience routines for the above that return true
@@ -172,8 +172,8 @@ function isSuperUser(r) {
 async function amloggedin() {
     let fn = 'amLoggedIn';
     console.info(fn);
-    
-    
+
+
     // check to see if our jwt token is in local storage
     let token = localStorage.getItem('apiToken');
     if (Boolean(token)) {
@@ -182,7 +182,7 @@ async function amloggedin() {
     }
     else {
         console.debug(fn + ' | Token NOT found in local storage');
-        
+
     }
 
     // we can't check the existance of either an auth or session cookie
@@ -199,7 +199,8 @@ async function amloggedin() {
         return await fetch(apiUrl, {
             headers: {
                 "GeFeSLE-XMLHttpRequest": "true",
-                }})
+            }
+        })
             .then(response => {
                 if (response.ok) {
                     return response.json();
@@ -225,7 +226,7 @@ async function amloggedin() {
                 console.debug(fn + ' | API Response: ' + JSON.stringify(json));
 
                 return [id, userName, role];
-                }
+            }
             );
     } catch (error) {
         console.error('Error:', error);
@@ -258,10 +259,48 @@ function make1stcelllinks() {
     });
 }
 
-const GeListVisibility =  
+const GeListVisibility =
 {
     Public: 0,          // anyone can view the list's html page, json, rss etc. 
     Contributors: 1,    // restricted to contributors and list owners (and list creator and SU)
     ListOwners: 2,      // restricted to only list owners (and creator and SU)
     Private: 3          // restricted to only creator and SU
+}
+
+
+function handleResponse(response) {
+    if (!response.ok) {
+        let contentType = response.headers.get("Content-Type");
+
+        if (contentType != null && contentType.includes("application/json")) {
+            // The response is JSON
+            return response.json().then(errorDetails => {
+                let errorDetailsString = '';
+                for (let key in errorDetails) {
+                    if (typeof errorDetails[key] === 'object' && errorDetails[key] !== null) {
+                        //errorDetailsString += `${key}:`;
+                        for (let subKey in errorDetails[key]) {
+                            //errorDetailsString += `  ${subKey}: ${errorDetails[key][subKey]}<br>\n`;
+                            errorDetailsString += ` ${errorDetails[key][subKey]}<br>\n`;
+                        }
+                    } else {
+                        errorDetailsString += `${key}: ${errorDetails[key]}<br>\n`;
+                    }
+                }
+                throw new Error(`${response.status} - ${response.statusText} - ${response.url}<br>\n${errorDetailsString}`);
+            
+            });
+        }
+        else if (contentType != null && contentType.includes("text/plain")) {
+            // The response is text
+            return response.text().then(errorDetails => {
+                throw new Error(`${response.status} - ${response.statusText} - ${response.url} - ${errorDetails}`);
+            });
+        }
+        else {
+            // The response is some other type
+            throw new Error(`${response.status} - ${response.statusText} - ${response.url}`);
+        }
+    }
+    return response;
 }

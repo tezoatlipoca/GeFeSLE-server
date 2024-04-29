@@ -124,7 +124,6 @@ public static class GlobalStatic
         sb.AppendLine($"<a href=\"/session\">Session</a> |");
         sb.AppendLine($"<a href=\"/me/delete\">KILL Session</a> | ");
         sb.AppendLine($"<a href=\"/regenerate\">REGEN</a> |");
-        sb.AppendLine($"<a href=\"/showusers\">show users</a> | ");
         sb.AppendLine($"<a href=\"/_edituser.html\">edit users</a> | ");
 
         sb.AppendLine("]</p>");

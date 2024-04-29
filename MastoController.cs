@@ -115,7 +115,7 @@ public static class MastoController
         string? ynot = null;
         ApplicationToken? application = null;
         // construct our redirect Uri using our external hostname and port
-        string redirectUri = Uri.EscapeDataString($"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/mastocallback");
+        string redirectUri = Uri.EscapeDataString($"{GlobalConfig.Hostname}/mastocallback");
 
         string scopes = GlobalStatic.mastoScopes;
 
@@ -159,6 +159,9 @@ public static class MastoController
         return (application, ynot);
 
     }
+
+    
+    
 
     public static void storeMastoToken(HttpContext context, ApplicationToken application)
     {
@@ -209,7 +212,7 @@ public static class MastoController
             application.client_secret is null ||
             application.instance is null))
         {
-            string redirectUri = Uri.EscapeDataString($"{GlobalConfig.Hostname}:{GlobalConfig.Hostport}/mastocallback");
+            string redirectUri = Uri.EscapeDataString($"{GlobalConfig.Hostname}/mastocallback");
             DBg.d(LogLevel.Debug, $"{fn} constructed redirectUri: {redirectUri}");
             getMastodonOAuthUrl = $"{application.instance}/oauth/authorize?client_id={application.client_id}&response_type=code&redirect_uri={redirectUri}&scope={Uri.EscapeDataString(GlobalStatic.mastoScopes)}";
             DBg.d(LogLevel.Trace, $"{fn} constructed authorizationUrl: {getMastodonOAuthUrl}");
