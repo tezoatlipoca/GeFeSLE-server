@@ -27,6 +27,53 @@ public class GeListDto
     public GeListVisibility Visibility { get; set; } = GeListVisibility.Public;
 }
 
+public class ImportService
+{
+    public static readonly string Microsoft = "Microsoft";
+    public static readonly string Google = "Google";
+    public static readonly string Mastodon = "Mastodon";
+    public static readonly Dictionary<string, List<string>> Services = new Dictionary<string, List<string>>
+    {
+        { Microsoft, new List<string> { "StickyNotes" } }, // , "OneNote", "MicrosoftLists" -- NOT SUPPORTED YET
+        { Google, new List<string> { "Tasks"  } },        //"Keep","Saved" -- NOT SUPPORTED YET 
+        { Mastodon, new List<string> { "Bookmarks" } }     // ?? TBD
+    };
+
+    // provided a platform and a service, return a boolean if its in our support list
+    public static bool IsSupported(string platform, string service)
+    {
+        if (Services.ContainsKey(platform))
+        {
+            return Services[platform].Contains(service);
+        }
+        return false;
+    }
+    public static bool IsSupported(string platformService)
+    {
+        string[] parts = platformService.Split(':');
+        if (parts.Length != 2)
+        {
+            throw new ArgumentException("platformService must be in the format 'platform:service'");
+        }
+
+        string platform = parts[0];
+        string service = parts[1];
+
+        return IsSupported(platform, service);
+    }
+}
+
+public class GeListImportDto
+{
+    public string Service { get; set; } = null;
+    public string? Data { get; set; } = null;
+
+    public bool IsValid()
+    {
+        return Service != null && Data != null && ImportService.IsSupported(Service);
+    }
+}
+
 public class GeList
 {
     public int Id { get; set; }

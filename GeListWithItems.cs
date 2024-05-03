@@ -6,6 +6,16 @@ public class GeListWithItems
     public GeList List { get; set; }
     public IEnumerable<GeListItem> Items { get; set; }
 
+    // constructor that takes a db context and a list id
+    public GeListWithItems(GeFeSLEDb db, int listId)
+    {
+        List = db.Lists.Find(listId);
+        if(List == null)
+        {
+            throw new ArgumentNullException("GeLIstWithItems: list is null/invalid");
+        }
+        Items = db.Items.Where(item => item.ListId == listId).ToList();
+    }
     // constructor that ensures the list and items are not null
     public GeListWithItems(GeList list, IEnumerable<GeListItem> items)
     {

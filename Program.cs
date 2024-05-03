@@ -89,7 +89,7 @@ builder.Services.AddSession(options =>
     options.IdleTimeout = TimeSpan.FromMinutes(30); // The session timeout.
     // TODO: load session timeout from config file
     options.Cookie.Name = GlobalStatic.sessionCookieName;
-    
+
     options.Cookie.HttpOnly = true; // prevent client from accessing the cookie
     options.Cookie.IsEssential = true; //user must accept this cookie
     options.Cookie.SameSite = SameSiteMode.None;
@@ -117,7 +117,7 @@ builder.Services.AddAuthentication(options =>
     options.Cookie.Name = GlobalStatic.authCookieName;
     options.ExpireTimeSpan = TimeSpan.FromMinutes(30);
     // TODO: load session timeout from config file
-    
+
     options.Cookie.HttpOnly = true; // prevent client from accessing the cookie
     options.Cookie.IsEssential = true; //user must accept this cookie
     options.Cookie.SameSite = SameSiteMode.None;
@@ -329,9 +329,9 @@ builder.Services.Configure<KestrelServerOptions>(options =>
      options.ListenAnyIP(GlobalConfig.Port);
      // UNCOMMET THIS FOR SSL SUPPORT
      //, listenOptions =>
-//     {
-//         listenOptions.UseHttps("d:\\repos\\GeFeSLE-server\\cert.pfx", "Kagero99$");
-//     });
+     //     {
+     //         listenOptions.UseHttps("d:\\repos\\GeFeSLE-server\\cert.pfx", "Kagero99$");
+     //     });
  });
 
 // lastly register our own controller services so they play nicely with the DI system
@@ -956,7 +956,7 @@ app.MapGet("/users/{userid}/roles", async (string userid,
         if (roles.Count == 0)
         {
             DBg.d(LogLevel.Information, $"{fn} --> {user.UserName} has no role");
-            return Results.NoContent(); 
+            return Results.NoContent();
         }
         else
         {
@@ -1133,7 +1133,7 @@ app.MapGet("/lists/{listid}", async (GeFeSLEDb db,
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     GeList list = await db.Lists.FindAsync(listid);
-    if(list is null)
+    if (list is null)
     {
         return Results.NotFound();
     }
@@ -1479,7 +1479,7 @@ app.MapPost("/addtag", async (
 app.MapDelete("/lists/{id}", async (int id,
         GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
-        HttpContext httpContext, 
+        HttpContext httpContext,
         GeListController geListController) =>
 {
     await geListController.ListsDelete(httpContext, id);
@@ -1818,11 +1818,11 @@ app.MapGet("/mastocallback", async (string code,
     DBg.d(LogLevel.Trace, $"code: {code}");
 
     // now finally we have the code, we can use it to get the access token
-    
+
     // retrieve the application token from the session cookie
     ApplicationToken? appToken = MastoController.getMastoToken(httpContext);
 
-    
+
     if (appToken is null)
     {
         return Results.BadRequest("BAD/MISSING Mastodon parameters in session cookie - dunno, did you forget to _login.html -> /mastoconnect -> /mastologin?");
@@ -1922,331 +1922,63 @@ app.MapGet("/mastocallback", async (string code,
     }
 });
 
-app.MapGet("/microsoftstickynotes/{listid}", async (
-        int listid,
-        GeFeSLEDb db,
-        UserManager<GeFeSLEUser> userManager,
-        HttpContext httpContext) =>
+
+app.MapPost("/lists/{listid}", async Task<IResult> (HttpContext httpContext) =>
 {
-    DBg.d(LogLevel.Trace, "microsoftstickynotes");
+    int listid = int.Parse(httpContext.Request.RouteValues["listid"].ToString());
+    GeListImportDto importListDto = await httpContext.Request.ReadFromJsonAsync<GeListImportDto>();
+
+    var db = httpContext.RequestServices.GetRequiredService<GeFeSLEDb>();
+    var userManager = httpContext.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
+    var geListController = httpContext.RequestServices.GetRequiredService<GeListController>();
+
+    string fn = "/lists/{listid} (POST)"; DBg.d(LogLevel.Trace, fn);
+
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-
-    // get the access token from the session service
-    string? token = UserSessionService.GetAccessToken(httpContext, "Microsoft");
-    // handle this better
-    if (token is null)
-    {
-        var sb = new StringBuilder();
-        string msg = $"You need to login/authorize w/ Microsoft - I don't have a token for you. ";
-
-        await GlobalStatic.GenerateUnAuthPage(sb, msg);
-        return Results.Content(sb.ToString(), "text/html");
-    }
-
-    // obtain the list - if it doesn't exist return 404 list not found
+    // get session user
+    var sessionUser = UserSessionService.amILoggedIn(httpContext);
+    // obtain the target list - if it doesn't exist return 404 list not found
     var list = await db.Lists.FindAsync(listid);
     if (list is null) return Results.NotFound($"List {listid} not found.");
-
-    List<GeListItem> geListItems = await MicrosoftController.getMicrosoftOutlookTasks(httpContext, token);
-    if (geListItems is null) return Results.NotFound($"No Sticky Notes for {user.UserName} found.");
-    int numitems = geListItems.Count;
-    if (numitems == 0) return Results.NotFound($"No Sticky Notes for {user.UserName} found.");
-
-    // iterate through the list of GeListItems
-    foreach (GeListItem item in geListItems)
+    // is the user allowed to modify this list? 
+    (bool canMod, string? ynot) = list.IsUserAllowedToModify(user);
+    if (!canMod && sessionUser.Role != "SuperUser")
     {
-        // set the listId of the item to the listid
-        item.ListId = list.Id;
-        // add a blurb to the end of the .comment field saying who imported this item from where and when
-        item.Comment += GlobalStatic.ImportAttribution(user.UserName, "Microsoft Sticky Notes", list.Name);
-
-
-        // add the item to the database
-        db.Items.Add(item);
+        ContentResult cr = new ContentResult();
+        cr.StatusCode = StatusCodes.Status403Forbidden;
+        cr.Content = ynot;
+        return cr as IResult; // Explicitly cast ContentResult to IResult
     }
-    // save the changes to the database
-    await db.SaveChangesAsync();
+    else
+    {
+        return await Task.FromResult<IResult>(await geListController.ListImport(httpContext, importListDto, list, user)); // Change return type to Task<IResult>
+    }
 
-    // regenerate all the list artifacts
-    _ = list.GenerateHTMLListPage(db);
-    _ = list.GenerateRSSFeed(db);
-    _ = list.GenerateJSON(db);
-
-    return Results.Ok($"Retreived {numitems} Sticky Notes..");
-
-}).AllowAnonymous()
+})
 .RequireAuthorization(new AuthorizeAttribute
-{
-    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
-    Roles = "SuperUser"
-});
-
-
-
-app.MapGet("/googletasklists", async (
-        GeFeSLEDb db,
-        UserManager<GeFeSLEUser> userManager,
-        HttpContext httpContext) =>
-{
-    var fn = "/googletasklists";
-    DBg.d(LogLevel.Trace, fn);
-    GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-    if (me is null)
-    {
-        var sb = new StringBuilder();
-        string msg = $"You need to login. ";
-
-        await GlobalStatic.GenerateUnAuthPage(sb, msg);
-        return Results.Content(sb.ToString(), "text/html");
-    }
-    // get the access token from the session service
-    string? token = UserSessionService.GetAccessToken(httpContext, "Google");
-    // handle this better
-    if (token is null)
-    {
-        var sb = new StringBuilder();
-        string msg = $"You need to login/authorize w/ Google - I don't have a token for you. ";
-
-        await GlobalStatic.GenerateUnAuthPage(sb, msg);
-        return Results.Content(sb.ToString(), "text/html");
-    }
-
-    List<(string, string)> taskLists = await GoogleController.getGoogleTaskLists(token);
-
-    if (taskLists is null)
-    {
-        return Results.NotFound($"No Google Task Lists for {me.UserName} found.");
-    }
-    if (taskLists.Count == 0) return Results.NotFound($"No Google Task Lists for {me.UserName} found.");
-
-    StringBuilder listChoosePage = await GoogleController.makeTaskListChooser(taskLists, db, httpContext, userManager, me);
-
-    return Results.Content(listChoosePage.ToString(), "text/html");
-
-}).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
     Roles = "SuperUser, listowner, contributor"
 });
 
-app.MapGet("/googletasklistimport/{glistid}/{listid}", async (
-        string glistid,
-        int listid,
-        GeFeSLEDb db,
-        UserManager<GeFeSLEUser> userManager,
-        HttpContext httpContext) =>
+app.MapPost("/lists/query", async (
+    int listid,
+    GeListImportDto importListDto,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    HttpContext httpContext,
+    GeListController geListController) =>
 {
-    var fn = "/googletasklistimport";
-    DBg.d(LogLevel.Trace, fn);
+    string fn = "/lists/ (POST)"; DBg.d(LogLevel.Trace, fn);
+
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-
-    // get the access token from the session service
-    string? token = UserSessionService.GetAccessToken(httpContext, "Google");
-    // handle this better
-    if (token is null)
-    {
-        var sb = new StringBuilder();
-        string msg = $"You need to login/authorize w/ Google - I don't have a token for you. ";
-
-        await GlobalStatic.GenerateUnAuthPage(sb, msg);
-        return Results.Content(sb.ToString(), "text/html");
-    }
-    if (glistid is null)
-    {
-        return Results.NotFound("No Google Task List ID specified.");
-
-    }
-    // find the GeLIst for this listid
-    var list = await db.Lists.FindAsync(listid);
-    if (list is null) return Results.NotFound();
-
-    List<GeListItem> tasks = await GoogleController.getGoogleTasks(glistid, token);
-
-    if (tasks is null)
-    {
-        return Results.NotFound($"No Google Tasks for {user.UserName} found.");
-    }
-    int numtasks = tasks.Count;
-    if (numtasks == 0) return Results.NotFound($"No Google Tasks for {user.UserName} found.");
-
-    foreach (GeListItem item in tasks)
-    {
-        item.ListId = list.Id;
-        item.Comment += GlobalStatic.ImportAttribution(user.UserName, "Google Task List", list.Name);
-        db.Items.Add(item);
-    }
-    await db.SaveChangesAsync();
-
-    // regenerate all the list artifacts
-    _ = list.GenerateHTMLListPage(db);
-    _ = list.GenerateRSSFeed(db);
-    _ = list.GenerateJSON(db);
-
-    //TODO: list.function that is responsible for a list's file name
-    // do for each file type. 
-    return Results.Redirect($"/{list.Name}.html");
-
-}).AllowAnonymous()
+    importListDto.Data = null;
+    return await geListController.ListImport(httpContext, importListDto, null, user);
+})
 .RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
-    Roles = "SuperUser"
-});
-
-
-// endpoint mastobookmarks to call GET /api/v1/bookmarks in mastodon API
-app.MapGet("/mastobookmarks/{listid}", async (int listid,
-            int num2Get,
-            bool? unbookmark, // if the checkbox isn't, there's no value, so it's null
-            GeFeSLEDb db,
-            UserManager<GeFeSLEUser> userManager,
-            HttpContext httpContext) =>
-{
-    DBg.d(LogLevel.Trace, "mastobookmarks");
-    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-
-    // if there's no/null value for unbookmark, set it to false
-    if (unbookmark is null)
-    {
-        unbookmark = false;
-    }
-
-    DBg.d(LogLevel.Trace, $"unbookmark: {unbookmark}");
-
-    // check to see if the listid is valid
-    var list = await db.Lists.FindAsync(listid);
-    if (list is null) return Results.NotFound();
-
-    if ((num2Get < 1) || (num2Get > 999)) return Results.BadRequest("num2Get must be between 1 and 999");
-
-    // get the access token from the session service
-    string? token = UserSessionService.GetAccessToken(httpContext, "mastodon");
-    // handle this better
-    if (token is null)
-    {
-        var sb = new StringBuilder();
-        string msg = $"You need to login/authorize w/ Mastodon - I don't have a token for you. ";
-
-        await GlobalStatic.GenerateUnAuthPage(sb, msg);
-        return Results.Content(sb.ToString(), "text/html");
-    }
-
-
-
-    ApplicationToken appToken = MastoController.getMastoToken(httpContext);
-
-    // array of strings to hold the status IDs of the statuses to unbookmark
-    List<string> unbookmarkIDs = new List<string>();
-
-    // create httpClient
-    var client = new HttpClient();
-    bool stillMorePages = true;
-
-    int numGot = 0;
-    client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
-
-    var apiUrl = $"{appToken.instance}/api/v1/bookmarks";
-
-    while (stillMorePages && (numGot < num2Get))
-    {
-        DBg.d(LogLevel.Trace, $"apiUrl: {apiUrl}");
-        var response = await client.GetAsync(apiUrl);
-        var content = await response.Content.ReadAsStringAsync();
-
-        // if the results are paged in the http response header we'll get a link header
-        // that looks like this:
-        // <https://mastodon.social/api/v1/bookmarks?max_id=123456>; rel="next"
-        // get that next link and use it to get the next page of bookmarks
-        var nextLink = response.Headers.GetValues("Link").FirstOrDefault();
-        if (nextLink is not null)
-        {
-            // parse the next link to get the url
-            var nextUrl = nextLink.Split(';')[0].Trim('<', '>');
-            apiUrl = nextUrl;
-        }
-        else
-        {
-            stillMorePages = false;
-        }
-        // back to processing THIS page. 
-        // the content is going to be an array of Status class objects
-        if (content is null)
-        {
-            return Results.NotFound();
-        }
-        else
-        {
-            // there's a bug in the Newtonsoft JSON library, when it deserializes the statuses, 
-            // it doesn't get the media_attachments. So we're going to use the System.Text.Json library
-            // TODO: go log that bug w/ Newtonsoft. 2 reproduce just switch back to their deserializer and
-            //  dump out the json - media attachments are missing. 
-            Status[]? Systemstatuses = System.Text.Json.JsonSerializer.Deserialize<Status[]>(content);
-
-            //Status[]? NewtonsoftStatuses = JsonConvert.DeserializeObject<Status[]>(content);
-            //var sys = JsonConvert.SerializeObject(Systemstatuses[0], Formatting.Indented);
-            //var newt = JsonConvert.SerializeObject(NewtonsoftStatuses[0], Formatting.Indented);
-
-            //StringBuilder sb = new StringBuilder();
-            //sb.AppendLine($"<!DOCTYPE html><html><body><table><tr><td style=\"vertical-align: top;\">Systemstatuses: <br><pre>{sys}</pre></td><td style=\"vertical-align: top;\">NewtonsoftStatuses:<br><pre>{newt}</pre></td></tr></table></body></html>");
-            //return Results.Content(sb.ToString(), "text/html");
-
-
-            if (Systemstatuses is null) return Results.NotFound();
-            DBg.d(LogLevel.Trace, $"statuses: {Systemstatuses.Length}");
-            // iterate over the statuses and print them out
-            foreach (Status status in Systemstatuses)
-            {
-                // check to see the status's visibility
-                // only import it if its public or unlisted
-
-                if (status.Visibility != Mastonet.Visibility.Public &&
-                    status.Visibility != Mastonet.Visibility.Unlisted)
-                {
-                    DBg.d(LogLevel.Trace, $"skipping {status.Id} because its visibility is {status.Visibility}");
-
-                }
-                else
-                {
-                    // add the bookmark status class to the list
-                    var item = new GeListItem();
-                    item.ParseMastoStatus(status, listid);
-                    item.Comment += GlobalStatic.ImportAttribution(user.UserName, $"Mastodon ({appToken.instance})", list.Name);
-
-                    db.Items.Add(item);
-
-                    // add the item.statusID to unbookmarkIDs
-                    if (unbookmark == true)
-                    {
-                        DBg.d(LogLevel.Trace, $"unbookmarking {status.Id}");
-                        unbookmarkIDs.Add(status.Id);
-                    }
-                    // only "count" the imported bookmarks
-                    numGot++;
-                    if (numGot >= num2Get) break;
-
-                }
-
-            }
-            await db.SaveChangesAsync();
-        }
-        DBg.d(LogLevel.Trace, $"numGot: {numGot}");
-        if (numGot >= num2Get) break;
-    } // end of while loop!
-      // we don't care about waiting for these tasks to complete. 
-    _ = list.GenerateHTMLListPage(db);
-    _ = list.GenerateRSSFeed(db);
-    _ = list.GenerateJSON(db);
-
-    _ = MastoController.unbookmarkMastoItems(token, appToken.instance, unbookmarkIDs);
-
-
-
-
-    return Results.Redirect($"/{list.Name}.html");
-}).RequireAuthorization(new AuthorizeAttribute
-{
-    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
-    Roles = "SuperUser,listowner"
+    Roles = "SuperUser, listowner, contributor"
 });
 
 
