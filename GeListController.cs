@@ -221,11 +221,9 @@ namespace GeFeSLE.Controllers
             // handle this better
             if (token is null)
             {
-                var sb = new StringBuilder();
                 string msg = $"You need to login/authorize w/ Microsoft - I don't have a token for you. ";
 
-                await GlobalStatic.GenerateUnAuthPage(sb, msg);
-                return Results.Content(sb.ToString(), "text/html");
+                return Results.BadRequest(msg);
             }
 
             List<GeListItem> geListItems = await MicrosoftController.getMicrosoftOutlookTasks(httpContext, token);
@@ -253,7 +251,7 @@ namespace GeFeSLE.Controllers
             _ = destList.GenerateRSSFeed(_db);
             _ = destList.GenerateJSON(_db);
 
-            return Results.Ok($"Retreived {numitems} Sticky Notes..");
+            return Results.Redirect($"/{destList.Name}.html");
         }
 
         public async Task<IResult> ListsPostGetGoogleTaskLists(HttpContext httpContext,
@@ -268,11 +266,9 @@ namespace GeFeSLE.Controllers
             // handle this better
             if (token is null)
             {
-                var sb = new StringBuilder();
                 string msg = $"You need to login/authorize w/ Google - I don't have a token for you. ";
 
-                await GlobalStatic.GenerateUnAuthPage(sb, msg);
-                return Results.Content(sb.ToString(), "text/html");
+                return Results.BadRequest(msg);
             }
 
             List<(string, string)> taskLists = await GoogleController.getGoogleTaskLists(token);
@@ -300,11 +296,8 @@ namespace GeFeSLE.Controllers
             // handle this better
             if (token is null)
             {
-                var sb = new StringBuilder();
                 string msg = $"You need to login/authorize w/ Google - I don't have a token for you. ";
-
-                await GlobalStatic.GenerateUnAuthPage(sb, msg);
-                return Results.Content(sb.ToString(), "text/html");
+                return Results.BadRequest(msg);
             }
             if (importer.Data is null)
             {
@@ -348,8 +341,16 @@ namespace GeFeSLE.Controllers
         {
             // num2Get and unbookmark are packaged as json in the importer.Data parameter
             // in the json form of: {"num2Get": 10, "unbookmark": true}
-            MastoImportParams? mastoParams = System.Text.Json.JsonSerializer.Deserialize<MastoImportParams>(importer.Data);
-            // improve this w/ try catch
+            MastoImportParams? mastoParams;
+            try {
+                mastoParams = System.Text.Json.JsonSerializer.Deserialize<MastoImportParams>(importer.Data);
+                // improve this w/ try catch
+            }
+            catch (Exception e)
+            {
+                DBg.d(LogLevel.Error, $"Error deserializing Mastodon Import Parameters: {e.Message}");
+                return Results.BadRequest($"Invalid Mastodon Import Parameters: {importer.Data} - e.g. {{num2Get: 10, unbookmark: true}}");
+            }
             if(mastoParams is null) return Results.BadRequest($"Invalid Mastodon Import Parameters: {mastoParams}");
             
             DBg.d(LogLevel.Trace, $"unbookmark: {mastoParams.unbookmark}");
@@ -362,11 +363,9 @@ namespace GeFeSLE.Controllers
             // handle this better
             if (token is null)
             {
-                var sb = new StringBuilder();
                 string msg = $"You need to login/authorize w/ Mastodon - I don't have a token for you. ";
 
-                await GlobalStatic.GenerateUnAuthPage(sb, msg);
-                return Results.Content(sb.ToString(), "text/html");
+                return Results.BadRequest(msg);
             }
 
             ApplicationToken appToken = MastoController.getMastoToken(httpContext);

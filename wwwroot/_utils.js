@@ -127,7 +127,8 @@ function showListSecrets() {
     for (let l of links) { l.style.display = ''; }
     links = document.getElementsByClassName('stickynoteslink');
     for (let l of links) { l.style.display = ''; }
-
+    links = document.getElementsByClassName('googletaskslink');
+    for (let l of links) { l.style.display = ''; }
 
 }
 
@@ -201,24 +202,8 @@ async function amloggedin() {
                 "GeFeSLE-XMLHttpRequest": "true",
             }
         })
-            .then(response => {
-                if (response.ok) {
-                    return response.json();
-                }
-                else if (response.status == RC.NOT_FOUND) {
-                    throw new Error('GeFeSLE Server: ' + storconfig.url + ' Not Found - check your settings');
-                }
-                else if (response.status == RC.UNAUTHORIZED) {
-                    throw new Error('Not authorized - have you logged in yet? <a href="' + storconfig.url + '/login">Login</a>');
-                }
-                else if (response.status == RC.FORBIDDEN) {
-                    throw new Error('Forbidden - have you logged in yet? <a href="' + storconfig.url + '/login">Login</a>');
-                }
-                else {
-                    throw new Error('Error ' + response.status + ' - ' + response.statusText);
-                }
-
-            })
+            .then(handleResponse)
+            .then(response => { return response.json();})
             .then(json => {
                 let id = json.id;
                 let userName = json.userName;
@@ -229,8 +214,8 @@ async function amloggedin() {
             }
             );
     } catch (error) {
-        console.error('Error:', error);
-        d('Error: ' + error);
+        console.error(error);
+        d(error);
         c(RC.ERROR);
     }
 }
@@ -275,20 +260,23 @@ function handleResponse(response) {
         if (contentType != null && contentType.includes("application/json")) {
             // The response is JSON
             return response.json().then(errorDetails => {
-                let errorDetailsString = '';
-                for (let key in errorDetails) {
-                    if (typeof errorDetails[key] === 'object' && errorDetails[key] !== null) {
-                        //errorDetailsString += `${key}:`;
-                        for (let subKey in errorDetails[key]) {
-                            //errorDetailsString += `  ${subKey}: ${errorDetails[key][subKey]}<br>\n`;
-                            errorDetailsString += ` ${errorDetails[key][subKey]}<br>\n`;
+                // Check if errorDetails is an object
+                if (typeof errorDetails === 'object' && errorDetails !== null) {
+                    let errorDetailsString = '';
+                    for (let key in errorDetails) {
+                        if (typeof errorDetails[key] === 'object' && errorDetails[key] !== null) {
+                            for (let subKey in errorDetails[key]) {
+                                errorDetailsString += ` ${errorDetails[key][subKey]}<br>\n`;
+                            }
+                        } else {
+                            errorDetailsString += `${key}: ${errorDetails[key]}<br>\n`;
                         }
-                    } else {
-                        errorDetailsString += `${key}: ${errorDetails[key]}<br>\n`;
                     }
+                    return Promise.reject(new Error(errorDetailsString));
+                } else {
+                    // errorDetails is not an object, return it as the error message
+                    return Promise.reject(new Error(errorDetails));
                 }
-                throw new Error(`${response.status} - ${response.statusText} - ${response.url}<br>\n${errorDetailsString}`);
-            
             });
         }
         else if (contentType != null && contentType.includes("text/plain")) {

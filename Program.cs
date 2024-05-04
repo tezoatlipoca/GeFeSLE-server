@@ -92,8 +92,8 @@ builder.Services.AddSession(options =>
 
     options.Cookie.HttpOnly = true; // prevent client from accessing the cookie
     options.Cookie.IsEssential = true; //user must accept this cookie
-    options.Cookie.SameSite = SameSiteMode.None;
-    options.Cookie.SecurePolicy = GlobalConfig.isSecure ? CookieSecurePolicy.Always : CookieSecurePolicy.None;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
     options.Cookie.Domain = GlobalConfig.CookieDomain;
 });
 builder.Services.AddAuthentication(options =>
@@ -120,8 +120,8 @@ builder.Services.AddAuthentication(options =>
 
     options.Cookie.HttpOnly = true; // prevent client from accessing the cookie
     options.Cookie.IsEssential = true; //user must accept this cookie
-    options.Cookie.SameSite = SameSiteMode.None;
-    options.Cookie.SecurePolicy = GlobalConfig.isSecure ? CookieSecurePolicy.Always : CookieSecurePolicy.None;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
     options.Cookie.Domain = GlobalConfig.CookieDomain;
     options.LoginPath = "/_login.html"; // Change this to your desired login path
     // this redirects any failure from the .RequireAuthorization() on endpoints.

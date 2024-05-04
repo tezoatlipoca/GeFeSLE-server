@@ -3,7 +3,7 @@ let globalCanEditList = false;
 
 
 function deleteItem(listId, itemid) {
-    let fn="deleteItem"; console.log(fn);
+    let fn = "deleteItem"; console.log(fn);
     if (islocal()) return;
     if (confirm('Are you sure you want to delete this item?')) {
         let apiUrl = 'deleteitem/' + listId + '/' + itemid;
@@ -14,6 +14,7 @@ function deleteItem(listId, itemid) {
                 "GeFeSLE-XMLHttpRequest": "true"
             },
         })
+
             .then(response => {
                 console.log('Response IS:', response);
                 // if the response is ok, redirect to the list page
@@ -86,7 +87,7 @@ function filterUpdate() {
     //rows.length
     if (totesrows > 0) {
         for (let i = 0; i < rows.length; i++) {
-            
+
 
             console.debug('rows[i]:', rows[i]);
             let rowcols = rows[i].getElementsByTagName('td');
@@ -94,7 +95,7 @@ function filterUpdate() {
             let rowcommtext = rowcols[1].innerText;
             let rowtext = itemnametext + ' ' + rowcommtext;
             let foundtext = false;
-            
+
 
             // if there are no texttags then foundtext is true (searching for nothing returns everything)
             if (texttags.length == 0) {
@@ -144,7 +145,7 @@ function filterUpdate() {
 
 // function to retreive a list of listids and listnames from the REST API
 async function loadLists() {
-    let fn = '/lists'; console.debug(fn);    
+    let fn = '/lists'; console.debug(fn);
     let apiUrl = '/lists';
     let tuples = [];
 
@@ -185,26 +186,26 @@ async function createQuickMoveMenu() {
     listname = listname.substring(1);
     for (let list of lists) {
         // if the list is the current list, don't show it in the menu
-        
+
         if (listname == list[1]) {
             continue;
         }
         else {
-        menuHtml += `<a href="#" id="list${list[0]}" class="context-menu-link-regular">${list[1]}</a>`;
+            menuHtml += `<a href="#" id="list${list[0]}" class="context-menu-link-regular">${list[1]}</a>`;
         }
     }
-    
+
     menuHtml += '</div>';
-    
+
     console.debug(fn + ' | menuHtml: ' + menuHtml);
     document.body.insertAdjacentHTML('beforeend', menuHtml);
-    
+
     for (let list of lists) {
-        if(list[1] == listname) {
+        if (list[1] == listname) {
             continue;
         }
-        
-        document.getElementById(`list${list[0]}`).addEventListener('click', function() {
+
+        document.getElementById(`list${list[0]}`).addEventListener('click', function () {
             // call your function here and pass the parameters dynamically
             let itemId = rightClickedLink.closest('tr').id;
             console.debug(`LINK ${itemId} listid: ${list[0]} listname: ${list[1]}`);
@@ -231,7 +232,7 @@ function showContextMenu(e) {
 };
 
 // Hide the context menu when the user clicks elsewhere
-window.addEventListener('click', function(e) {
+window.addEventListener('click', function (e) {
     document.getElementById('contextMenu').style.display = 'none';
 });
 
@@ -244,11 +245,11 @@ async function moveItem(itemid, listid) {
         d("Cannot call API from a local file!");
         c(RC.BAD_REQUEST);
         return;
-        }
+    }
     let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
-    if (!isSuperUser(role) && !isListOwner(role)){
+    if (!isSuperUser(role) && !isListOwner(role)) {
         d("You are not logged in! <a href='_login.html'>Login here.</a>");
         c(RC.UNAUTHORIZED);
         return;
@@ -269,7 +270,7 @@ async function moveItem(itemid, listid) {
 
         data = { itemid, listid };
         apiMethod = 'POST';
-        
+
         let formPOST = JSON.stringify(data);
         console.info(`${fn} <- ${formPOST}`);
         fetch(apiUrl, {
@@ -279,39 +280,31 @@ async function moveItem(itemid, listid) {
             },
             body: formPOST,
         })
-        .then(response => {
-            if (response.ok) {
-                return response.text();
-            }
-            else if (response.status == RC.NOT_FOUND) {
-                // the actual reason why is in the response body, so we need to read it
-                return response.text().then(text => {
-                    throw new Error('MOVEITEM: ' + text);
-                });
-            }
-            else if (response.status == RC.UNAUTHORIZED) {
-                throw new Error('Not authorized - have you logged in yet? <a href="_login.html">Login</a>');
-            }
-            else if (response.status == RC.FORBIDDEN) {
-                throw new Error('Forbidden - have you logged in yet? <a href="_login.html">Login</a>');
-            }
-            else {
-                throw new Error('Error ' + response.status + ' - ' + response.statusText);
-            }
-        })
-        .then(text => {
-            d(text);
-            c(RC.OK);
-            // asyncronously wait 1 second before reloading the page
-            setTimeout(function () {
-                location.reload();
-            }, 1000);
+            .then(handleResponse)
+            .then(response => {
+                if (response.ok) {
+                    return response.text();
+                }
+                else if (response.status == RC.NOT_FOUND) {
+                    // the actual reason why is in the response body, so we need to read it
+                    return response.text().then(text => {
+                        throw new Error('MOVEITEM: ' + text);
+                    });
+                }
             })
-        .catch((error) => {
-            d(error);
-            c(RC.ERROR);
+            .then(text => {
+                d(text);
+                c(RC.OK);
+                // asyncronously wait 1 second before reloading the page
+                setTimeout(function () {
+                    location.reload();
+                }, 1000);
+            })
+            .catch((error) => {
+                d(error);
+                c(RC.ERROR);
 
-        });
+            });
     }
     catch (error) {
         d(error);
@@ -329,13 +322,13 @@ function buildTagsMenu() {
         return;
     }
     document.querySelectorAll('.tagscell').forEach(cell => {
-        cell.addEventListener('click', function(e) {
+        cell.addEventListener('click', function (e) {
             e.preventDefault();
-    
+
             // Check if the right-clicked element is the cell itself
             if (e.target === this) {
                 // Show the context menu
-                
+
                 let tag = prompt("Add tags (seperated by space):");
                 if (tag) {
                     //alert("You entered: " + tag);
@@ -375,11 +368,11 @@ async function addTag(itemid, tag) {
         d("Cannot call API from a local file!");
         c(RC.BAD_REQUEST);
         return;
-        }
+    }
     let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
-    if (!isSuperUser(role) && !isListOwner(role)){
+    if (!isSuperUser(role) && !isListOwner(role)) {
         d("You are not logged in! <a href='_login.html'>Login here.</a>");
         c(RC.UNAUTHORIZED);
         return;
@@ -396,11 +389,11 @@ async function addTag(itemid, tag) {
         // and we need to call the API to create a new item
         // make sure both itemid and listid are int
         itemid = parseInt(itemid);
-        
+
 
         data = { itemid, tag };
         apiMethod = 'POST';
-        
+
         let formPOST = JSON.stringify(data);
         console.info(`${fn} <- ${formPOST}`);
         fetch(apiUrl, {
@@ -410,44 +403,37 @@ async function addTag(itemid, tag) {
             },
             body: formPOST,
         })
-        .then(response => {
-            if (response.ok) {
-                return response.text();
-            }
-            else if (response.status == RC.NOT_FOUND) {
-                // the actual reason why is in the response body, so we need to read it
-                return response.text().then(text => {
-                    throw new Error('ADDTAG: ' + text);
-                });
-            }
-            else if (response.status == RC.UNAUTHORIZED) {
-                throw new Error('Not authorized - have you logged in yet? <a href="_login.html">Login</a>');
-            }
-            else if (response.status == RC.FORBIDDEN) {
-                throw new Error('Forbidden - have you logged in yet? <a href="_login.html">Login</a>');
-            }
-            else {
-                throw new Error('Error ' + response.status + ' - ' + response.statusText);
-            }
-        })
-        .then(text => {
-            d(text);
-            c(RC.OK);
-            // asyncronously wait 1 second before reloading the page
-            // setTimeout(function () {
-            //     location.reload();
-            // }, 1000);
-            })
-        .catch((error) => {
-            d(error);
-            c(RC.ERROR);
+            .then(handleResponse)
+            .then(response => {
+                if (response.ok) {
+                    return response.text();
+                }
+                else if (response.status == RC.NOT_FOUND) {
+                    // the actual reason why is in the response body, so we need to read it
+                    return response.text().then(text => {
+                        throw new Error('ADDTAG: ' + text);
+                    });
+                }
 
-        });
+            })
+            .then(text => {
+                d(text);
+                c(RC.OK);
+                // asyncronously wait 1 second before reloading the page
+                // setTimeout(function () {
+                //     location.reload();
+                // }, 1000);
+            })
+            .catch((error) => {
+                d(error);
+                c(RC.ERROR);
+
+            });
     }
     catch (error) {
         d(error);
         c(RC.ERROR);
-        console.error('try/catch Error:', );
+        console.error('try/catch Error:',);
     }
 
 }
@@ -460,11 +446,11 @@ async function removeTag(itemid, tag) {
         d("Cannot call API from a local file!");
         c(RC.BAD_REQUEST);
         return;
-        }
+    }
     let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
-    if (!isSuperUser(role) && !isListOwner(role)){
+    if (!isSuperUser(role) && !isListOwner(role)) {
         d("You are not logged in! <a href='_login.html'>Login here.</a>");
         c(RC.UNAUTHORIZED);
         return;
@@ -481,11 +467,11 @@ async function removeTag(itemid, tag) {
         // and we need to call the API to create a new item
         // make sure both itemid and listid are int
         itemid = parseInt(itemid);
-        
+
 
         data = { itemid, tag };
         apiMethod = 'POST';
-        
+
         let formPOST = JSON.stringify(data);
         console.info(`${fn} <- ${formPOST}`);
         fetch(apiUrl, {
@@ -495,39 +481,32 @@ async function removeTag(itemid, tag) {
             },
             body: formPOST,
         })
-        .then(response => {
-            if (response.ok) {
-                return response.text();
-            }
-            else if (response.status == RC.NOT_FOUND) {
-                // the actual reason why is in the response body, so we need to read it
-                return response.text().then(text => {
-                    throw new Error('REMOVETAG: ' + text);
-                });
-            }
-            else if (response.status == RC.UNAUTHORIZED) {
-                throw new Error('Not authorized - have you logged in yet? <a href="_login.html">Login</a>');
-            }
-            else if (response.status == RC.FORBIDDEN) {
-                throw new Error('Forbidden - have you logged in yet? <a href="_login.html">Login</a>');
-            }
-            else {
-                throw new Error('Error ' + response.status + ' - ' + response.statusText);
-            }
-        })
-        .then(text => {
-            d(text);
-            c(RC.OK);
-            // asyncronously wait 1 second before reloading the page
-            // setTimeout(function () {
-            //     location.reload();
-            // }, 1000);
-            })
-        .catch((error) => {
-            d(error);
-            c(RC.ERROR);
+            .then(handleResponse)
+            .then(response => {
+                if (response.ok) {
+                    return response.text();
+                }
+                else if (response.status == RC.NOT_FOUND) {
+                    // the actual reason why is in the response body, so we need to read it
+                    return response.text().then(text => {
+                        throw new Error('REMOVETAG: ' + text);
+                    });
+                }
 
-        });
+            })
+            .then(text => {
+                d(text);
+                c(RC.OK);
+                // asyncronously wait 1 second before reloading the page
+                // setTimeout(function () {
+                //     location.reload();
+                // }, 1000);
+            })
+            .catch((error) => {
+                d(error);
+                c(RC.ERROR);
+
+            });
     }
     catch (error) {
         d(error);
@@ -550,20 +529,20 @@ window.onload = async function () {
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
 
-    if(username != null) {
+    if (username != null) {
         console.debug(fn + ' | logged in');
         links = document.getElementsByClassName('pwdchangelink');
         for (let l of links) { l.style.display = ''; }
         links = document.getElementsByClassName('loginlink');
         for (let l of links) { l.style.display = 'none'; }
-        }
+    }
 
-    if(isSuperUser(role) || isListOwner(role) ) {
+    if (isSuperUser(role) || isListOwner(role)) {
         console.debug(fn + ' | logged in and either isSuperUser or isListOwner');
         showListSecrets();
         showDebuggingElements();
         globalCanEditList = true;
-        
+
     }
 
 
@@ -576,3 +555,50 @@ window.onload = async function () {
     // create the quick tag add/remove 
     buildTagsMenu();
 }
+
+
+async function importItems(sourceService, destLIst) {
+    // cancel the default action
+    event.preventDefault();
+    let fn = 'importItems'; console.debug(fn);
+
+    if (islocal()) {
+        d("Cannot call API from a local file!");
+        c(RC.BAD_REQUEST);
+        return;
+    }
+    let [id, username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
+    if (!isSuperUser(role) && !isListOwner(role)) {
+        d("You are not logged in! <a href='_login.html'>Login here.</a>");
+        c(RC.UNAUTHORIZED);
+        return;
+    }
+
+    // GeListImportDto is in the form of:
+    // { Service:"Service:subservice", Data:"data"}
+    // valid Services are (see ImportService class)
+    // Microsoft:StickyNotes
+    // Google:Tasks
+    // Mastodon:Bookmarks
+    // server side will worry about validating this
+    let importService = { Service: sourceService, Data: '' };
+    let apiUrl = '/lists/' + destLIst;
+    let apiMethod = 'POST';
+    console.info(`${fn} <- ${JSON.stringify(importService)}`);
+    fetch(apiUrl, {
+        method: apiMethod,
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(importService)
+    })
+        .then(handleResponse)
+        .catch((error) => {
+            d(error);
+            c(RC.ERROR);
+
+        });
+        
+    }
