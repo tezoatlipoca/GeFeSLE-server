@@ -208,15 +208,14 @@ async function createQuickMoveMenu() {
         if (list[1] == listname) {
             continue;
         }
-
-        document.getElementById(`list${list[0]}`).addEventListener('click', function () {
-            // call your function here and pass the parameters dynamically
-            let itemId = rightClickedLink.closest('tr').id;
-            console.debug(`LINK ${itemId} listid: ${list[0]} listname: ${list[1]}`);
-            moveItem(itemId, list[0]);
-        });
+        let contextMenuLinks = document.getElementsByClassName('context-menu-link-regular');
+        for (let link of contextMenuLinks) {
+            link.addEventListener('click', function (event) {
+                console.debug(`LINK ${currentItemRowId} listid: ${list[0]} listname: ${list[1]}`);
+                moveItem(currentItemRowId, list[0]);
+            });
+        }
     }
-
 }
 
 
@@ -224,8 +223,15 @@ async function createQuickMoveMenu() {
 
 
 function showContextMenu(e) {
+    let fn = 'showContextMenu'; console.debug(fn);
     e.preventDefault();
     rightClickedLink = e.target;
+
+    let itemRow = rightClickedLink.closest('.itemrow');
+    if (itemRow) {
+        currentItemRowId = itemRow.id;
+    }
+
 
     var contextMenu = document.getElementById('contextMenu');
     contextMenu.style.display = 'block';
@@ -341,7 +347,7 @@ function buildTagsMenu() {
                     span.innerText = tag;
                     span.className = 'tag';
                     this.appendChild(span);
-                    addTag(this.closest('tr').id, tag);
+                    addTag(this.closest('.itemrow').id, tag);
                 }
 
             }
@@ -352,7 +358,7 @@ function buildTagsMenu() {
                 //alert("You clicked on the tag: " + tag);
                 // delete the span entirely
                 e.target.remove();
-                removeTag(this.closest('tr').id, tag);
+                removeTag(this.closest('.itemrow').id, tag);
 
             }
         });
