@@ -54,10 +54,8 @@ function deleteItem(listId, itemid) {
 function filterUpdate() {
     console.info('filterUpdate');
 
-    // get the table
-    let table = document.getElementById('itemtable');
     // get the rows of the table
-    let rows = table.getElementsByTagName('tr');
+    let rows = document.getElementsByClassName('itemrow');
     // get the total number of rows; save for later
     let totesrows = rows.length;
 
@@ -90,9 +88,13 @@ function filterUpdate() {
 
 
             console.debug('rows[i]:', rows[i]);
-            let rowcols = rows[i].getElementsByTagName('td');
-            let itemnametext = rowcols[0].innerText;
-            let rowcommtext = rowcols[1].innerText;
+            let nameCell = rows[i].previousElementSibling;
+            let commentCell = rows[i].getElementsByClassName('commentcell')[0];
+            let tagsCell = rows[i].getElementsByClassName('tagscell')[0];
+
+
+            let itemnametext = nameCell ? nameCell.innerText : '';
+            let rowcommtext = commentCell ? commentCell.innerText : '';
             let rowtext = itemnametext + ' ' + rowcommtext;
             let foundtext = false;
 
@@ -107,7 +109,7 @@ function filterUpdate() {
                 console.debug('rowtext:', rowtext, 'texttags:', texttags, 'foundtext:', foundtext);
             }
 
-            let rowtagstext = rowcols[2].innerText;
+            let rowtagstext = tagsCell ? tagsCell.innerText : '';
 
             let foundtags = false;
             // if there are no texttags then foundtages is true (searching for nothing returns everything)
@@ -122,11 +124,13 @@ function filterUpdate() {
 
             if (foundtags && foundtext) {
                 rows[i].style.display = '';
+                nameCell.style.display = '';
                 numVisibleTags++;
                 console.debug('visible row!');
             }
             else {
                 rows[i].style.display = 'none';
+                nameCell.style.display = 'none';
                 console.debug('hidden row!');
             }
 
@@ -541,6 +545,7 @@ window.onload = async function () {
         console.debug(fn + ' | logged in and either isSuperUser or isListOwner');
         showListSecrets();
         showDebuggingElements();
+        showAdminSecrets();
         globalCanEditList = true;
 
     }
@@ -583,11 +588,50 @@ async function importItems(sourceService, destLIst) {
     // Google:Tasks
     // Mastodon:Bookmarks
     // server side will worry about validating this
-    let importService = { Service: sourceService, Data: '' };
+    // BUT WAIT! some services need addition info. 
+    // e.g. if the service is Mastodon we need to know how many bookmarks to get and whether to unbookmark them
+    let importService = null;
+    if (sourceService == 'Mastodon:Bookmarks') {
+        mastoBookmarkLoadDefaults();
+        await showModalAndGetValues().then(values => {
+            if (values) {
+                alert(`You entered: ${JSON.stringify(values)}`);
+                importService = { Service: sourceService, Data: JSON.stringify(values) };
+                mastoBookmarkSaveDefaults();
+            } else {
+                console.log("Modal was dismissed");
+                return;
+            }
+        });
+    }
+    else if (sourceService == 'Google:Tasks') {
+        // this populates the list of task lists the user has
+        await populateGoogleTaskLists(sourceService);
+        // this shows the modal
+        await showModalGoogleTaskLists().then(value => {
+            if (value) {
+                alert(`You chose list: ${value}`);
+                importService = { Service: sourceService, Data: value };
+            }
+            else {
+                console.log("Modal was dismissed");
+                return;
+            }
+        })
+    }
+    else {
+        importService = { Service: sourceService, Data: '' };
+
+    }
+    if (!importService) {
+        return;
+    }
+
+    let processtoken = null;
     let apiUrl = '/lists/' + destLIst;
     let apiMethod = 'POST';
     console.info(`${fn} <- ${JSON.stringify(importService)}`);
-    fetch(apiUrl, {
+    await fetch(apiUrl, {
         method: apiMethod,
         headers: {
             'Content-Type': 'application/json',
@@ -595,10 +639,87 @@ async function importItems(sourceService, destLIst) {
         body: JSON.stringify(importService)
     })
         .then(handleResponse)
+        // if success it will return a process token which can be used to check status
+        .then(response => response.text())
+        .then(data => {
+            processtoken = data;
+            console.debug('Process Token:', processtoken);
+            d(processtoken);
+            c(RC.OK);
+        })
         .catch((error) => {
             d(error);
             c(RC.ERROR);
 
         });
-        
+    // now, every half a second check the progress endpoint until the response is "Completed"
+    console.debug('Process Token:', processtoken);
+    let status = null;
+    while (status !== "Completed") {
+        status = await checkImportStatus(processtoken);
+        if (!status) {
+            break;
+        }
+        else {
+            let statusObj = JSON.parse(status);
+            if (statusObj === "Completed") {
+                break;
+            }
+
+        }
+        console.debug('Status:', status);
+        d(status);
+        c(RC.OK);
+        // wait 1 second before checking again
+        await new Promise(r => setTimeout(r, 500));
     }
+    d(`${status} - Import completed! Refreshing page in 3 seconds..`);
+    c(RC.OK);
+    // asyncronously wait 1 second before reloading the page
+    setTimeout(function () {
+        location.reload();
+    }, 3000);
+}
+
+document.querySelectorAll('.commentcell').forEach(cell => {
+    cell.addEventListener('click', () => {
+        cell.classList.toggle('expanded');
+    });
+});
+
+window.addEventListener('load', function() {
+    const commentCells = document.querySelectorAll('.commentcell');
+    commentCells.forEach(cell => {
+        if (cell.scrollHeight > cell.clientHeight) {
+            cell.classList.add('overflow');
+        }
+    });
+});
+
+
+async function checkImportStatus(processToken) {
+    let fn = 'checkImportStatus'; console.debug(fn);
+    let apiMethod = 'GET';
+    console.debug('processToken:', processToken);
+    // if processToken has any quotes around it, remove them
+    processToken = processToken.replace(/['"]+/g, '');
+    let apiUrl = '/checkprogress/' + processToken;
+
+    console.info(`${fn} <- ${processToken}`);
+    return fetch(apiUrl, {
+        method: apiMethod,
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+        .then(handleResponse)
+        .then(response => {
+            console.debug('Response:', response);
+            return response.text();
+        })
+        .catch((error) => {
+            d(error);
+            c(RC.ERROR);
+
+        });
+}

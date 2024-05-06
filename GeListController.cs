@@ -14,19 +14,28 @@ namespace GeFeSLE.Controllers
         public int num2Get { get; set; }
         public bool unbookmark { get; set; }
     }
+    public class GoogleTaskList
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+    }
+
     public class GeListController : Controller
     {
         private readonly GeFeSLEDb _db;
         private readonly UserManager<GeFeSLEUser> _userManager;
         private readonly RoleManager<IdentityRole> _roleManager;
+        private readonly IServiceScopeFactory _serviceScopeFactory;
 
         public GeListController(GeFeSLEDb db,
             UserManager<GeFeSLEUser> userManager,
-            RoleManager<IdentityRole> roleManager)
+            RoleManager<IdentityRole> roleManager,
+            IServiceScopeFactory serviceScopeFactory)
         {
             _db = db;
             _userManager = userManager;
             _roleManager = roleManager;
+            _serviceScopeFactory = serviceScopeFactory;
         }
 
         public async Task<IActionResult> ListsDelete(HttpContext httpContext,
@@ -155,7 +164,7 @@ namespace GeFeSLE.Controllers
             await modlist.GenerateJSON(_db);
             if (namechange)
             {
-                GlobalStatic.GenerateHTMLListIndex(_db);
+                _ = GlobalStatic.GenerateHTMLListIndex(_db);
             }
             return Ok();
         }
@@ -166,13 +175,11 @@ namespace GeFeSLE.Controllers
             GeList? destlist,
             GeFeSLEUser user)
         {
+            string fn = "ListImport"; DBg.d(LogLevel.Trace, fn);
+            DBg.d(LogLevel.Trace, $"importer: {System.Text.Json.JsonSerializer.Serialize(importer)}");
             if (importer is null)
             {
                 return Results.BadRequest("No valid source service provided.");
-            }
-            else if (!importer.IsValid())
-            {
-                return Results.BadRequest($"Unsupported service {importer.Service}");
             }
             else if (user is null)
             {
@@ -187,13 +194,16 @@ namespace GeFeSLE.Controllers
 
             else
             {
+                DBg.d(LogLevel.Trace, $"{fn} -- {importer.Service}");
                 switch (importer.Service)
                 {
                     case "Microsoft:StickyNotes":
                         return await ListsPostImportMSStickyNotes(httpContext, importer, destlist, user);
                     case "Google:Tasks":
+                        DBg.d(LogLevel.Trace, $"{fn} -- Google:Tasks");
                         if (importer.Data is null)
                         {
+                            DBg.d(LogLevel.Trace, $"{fn} -- google 2 get lists");
                             return await ListsPostGetGoogleTaskLists(httpContext, importer, user);
                         }
                         else
@@ -230,7 +240,7 @@ namespace GeFeSLE.Controllers
             if (geListItems is null) return Results.NotFound($"No Sticky Notes for {user.UserName} found.");
             int numitems = geListItems.Count;
             if (numitems == 0) return Results.NotFound($"No Sticky Notes for {user.UserName} found.");
-
+            int imported = 0;
             // iterate through the list of GeListItems
             foreach (GeListItem item in geListItems)
             {
@@ -242,6 +252,7 @@ namespace GeFeSLE.Controllers
 
                 // add the item to the database
                 _db.Items.Add(item);
+                imported++;
             }
             // save the changes to the database
             await _db.SaveChangesAsync();
@@ -251,7 +262,8 @@ namespace GeFeSLE.Controllers
             _ = destList.GenerateRSSFeed(_db);
             _ = destList.GenerateJSON(_db);
 
-            return Results.Redirect($"/{destList.Name}.html");
+            //return Results.Redirect($"/{destList.Name}.html");
+            return Results.Ok($"Imported {imported} tasks from Microsoft Sticky Notes into {destList.Name}");
         }
 
         public async Task<IResult> ListsPostGetGoogleTaskLists(HttpContext httpContext,
@@ -271,7 +283,7 @@ namespace GeFeSLE.Controllers
                 return Results.BadRequest(msg);
             }
 
-            List<(string, string)> taskLists = await GoogleController.getGoogleTaskLists(token);
+            List<Google.Apis.Tasks.v1.Data.TaskList> taskLists = await GoogleController.getGoogleTaskLists(token);
 
             if (taskLists is null)
             {
@@ -279,9 +291,12 @@ namespace GeFeSLE.Controllers
             }
             if (taskLists.Count == 0) return Results.NotFound($"No Google Task Lists for {user.UserName} found.");
 
-            StringBuilder listChoosePage = await GoogleController.makeTaskListChooser(taskLists, _db, httpContext, _userManager, user);
-
-            return Results.Content(listChoosePage.ToString(), "text/html");
+            //StringBuilder listChoosePage = await GoogleController.makeTaskListChooser(taskLists, _db, httpContext, _userManager, user);
+            //return Results.Content(listChoosePage.ToString(), "text/html");
+            //JSONify the list of task lists
+            string json = System.Text.Json.JsonSerializer.Serialize(taskLists);
+            DBg.d(LogLevel.Trace, $"{fn} --> {json}");
+            return Results.Ok(taskLists);
         }
 
         public async Task<IResult> ListsPostImportGoogleTasks(HttpContext httpContext,
@@ -304,22 +319,25 @@ namespace GeFeSLE.Controllers
                 return Results.NotFound("No Google Task List ID specified.");
 
             }
+            // the google task list id is in the importer.Data field
+            // obtain it
 
 
             List<GeListItem> tasks = await GoogleController.getGoogleTasks(importer.Data, token);
 
             if (tasks is null)
             {
-                return Results.NotFound($"No Google Tasks for {user.UserName} found.");
+                return Results.NotFound($"No Google Tasks for {user.UserName} in list {importer.Data} found.");
             }
             int numtasks = tasks.Count;
-            if (numtasks == 0) return Results.NotFound($"No Google Tasks for {user.UserName} found.");
-
+            if (numtasks == 0) return Results.NotFound($"No Google Tasks for {user.UserName} in list {importer.Data} found.");
+            int imported = 0;
             foreach (GeListItem item in tasks)
             {
                 item.ListId = destList.Id;
                 item.Comment += GlobalStatic.ImportAttribution(user.UserName, $"Google Task List {importer.Data}", destList.Name);
                 _db.Items.Add(item);
+                imported++;
             }
             await _db.SaveChangesAsync();
 
@@ -330,7 +348,7 @@ namespace GeFeSLE.Controllers
 
             //TODO: list.function that is responsible for a list's file name
             // do for each file type. 
-            return Results.Redirect($"/{destList.Name}.html");
+            return Results.Ok($"Imported {imported} tasks from Google Task List {importer.Data} into {destList.Name}");
         }
 
 
@@ -340,21 +358,23 @@ namespace GeFeSLE.Controllers
             GeFeSLEUser user)
         {
             // num2Get and unbookmark are packaged as json in the importer.Data parameter
+            DBg.d(LogLevel.Trace, $"importer.Data: {importer.Data}");
             // in the json form of: {"num2Get": 10, "unbookmark": true}
             MastoImportParams? mastoParams;
-            try {
+            try
+            {
                 mastoParams = System.Text.Json.JsonSerializer.Deserialize<MastoImportParams>(importer.Data);
                 // improve this w/ try catch
             }
             catch (Exception e)
             {
                 DBg.d(LogLevel.Error, $"Error deserializing Mastodon Import Parameters: {e.Message}");
-                return Results.BadRequest($"Invalid Mastodon Import Parameters: {importer.Data} - e.g. {{num2Get: 10, unbookmark: true}}");
+                return Results.BadRequest($"Invalid Mastodon Import Parameters: {importer.Data} - e.g. {{\"num2Get\": 10, \"unbookmark\": true}}");
             }
-            if(mastoParams is null) return Results.BadRequest($"Invalid Mastodon Import Parameters: {mastoParams}");
-            
-            DBg.d(LogLevel.Trace, $"unbookmark: {mastoParams.unbookmark}");
+            if (mastoParams is null) return Results.BadRequest($"Invalid Mastodon Import Parameters: {mastoParams}");
 
+            DBg.d(LogLevel.Trace, $"unbookmark: {mastoParams.unbookmark}");
+            DBg.d(LogLevel.Trace, $"num2Get: {mastoParams.num2Get}");
 
             if ((mastoParams.num2Get < 1) || (mastoParams.num2Get > 999)) return Results.BadRequest("num2Get must be between 1 and 999");
 
@@ -367,112 +387,146 @@ namespace GeFeSLE.Controllers
 
                 return Results.BadRequest(msg);
             }
-
             ApplicationToken appToken = MastoController.getMastoToken(httpContext);
+            var processtoken = Guid.NewGuid().ToString();
+            ProcessTracker.StartProcess(processtoken, $"{user.UserName} -- import {mastoParams.num2Get} Mastodon Bookmarks --> {destList.Name} <-- {appToken.instance}");
+            BackgroundMastodonImport(appToken, token, processtoken, mastoParams.num2Get, mastoParams.unbookmark, destList, user);
 
-            // array of strings to hold the status IDs of the statuses to unbookmark
-            List<string> unbookmarkIDs = new List<string>();
+            return Results.Ok(processtoken);
+        }
 
-            // create httpClient
-            var client = new HttpClient();
-            bool stillMorePages = true;
-
-            int numGot = 0;
-            client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
-
-            var apiUrl = $"{appToken.instance}/api/v1/bookmarks";
-
-            while (stillMorePages && (numGot < mastoParams.num2Get))
+        public async void BackgroundMastodonImport(ApplicationToken appToken, string? token, string processtoken, int num2Get, bool unbookmark, GeList destList, GeFeSLEUser user)
+        {
+            // can't use _db for this one because WE are disposed of once the endpoint request returns
+            // and if we just create a new context we don't leverage any of the benefits from
+            // the dependancy injection. So we're going to create a new scope and get a new context
+            using (var scope = _serviceScopeFactory.CreateScope())
             {
-                DBg.d(LogLevel.Trace, $"apiUrl: {apiUrl}");
-                var response = await client.GetAsync(apiUrl);
-                var content = await response.Content.ReadAsStringAsync();
+                var scopedb = scope.ServiceProvider.GetRequiredService<GeFeSLEDb>();
 
-                // if the results are paged in the http response header we'll get a link header
-                // that looks like this:
-                // <https://mastodon.social/api/v1/bookmarks?max_id=123456>; rel="next"
-                // get that next link and use it to get the next page of bookmarks
-                var nextLink = response.Headers.GetValues("Link").FirstOrDefault();
-                if (nextLink is not null)
+
+                // array of strings to hold the status IDs of the statuses to unbookmark
+                List<string> unbookmarkIDs = new List<string>();
+
+                // create httpClient
+                var client = new HttpClient();
+                bool stillMorePages = true;
+
+                int numGot = 0;
+                client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
+
+                var apiUrl = $"{appToken.instance}/api/v1/bookmarks";
+
+
+                // we need to improve this to handle exceptions etc. 
+
+
+                while (stillMorePages && (numGot < num2Get))
                 {
-                    // parse the next link to get the url
-                    var nextUrl = nextLink.Split(';')[0].Trim('<', '>');
-                    apiUrl = nextUrl;
-                }
-                else
-                {
-                    stillMorePages = false;
-                }
-                // back to processing THIS page. 
-                // the content is going to be an array of Status class objects
-                if (content is null)
-                {
-                    return Results.NotFound();
-                }
-                else
-                {
-                    // there's a bug in the Newtonsoft JSON library, when it deserializes the statuses, 
-                    // it doesn't get the media_attachments. So we're going to use the System.Text.Json library
-                    // TODO: go log that bug w/ Newtonsoft. 2 reproduce just switch back to their deserializer and
-                    //  dump out the json - media attachments are missing. 
-                    Status[]? Systemstatuses = System.Text.Json.JsonSerializer.Deserialize<Status[]>(content);
+                    DBg.d(LogLevel.Trace, $"apiUrl: {apiUrl}");
+                    var response = await client.GetAsync(apiUrl);
+                    var content = await response.Content.ReadAsStringAsync();
 
-                    //Status[]? NewtonsoftStatuses = JsonConvert.DeserializeObject<Status[]>(content);
-                    //var sys = JsonConvert.SerializeObject(Systemstatuses[0], Formatting.Indented);
-                    //var newt = JsonConvert.SerializeObject(NewtonsoftStatuses[0], Formatting.Indented);
-
-                    //StringBuilder sb = new StringBuilder();
-                    //sb.AppendLine($"<!DOCTYPE html><html><body><table><tr><td style=\"vertical-align: top;\">Systemstatuses: <br><pre>{sys}</pre></td><td style=\"vertical-align: top;\">NewtonsoftStatuses:<br><pre>{newt}</pre></td></tr></table></body></html>");
-                    //return Results.Content(sb.ToString(), "text/html");
-
-
-                    if (Systemstatuses is null) return Results.NotFound();
-                    DBg.d(LogLevel.Trace, $"statuses: {Systemstatuses.Length}");
-                    // iterate over the statuses and print them out
-                    foreach (Status status in Systemstatuses)
+                    // if the results are paged in the http response header we'll get a link header
+                    // that looks like this:
+                    // <https://mastodon.social/api/v1/bookmarks?max_id=123456>; rel="next"
+                    // get that next link and use it to get the next page of bookmarks
+                    var nextLink = response.Headers.GetValues("Link").FirstOrDefault();
+                    if (nextLink is not null)
                     {
-                        // check to see the status's visibility
-                        // only import it if its public or unlisted
+                        // parse the next link to get the url
+                        var nextUrl = nextLink.Split(';')[0].Trim('<', '>');
+                        apiUrl = nextUrl;
+                    }
+                    else
+                    {
+                        stillMorePages = false;
+                    }
+                    // back to processing THIS page. 
+                    // the content is going to be an array of Status class objects
+                    if (content is null)
+                    {
+                        //return Results.NotFound();
+                        ProcessTracker.UpdateProcess(processtoken, "End of statuses");
+                    }
+                    else
+                    {
+                        // there's a bug in the Newtonsoft JSON library, when it deserializes the statuses, 
+                        // it doesn't get the media_attachments. So we're going to use the System.Text.Json library
+                        // TODO: go log that bug w/ Newtonsoft. 2 reproduce just switch back to their deserializer and
+                        //  dump out the json - media attachments are missing. 
+                        Status[]? Systemstatuses = System.Text.Json.JsonSerializer.Deserialize<Status[]>(content);
 
-                        if (status.Visibility != Mastonet.Visibility.Public &&
-                            status.Visibility != Mastonet.Visibility.Unlisted)
+                        //Status[]? NewtonsoftStatuses = JsonConvert.DeserializeObject<Status[]>(content);
+                        //var sys = JsonConvert.SerializeObject(Systemstatuses[0], Formatting.Indented);
+                        //var newt = JsonConvert.SerializeObject(NewtonsoftStatuses[0], Formatting.Indented);
+
+                        //StringBuilder sb = new StringBuilder();
+                        //sb.AppendLine($"<!DOCTYPE html><html><body><table><tr><td style=\"vertical-align: top;\">Systemstatuses: <br><pre>{sys}</pre></td><td style=\"vertical-align: top;\">NewtonsoftStatuses:<br><pre>{newt}</pre></td></tr></table></body></html>");
+                        //return Results.Content(sb.ToString(), "text/html");
+
+
+                        if (Systemstatuses is null)
                         {
-                            DBg.d(LogLevel.Trace, $"skipping {status.Id} because its visibility is {status.Visibility}");
+                            //return Results.NotFound(); 
+                            ProcessTracker.UpdateProcess(processtoken, "End of statuses");
 
                         }
                         else
                         {
-                            // add the bookmark status class to the list
-                            var item = new GeListItem();
-                            item.ParseMastoStatus(status, destList.Id);
-                            item.Comment += GlobalStatic.ImportAttribution(user.UserName, $"Mastodon ({appToken.instance})", destList.Name);
-
-                            _db.Items.Add(item);
-
-                            // add the item.statusID to unbookmarkIDs
-                            if (mastoParams.unbookmark == true)
+                            DBg.d(LogLevel.Trace, $"statuses: {Systemstatuses.Length}");
+                            // iterate over the statuses and print them out
+                            foreach (Status status in Systemstatuses)
                             {
-                                DBg.d(LogLevel.Trace, $"unbookmarking {status.Id}");
-                                unbookmarkIDs.Add(status.Id);
+                                // check to see the status's visibility
+                                // only import it if its public or unlisted
+
+                                if (status.Visibility != Mastonet.Visibility.Public &&
+                                    status.Visibility != Mastonet.Visibility.Unlisted)
+                                {
+                                    DBg.d(LogLevel.Trace, $"skipping {status.Id} because its visibility is {status.Visibility}");
+
+                                }
+                                else
+                                {
+                                    // add the bookmark status class to the list
+                                    var item = new GeListItem();
+                                    item.ParseMastoStatus(status, destList.Id);
+                                    item.Comment += GlobalStatic.ImportAttribution(user.UserName, $"Mastodon ({appToken.instance})", destList.Name);
+
+                                    scopedb.Items.Add(item);
+
+                                    // add the item.statusID to unbookmarkIDs
+                                    if (unbookmark == true)
+                                    {
+                                        DBg.d(LogLevel.Trace, $"unbookmarking {status.Id}");
+                                        unbookmarkIDs.Add(status.Id);
+                                    }
+                                    // only "count" the imported bookmarks
+                                    numGot++;
+                                    ProcessTracker.UpdateProcess(processtoken, $"Imported {numGot} of {num2Get} Mastodon Bookmarks");
+                                    if (numGot >= num2Get) break;
+
+                                }
+
                             }
-                            // only "count" the imported bookmarks
-                            numGot++;
-                            if (numGot >= mastoParams.num2Get) break;
-
+                            await scopedb.SaveChangesAsync();
                         }
-
                     }
-                    await _db.SaveChangesAsync();
-                }
-                DBg.d(LogLevel.Trace, $"numGot: {numGot}");
-                if (numGot >= mastoParams.num2Get) break;
-            } // end of while loop!
-              // we don't care about waiting for these tasks to complete. 
-            _ = destList.GenerateHTMLListPage(_db);
-            _ = destList.GenerateRSSFeed(_db);
-            _ = destList.GenerateJSON(_db);
-            _ = MastoController.unbookmarkMastoItems(token, appToken.instance, unbookmarkIDs);
-            return Results.Redirect($"/{destList.Name}.html");
+                    DBg.d(LogLevel.Trace, $"numGot: {numGot}");
+                    if (numGot >= num2Get) break;
+                } // end of while loop!
+                  // we don't care about waiting for these tasks to complete. 
+                ProcessTracker.UpdateProcess(processtoken, "Generating HTML pages...");
+                await destList.GenerateHTMLListPage(scopedb);
+                await destList.GenerateRSSFeed(scopedb);
+                await destList.GenerateJSON(scopedb);
+                ProcessTracker.UpdateProcess(processtoken, "Unbookmarking Mastodon Items...");
+                await MastoController.unbookmarkMastoItems(token, appToken.instance, unbookmarkIDs);
+                //return Results.Redirect($"/{destList.Name}.html");
+                ProcessTracker.UpdateProcess(processtoken, "Completed");
+
+            }
         }
     }
 }

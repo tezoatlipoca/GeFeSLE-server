@@ -156,10 +156,10 @@ public static class UserSessionService
     // a method that takes username and provider and returns the OAuth2AccessTokenResponse
     public static string? GetAccessToken(HttpContext context, string provider)
     {
-        DBg.d(LogLevel.Trace, "GetAccessTokenResponse");
+        DBg.d(LogLevel.Trace, "GetAccessToken");
         if (provider == null)
         {
-            DBg.d(LogLevel.Error, "GetAccessTokenResponse: provider is null");
+            DBg.d(LogLevel.Error, "GetAccessToken: provider is null");
             return null;
         }
         else
@@ -168,7 +168,7 @@ public static class UserSessionService
             string? token = context.Session.GetString(provider);
             if (token == null)
             {
-                DBg.d(LogLevel.Error, "GetAccessTokenResponse: No token found for provider: " + provider);
+                DBg.d(LogLevel.Error, "GetAccessToken: No token found for provider: " + provider);
                 return null; // Add null check here
             }
             return token;

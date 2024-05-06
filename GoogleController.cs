@@ -42,12 +42,12 @@ public static class GoogleController
     // title (to show to user)
     // id (to get tasks)
 
-    public static async Task<List<(string, string)>> getGoogleTaskLists(string? accessToken)
+    public static async Task<List<Google.Apis.Tasks.v1.Data.TaskList>> getGoogleTaskLists(string? accessToken)
     {
-        string fn = "getGoogleTasks";
+        string fn = "getGoogleTaskLISTS";
         DBg.d(LogLevel.Trace, fn);
 
-        List<(string, string)> listNames = new List<(string, string)>();
+        List<Google.Apis.Tasks.v1.Data.TaskList> listNames = new List<Google.Apis.Tasks.v1.Data.TaskList>();
 
         if (accessToken == null)
         {
@@ -72,9 +72,15 @@ public static class GoogleController
                 // convert content to dynamic json object
                 var taskLists = JsonConvert.DeserializeObject<Google.Apis.Tasks.v1.Data.TaskLists>(content);
                 // Now you can access the task lists through taskLists.Items
+                if(taskLists == null || taskLists.Items == null)
+                {
+                    DBg.d(LogLevel.Error, $"{fn} - No task lists found");
+                    return listNames;
+                }
                 foreach (TaskList taskList in taskLists.Items)
                 {
-                    listNames.Add((taskList.Title, taskList.Id));
+                    DBg.d(LogLevel.Trace, $"{fn} - Found task list: {taskList.Title} ({taskList.Id})");
+                    listNames.Add(taskList);
                 }
                 break;
             default:

@@ -110,6 +110,13 @@ function showDebuggingElements() {
     }
 }
 
+function showAdminSecrets() {
+    let fn = "showAdminSecrets";
+    console.info(fn);
+    links = document.getElementsByClassName('edituserslink');
+    for (let l of links) { l.style.display = ''; }
+}
+
 function showListSecrets() {
     let fn = "showListSecrets";
     console.info(fn);
@@ -128,6 +135,10 @@ function showListSecrets() {
     links = document.getElementsByClassName('stickynoteslink');
     for (let l of links) { l.style.display = ''; }
     links = document.getElementsByClassName('googletaskslink');
+    for (let l of links) { l.style.display = ''; }
+    links = document.getElementsByClassName('edituserslink');
+    for (let l of links) { l.style.display = ''; }
+    links = document.getElementsByClassName('regenlink');
     for (let l of links) { l.style.display = ''; }
 
 }
@@ -203,7 +214,7 @@ async function amloggedin() {
             }
         })
             .then(handleResponse)
-            .then(response => { return response.json();})
+            .then(response => { return response.json(); })
             .then(json => {
                 let id = json.id;
                 let userName = json.userName;
@@ -223,23 +234,23 @@ async function amloggedin() {
 // utility function for List view - if col1 cell contains what appears to be a URL, make it clicky
 
 function make1stcelllinks() {
-    console.debug('make1stcelllinks')
-    document.querySelectorAll('tr').forEach(function (tr) {
-        var td = tr.querySelector('td');
-        var text = td.textContent;
+    let fn = 'make1stcelllinks'; console.debug(fn);
+
+    document.querySelectorAll('.namecell').forEach(function (div) {
+        var text = div.textContent;
+        console.debug(fn + ' | div: ' + div.textContent);
         var urlPattern = /^\s*(http|https):\/\/[^ "]+\s*$/;
-
+    
         if (urlPattern.test(text)) {
-
             var a = document.createElement('a');
             a.href = text;
             a.textContent = text;
-
-            while (td.firstChild) {
-                td.removeChild(td.firstChild);
+    
+            while (div.firstChild) {
+                div.removeChild(div.firstChild);
             }
-
-            td.appendChild(a);
+    
+            div.appendChild(a);
         }
     });
 }
@@ -254,7 +265,11 @@ const GeListVisibility =
 
 
 function handleResponse(response) {
-    if (!response.ok) {
+    console.debug('handleResponse');
+    if (response.status === 204) {
+        return null;
+    }
+    else if (!response.ok) {
         let contentType = response.headers.get("Content-Type");
 
         if (contentType != null && contentType.includes("application/json")) {
@@ -289,6 +304,57 @@ function handleResponse(response) {
             // The response is some other type
             throw new Error(`${response.status} - ${response.statusText} - ${response.url}`);
         }
+    } else {
+        return response;
     }
-    return response;
+}
+
+// function to obtain a list of lists the user is allowed to view
+
+async function getLists() {
+    let fn = 'getLists';
+    console.info(fn);
+
+    if (islocal()) {
+        d("Cannot call API from a local file!");
+        c(RC.BAD_REQUEST);
+        return;
+    }
+
+    let [id, username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
+
+    let apiUrl = '/lists';
+    console.debug(`${fn} --> ${apiUrl}`);
+    return fetch(apiUrl, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+        .then(handleResponse)
+        .then(response => {
+            if (response === null) {
+                d('No lists found');
+                c(RC.NO_CONTENT);
+                console.debug(fn + ' | No lists found');
+                return;
+            }
+            else {
+                return response.json();
+            }
+        })
+        .then(json => {
+
+            console.debug(fn + ' | API Response: ' + JSON.stringify(json));
+            let lists = json;
+            console.debug(fn + ' | lists: ' + JSON.stringify(lists));
+            return lists;
+        })
+        .catch(error => {
+            console.error(error);
+            d(error);
+            c(RC.ERROR);
+        });
 }

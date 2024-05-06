@@ -80,26 +80,36 @@ public static class ProtectedFiles
     }
     public static void AddList(GeList list)
     {
-        DBg.d(LogLevel.Trace, $"ProtectedFiles.AddList: {list.Name}");
-        if (list.Name != null)
+        string fn = "ProtectedFiles.AddList";
+        DBg.d(LogLevel.Trace, $"{fn} -- {list.Name}");
+        if (list.Name != null && list.Visibility > GeListVisibility.Public)
         {
             AddFile($"/rss-{list.Name}.xml", list.Name);
             AddFile($"/{list.Name}.json", list.Name);
             AddFile($"/{list.Name}.html", list.Name);
             Lists.TryAdd(list.Name!, list);
         }
+        else {
+            DBg.d(LogLevel.Information, $"{fn} skipping name: {list.Name} or visibility: {list.Visibility}");
+            
+        }
     }
     public static bool RemoveList(GeList list)
     {
-        DBg.d(LogLevel.Trace, $"ProtectedFiles.RemoveList: {list.Name}");
-        if (list.Name != null)
+        string fn = "ProtectedFiles.RemoveList";
+        DBg.d(LogLevel.Trace, $"{fn} -- {list.Name}");
+        if (list.Name != null && list.Visibility == GeListVisibility.Public)
         {
             RemoveFile($"/rss-{list.Name}.xml");
             RemoveFile($"/{list.Name}.json");
             RemoveFile($"/{list.Name}.html");
             return Lists.TryRemove(list.Name!, out _);
         }
-        return false;
+        else {
+            DBg.d(LogLevel.Information, $"{fn} NOT REMOVING name: {list.Name}, visibility: {list.Visibility}");
+            return false;
+        }
+        
     }
 
     public static async Task<(bool, string?)> IsFileVisibleToUser(string path,

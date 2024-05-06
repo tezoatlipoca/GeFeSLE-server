@@ -21,6 +21,8 @@ public static class GlobalConfig
 
     public static LogLevel CURRENT_LEVEL { get; set; }
 
+    public static bool Debugging { get; set; } // enables debug tools in the page header. 
+
     // store the static HTML "injection" files for site header, top of body and page footers. 
     // note these are filenames, not the actual HTML. But when used, you should read the file and inject it into the output.
     public static string? htmlHead { get; set; }
@@ -116,6 +118,11 @@ public static class GlobalConfig
         // convert it to a string and store it in a static variable
         bldVersion = bldVersionAttribute?.InformationalVersion;
         
+        // get the Debugging setting from config file
+        // it has to be explicitly set to false to turn off debugging (default is true)
+        Debugging = config.GetValue<bool>("ServerSettings:Debugging", true);
+
+
         // get the sitename from the config file
         sitetitle = config.GetValue<string>("SiteCustomize:sitetitle");
         if (sitetitle == null) sitetitle = "GeFeSLE Lists";

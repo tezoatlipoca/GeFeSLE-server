@@ -68,10 +68,7 @@ public class GeListImportDto
     public string Service { get; set; } = null;
     public string? Data { get; set; } = null;
 
-    public bool IsValid()
-    {
-        return Service != null && Data != null && ImportService.IsSupported(Service);
-    }
+
 }
 
 public class GeList
@@ -150,66 +147,69 @@ public class GeList
             sb.AppendLine($"<p class=\"listcomment\">{md}</p>");
         }
 
-        sb.AppendLine($"<p><a class=\"editlink\" href=\"_edit.list.html?listid={Id}\" style=\"display: none;\">Edit this list</a>");
-        sb.AppendLine($" <a class=\"edititemlink\" href=\"_edit.item.html?listid={Id}\" style=\"display: none;\">Add new item</a>");
-        sb.AppendLine($" <a class=\"mastoimportlink\" href=\"#\" onclick=\"importItems('Mastodon:Bookmarks',{Id})\" style=\"display: none;\">++Masto Bookmarks</a>");
-        sb.AppendLine($" <a class=\"stickynoteslink\" href=\"#\" onclick=\"importItems('Microsoft:StickyNotes',{Id})\" style=\"display: none;\">++Microsoft Sticky Notes</a>");
-        sb.AppendLine($" <a class=\"googletaskslink\" href=\"#\" onclick=\"importItems('Google:Tasks',{Id})\" style=\"display: none;\">++Google Tasks</a>");
-        
-        sb.AppendLine($"</p><p> ");
-        sb.AppendLine($" [ <a class=\"rsslink\" href=\"rss-{Name}.xml\">RSS Feed</a>");
-        sb.AppendLine($" |  <a class=\"exportlink\" id=\"exportlink\" href=\"{Name}.json\">JSON</a> ]");
-        sb.AppendLine("</p>");
+sb.AppendLine($"<div class=\"button editlink\" onclick=\"window.location.href='_edit.list.html?listid={Id}'\" style=\"display: none;\">Edit this list</div>");
+sb.AppendLine($"<div class=\"button edititemlink\" onclick=\"window.location.href='_edit.item.html?listid={Id}'\" style=\"display: none;\">Add new item</div>");
+sb.AppendLine($"<div class=\"button mastoimportlink\" onclick=\"importItems('Mastodon:Bookmarks',{Id})\" style=\"display: none;\">++Masto Bookmarks</div>");
+sb.AppendLine($"<div class=\"button stickynoteslink\" onclick=\"importItems('Microsoft:StickyNotes',{Id})\" style=\"display: none;\">++Microsoft Sticky Notes</div>");
+sb.AppendLine($"<div class=\"button googletaskslink\" onclick=\"importItems('Google:Tasks',{Id})\" style=\"display: none;\">++Google Tasks</div>");
+sb.AppendLine($"<div class=\"button regenlink\" onclick=\"window.location.href='/lists/{Id}/regen'\" style=\"display: none;\">Regen</div>");
+sb.AppendLine($"<div class=\"button rsslink\" onclick=\"window.location.href='rss-{Name}.xml'\">RSS Feed</div>");
+sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"window.location.href='{Name}.json'\">JSON</div>");
 
         // display a form with a text box for the text and tags search parameters
         sb.AppendLine($"<span class=\"result\" id=\"result\"></span>");
-        sb.AppendLine($"<span class=\"textsearch\"><form>Search Text (space separated)");
+        sb.AppendLine($"<div class=\"searchbox\">");
+        sb.AppendLine($"<div class=\"textsearch\"><form>Search Text (space separated)");
         sb.AppendLine($"<input type=\"text\" id=\"textsearchbox\" onInput=\"filterUpdate(); return false;\" placeholder=\"Search text..\">");
-        sb.AppendLine($"</form></span>");
-        sb.AppendLine("<span class=\"tagsearch\"><form>Search Tags (space separated)");
+        sb.AppendLine($"</form></div>");
+        sb.AppendLine("<div class=\"tagsearch\"><form>Search Tags (space separated)");
         sb.AppendLine("<input type=\"text\" id=\"tagsearchbox\" onInput=\"filterUpdate(); return false;\" placeholder=\"Search tags..\">");
-        sb.AppendLine("</form></span>");
+        sb.AppendLine("</form></div></div>");
+        
         sb.AppendLine("<hr>");
-        sb.AppendLine("<table class=\"itemtable\" id=\"itemtable\">");
+
+        sb.AppendLine("<div class=\"itemtable\" id=\"itemtable\">");
 
 
         foreach (var item in items)
         {
-            sb.AppendLine($"<tr class=\"itemrow\" id=\"{item.Id}\">");
-            sb.AppendLine($"<td class=\"namecell\">{item.Name}</td>");
+            sb.AppendLine($"<div class=\"namecell\">{item.Name}</div>");
+            sb.AppendLine($"<div class=\"itemrow\" id=\"{item.Id}\">");
+            
 
             if (item.Comment != null)
             {
                 var itemmd = Markdown.ToHtml(item.Comment);
-                sb.AppendLine($"<td class=\"commentcell\">{itemmd}</td>");
+                sb.AppendLine($"<div class=\"commentcell\">{itemmd}</div>");
             }
             else
             {
-                sb.AppendLine($"<td class=\"commentcell\"></td>");
+                sb.AppendLine($"<div class=\"commentcell\"></div>");
             }
 
-            sb.AppendLine($"<td class=\"tagscell\">");
+            sb.AppendLine($"<div class=\"tagscell\">");
             // wrap each tag in a span with a class of tag
             foreach (var tag in item.Tags)
             {
                 sb.AppendLine($"<span class=\"tag\">{tag}</span>");
             }
-            sb.AppendLine("</td>");
-            sb.AppendLine("<td class=\"utilitybox\">");
+            sb.AppendLine("</div>");
+            sb.AppendLine("<div class=\"utilitybox\">");
             sb.AppendLine($"<span class=\"itemmoddate\">{item.ModifiedDate.ToString("yyyy-MM-dd HH:mm:ss")}</span>");
             sb.AppendLine($"<span class=\"moveitemlink\" style=\"display: none;\"><a href=\"#\" oncontextmenu=\"showContextMenu(event)\">Move</a></span>");
             sb.AppendLine($"<span class=\"itemeditlink\" style=\"display: none;\"><a href=\"_edit.item.html?listid={item.ListId}&itemid={item.Id}\" >Edit</a></span>");
             // call the deleteitem endpoint but then refresh the page as well
             sb.AppendLine($"<span class=\"itemdeletelink\" style=\"display: none;\"><a href=\"#\" onclick=\"deleteItem({item.ListId},{item.Id}); return;\" >Delete</a></span>");
-            sb.AppendLine("</td>");
+            sb.AppendLine("</div>");
 
-            sb.AppendLine("</tr>");
+            sb.AppendLine("</div>");
         }
-        sb.AppendLine("</table>");
+        sb.AppendLine("</div>");
         // add a reference to the javascript files
         sb.AppendLine("<script src=\"_utils.js\"></script>");
         sb.AppendLine("<script src=\"_list_view.js\"></script>");
-        //sb.AppendLine("<script src=\"_mastobookmark.js\"></script>");
+        sb.AppendLine("<script src=\"_modal.mastodon.js\"></script>");
+        sb.AppendLine("<script src=\"_modal.google.js\"></script>");
 
 
         await GlobalStatic.GeneratePageFooter(sb);
@@ -284,14 +284,15 @@ public class GeList
         }
     }
 
-    public (bool, string?) IsUserAllowedToView(GeFeSLEUser user)
+    public (bool, string?) IsUserAllowedToView(GeFeSLEUser? user)
     {
-        string fn = "IsUserAllowedToViewList"; DBg.d(LogLevel.Trace, $"{fn} {user.UserName}");
+        string fn = "IsUserAllowedToViewList"; DBg.d(LogLevel.Trace, $"{fn} {(user?.UserName) ?? "anonymous"}");
         string? ynot = null;
         bool allowed = false;
         switch (Visibility)
         {
             case GeListVisibility.Contributors:
+                if(user is null) { ynot = "Related list is CONTRIB access. User is null."; break; }
                 if (Contributors.Contains(user) || ListOwners.Contains(user) || Creator == user)
                 {
                     allowed = true;
@@ -303,6 +304,7 @@ public class GeList
                 }
                 break;
             case GeListVisibility.ListOwners:
+                if(user is null) { ynot = "Related list is OWNER access. User is null."; break; }
                 if (ListOwners.Contains(user) || Creator == user)
                 {
                     allowed = true;
@@ -314,7 +316,7 @@ public class GeList
                 }
                 break;
             case GeListVisibility.Private:
-
+                if(user is null) { ynot = "Related list is PRIVATE access. User is null."; break; }
                 if (Creator == user)
                 {
                     ynot = $"Related list is PRIVATE access. User is the creator.";
@@ -333,7 +335,7 @@ public class GeList
                 }
 
         }
-        DBg.d(LogLevel.Debug, $"{fn} {user.UserName} allowed: {allowed} - {ynot}");
+        DBg.d(LogLevel.Debug, $"{fn} {(user?.UserName) ?? "anonymous"} allowed: {allowed} - {ynot}");
         return (allowed, ynot);
 
     }

@@ -1102,16 +1102,21 @@ app.MapGet("/lists", async (GeFeSLEDb db,
 
     var userManager = httpContext.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    var sessionUser = UserSessionService.amILoggedIn(httpContext);
 
     List<GeList> lists = await db.Lists.ToListAsync();
     List<GeList> visibleLists = new List<GeList>();
     foreach (GeList list in lists)
     {
         (bool isAllowed, string? ynot) = list.IsUserAllowedToView(me);
-        if (isAllowed)
+        if (isAllowed || sessionUser.Role == "SuperUser")
         {
             visibleLists.Add(list);
+            if (!isAllowed && sessionUser.Role == "SuperUser") {
+                 DBg.d(LogLevel.Warning, $"{fn} SuperUser bypassed list permissions for {list.Name}");
+            } 
         }
+      
     }
     if (visibleLists.Count == 0)
     {
@@ -1131,6 +1136,7 @@ app.MapGet("/lists/{listid}", async (GeFeSLEDb db,
 
     var userManager = httpContext.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    var sessionUser = UserSessionService.amILoggedIn(httpContext);
 
     GeList list = await db.Lists.FindAsync(listid);
     if (list is null)
@@ -1139,7 +1145,21 @@ app.MapGet("/lists/{listid}", async (GeFeSLEDb db,
     }
     else
     {
-        return Results.Ok(list);
+        (bool isAllowed, string? ynot) = list.IsUserAllowedToView(me);
+        if (isAllowed || sessionUser.Role == "SuperUser")
+        {
+            if (!isAllowed && sessionUser.Role == "SuperUser") {
+                 DBg.d(LogLevel.Warning, $"{fn} SuperUser bypassed list permissions for {list.Name}");
+            }
+            return Results.Ok(list);
+            
+        }
+        else
+        {
+            // TODO: contrive to return the ynot message as well.
+            return Results.Unauthorized();
+        }
+        
     }
 });
 
@@ -1491,11 +1511,13 @@ app.MapDelete("/lists/{id}", async (int id,
 
 
 // add and endpoint that regenerates the html page for all lists
-app.MapGet("/regenerate", async (GeFeSLEDb db,
+app.MapGet("/lists/regen", async (GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, "regenerate");
+    var referer = httpContext.Request.Headers["Referer"].ToString();
+    if(referer.IsNullOrEmpty()) referer = "/index.html";
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // add check for if listowner is owner of THIS list
 
@@ -1507,7 +1529,7 @@ app.MapGet("/regenerate", async (GeFeSLEDb db,
         await list.GenerateJSON(db);
     }
     await GlobalStatic.GenerateHTMLListIndex(db);
-    return Results.Ok($"Regenerated {lists.Count} lists");
+    return Results.Redirect(referer);
 }).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
@@ -1516,12 +1538,14 @@ app.MapGet("/regenerate", async (GeFeSLEDb db,
 
 
 // add an endpoint that regenerates the html page for a list
-app.MapGet("/regenerate/{listid}", async (int listid,
+app.MapGet("/lists/{listid}/regen", async (int listid,
         GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext) =>
 {
     DBg.d(LogLevel.Trace, $"regenerate/{listid}");
+    var referer = httpContext.Request.Headers["Referer"].ToString();
+    if(referer.IsNullOrEmpty()) referer = "/index.html";
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // add check for if contributor is contributor of THIS list
     // add check for if listowner is owner of THIS list
@@ -1535,7 +1559,7 @@ app.MapGet("/regenerate/{listid}", async (int listid,
         await list.GenerateRSSFeed(db);
         await list.GenerateJSON(db);
         await GlobalStatic.GenerateHTMLListIndex(db);
-        return Results.Ok($"Regenerated list {listid}");
+        return Results.Redirect(referer);
     }
 }).RequireAuthorization(new AuthorizeAttribute
 {
@@ -1944,13 +1968,13 @@ app.MapPost("/lists/{listid}", async Task<IResult> (HttpContext httpContext) =>
     (bool canMod, string? ynot) = list.IsUserAllowedToModify(user);
     if (!canMod && sessionUser.Role != "SuperUser")
     {
-        ContentResult cr = new ContentResult();
-        cr.StatusCode = StatusCodes.Status403Forbidden;
-        cr.Content = ynot;
-        return cr as IResult; // Explicitly cast ContentResult to IResult
+        return Results.BadRequest(ynot); // TODO: return a proper 403  
     }
     else
     {
+        if (!canMod && sessionUser.Role == "SuperUser") {
+                 DBg.d(LogLevel.Warning, $"{fn} SuperUser bypassed list permissions for {list.Name}");
+            }
         return await Task.FromResult<IResult>(await geListController.ListImport(httpContext, importListDto, list, user)); // Change return type to Task<IResult>
     }
 
@@ -1962,7 +1986,6 @@ app.MapPost("/lists/{listid}", async Task<IResult> (HttpContext httpContext) =>
 });
 
 app.MapPost("/lists/query", async (
-    int listid,
     GeListImportDto importListDto,
     GeFeSLEDb db,
     UserManager<GeFeSLEUser> userManager,
@@ -1970,7 +1993,7 @@ app.MapPost("/lists/query", async (
     GeListController geListController) =>
 {
     string fn = "/lists/ (POST)"; DBg.d(LogLevel.Trace, fn);
-
+    DBg.d(LogLevel.Trace, $"{fn} <-- importListDto: {System.Text.Json.JsonSerializer.Serialize(importListDto)}");
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     importListDto.Data = null;
     return await geListController.ListImport(httpContext, importListDto, null, user);
@@ -1985,6 +2008,18 @@ app.MapPost("/lists/query", async (
 app.MapGet("/me", (HttpContext httpContext) =>
 {
     var fn = "/me"; DBg.d(LogLevel.Trace, fn);
+    //GlobalStatic.DumpHTTPRequestHeaders(httpContext.Request);
+    if(GlobalStatic.IsAPIRequest(httpContext.Request))
+    {
+        DBg.d(LogLevel.Trace, $"{fn} API request");
+        
+    }
+    else
+    {
+        DBg.d(LogLevel.Trace, $"{fn} Web request");
+        
+    
+    }
 
     UserDto sessionUser = UserSessionService.amILoggedIn(httpContext);
     DBg.d(LogLevel.Information, $"{fn} --> {sessionUser}");
@@ -2482,22 +2517,47 @@ app.MapPost("/fileuploadxfer", async (IFormFile file,
 
 
 
+app.MapGet("/checkprogress/{token}", (string token) =>
+{
+    var status = ProcessTracker.GetProcessStatus(token);
+    return Results.Ok(status);
+    
+});
+
+app.MapGet("/shitsgoingon", () =>
+{
+    var status = ProcessTracker.ShitsGoingOn();
+    return Results.Ok(status);
+    
+});
+
 // lets always generate index.html once before we start
 // for a new setup, it won't exist. 
+// Mutex to ensure only one of us is running
 
-using (var scope = app.Services.CreateScope())
+
+bool createdNew;
+using (var mutex = new Mutex(true, GlobalStatic.applicationName, out createdNew))
 {
-    var services = scope.ServiceProvider;
-    var db = services.GetRequiredService<GeFeSLEDb>();
+    if (createdNew)
+    {
+        using (var scope = app.Services.CreateScope())
+        {
+            var services = scope.ServiceProvider;
+            var db = services.GetRequiredService<GeFeSLEDb>();
 
-    // Call your method here
-    _ = GlobalStatic.GenerateHTMLListIndex(db);
-    ProtectedFiles.ReLoadFiles(db);
+            // Call your method here
+            _ = GlobalStatic.GenerateHTMLListIndex(db);
+            ProtectedFiles.ReLoadFiles(db);
+        }
+
+        app.Run();
+    }
+    else
+    {
+        Console.WriteLine("Another instance of the application is already running.");
+    }
 }
-
-app.Run();
-
-
 
 
 

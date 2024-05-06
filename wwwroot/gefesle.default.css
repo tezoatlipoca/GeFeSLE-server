@@ -1,233 +1,400 @@
 /* THIS IS THE DEFAULT GEFESLE STYLE SHEET. CUSTOMIZE THIS 
 NOTE: The table img max-width 100% keeps any images 
 in imported items from exploding your table. 
-*/   
-   
-   
-   body {
-        font-family: sans-serif;
-    }
-
-    .debugging {
-        font-size: 50%;
-        color: red;
-    }
-
-    .listcreated {
-        font-size: 50%;
-        color: gray;
-    }
-
-    .byline {
-        font-size: 50%;
-        color: gray;
-        
-    }
-    .owner {
-        font-size: 50%;
-        color: blue;
-    }
-
-    table img {
-        max-width: 100%;
-        height: auto;
-    }
-
-    .status_card::before {
-        content: "Status Card";
-        display: block;
-        font-weight: bold;
-        color: blue;
-        padding: 5px;
-        width: 80%;
-    }
-    .status_card span img {
-        width: 80%;
-        height: 80%;
-    }
-    .status_card {
-        display: block;
-        color: blue;
-        padding: 5px;
-        width: 80%;
-    }
-    .media_attachment::before {
-        content: "Media Attachment";
-        display: block;
-        font-weight: bold;
-        color: green;
-        padding: 5px;
-        width: 80%;
-    }
-      
-    .media_attachment {
-        display: block;
-        color:green;
-        width: 80%;
-    }
+*/
 
 
-    tr, td {
-        height: auto;
-        vertical-align: top;
-    }
-    td {
-        vertical-align: top;
-        font-family: sans-serif;
-        overflow: visible;
-    }
-   
+body {
+    font-family: sans-serif;
+}
+
+.debugging {
+    font-size: 50%;
+    color: red;
+}
+
+.listcreated {
+    font-size: 50%;
+    color: gray;
+}
+
+.byline {
+    font-size: 50%;
+    color: gray;
+
+}
+
+.owner {
+    font-size: 50%;
+    color: blue;
+}
+
+table img {
+    max-width: 100%;
+    height: auto;
+}
+
+.status_card::before {
+    content: "Status Card";
+    display: block;
+    font-weight: bold;
+    color: blue;
+    padding: 5px;
+    width: 80%;
+}
+
+.status_card span img {
+    width: 80%;
+    height: 80%;
+}
+
+.status_card {
+    display: block;
+    color: blue;
+    padding: 5px;
+    width: 80%;
+}
+
+.media_attachment::before {
+    content: "Media Attachment";
+    display: block;
+    font-weight: bold;
+    color: green;
+    padding: 5px;
+    width: 80%;
+}
+
+.media_attachment {
+    display: block;
+    color: green;
+    width: 80%;
+}
+
+
+.itemrow {
+    display: flex;
+    height: auto;
+    align-items: stretch;
+    position: relative;
+}
+
+td {
+    vertical-align: top;
+    font-family: sans-serif;
+    overflow: visible;
+}
+
+
+
+.namecell {
+    background-color: lightgrey;
+    border-radius: 3px;
+    position: inline-block;
+    top: 0px;
+    left: 0vw;
+    width: 65vw;
+    padding: 2px;
+}
+.namecell:empty::before {
+    content: "<empty>";
+}
+
+/* the body td */
+.commentcell {
+    width: 70vw;
+    max-width: 70vw;
+    max-height: 60vh;
+    display: inline-block;
+    overflow-wrap: break-word !important;
+    padding: 0;
+    white-space: normal;
+    position: relative;
+    overflow: hidden;
+    background: white;
+}
+
+.commentcell.overflow::before {
+    content: "";
+    position: absolute;
+    top: 80%;
+    left: 0;
+    width: 100%;
+    height: 20%;
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0), rgba(255, 255, 255, 1));
+    pointer-events: none;
+}
+
+.commentcell.expanded {
+    max-height: none;
+    overflow: visible;
+}
+
+.commentcell.expanded::after {
+    content: none;
+}
+
+.commentcell.expanded::before {
+    content: "";
+    display: none;
+}
+
+.commentcell img {
+    max-width: 100%;
+    height: auto;
+}
+
+/* the tags td */
+.tagscell {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    flex-grow: 1;
+    width: 15vw;
+    padding: 0px;
+    border: 2px solid lightgreen;
+}
+
+.utilitybox {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    flex-grow: 1;
+    width: 10vw;
+    padding: 0px;
+}
+
+.tag {
+    font-size: 100%;
+    color: white;
+    background-color: gray;
+    border-radius: 3px;
+    padding: 2px;
+    display: block;
+    margin: 2px;
+}
+
+.itemmoddate {
+    font-style: italic;
+    display: block;
+}
+
+.itemeditlink {
+    border: 1px solid grey;
+    border-radius: 3px;
+    display: block;
+    text-align: right;
+}
+
+.itemdeletelink {
+    border: 1px solid grey;
+    border-radius: 3px;
+    display: block;
+    text-align: right;
+}
+
+.moveitemlink {
+    border: 1px solid grey;
+    border-radius: 3px;
+    display: block;
+    text-align: right;
+}
+
+.context-menu {
+    display: none;
+    position: absolute;
+    z-index: 1000;
+    background-color: #fff;
+    border: 1px solid #ccc;
+}
+
+.context-menu-link-regular {
+    display: block;
+    padding: 10px;
+    text-decoration: none;
+    color: #000;
+}
+
+.context-menu-link-recent {
+    display: block;
+    padding: 10px;
+    text-decoration: none;
+    color: #ffcc99;
+}
+
+.searchbox {
+    display: flex;
+
+}
+
+.textsearch, 
+.tagsearch {
+
+    display: flex;
+    flex-direction: column;
+    border-radius: 3px;
+    width: 50vw;
+    padding: 2px;
+    background-color: lightgreen;
+}
+
+.textsearch form,
+.tagsearch form {
+    display: flex;
+    align-items: center;
+}
+
+
+.textsearch input[type="text"],
+.tagsearch input[type="text"] {
+    flex: 1;
+    box-sizing: border-box;
     
-    table {
-        border-collapse: separate;
-        border-spacing: 0 30px;
+}
 
-    }
+.result {
+    left: 5vw;
+    width: 100vw;
+    display: inline-block;
+    border-radius: 3px;
+    padding: 2px;
+    background-color: lightblue
+}
 
-    td:first-child {
-        background-color: lightgrey;
-        border-radius: 3px;
-        display: block;
-        position: relative;
-        top: -10px;
-        left: 0vw;
-        width: 65vw;
-        padding: 5px;
-    }
+.indexeditlink,
+.indexregenlik {
+    border: 1px solid grey;
+    border-radius: 3px;
+    display: inline-block;
+    padding: 5px;
+}
+
+/* oposter and opavatar for Mastodon OP poster */
+
+.oposter {
+    border: 1px solid red;
+    border-radius: 3px;
+    display: inline-block;
+    padding: 5px;
+}
+
+.opavatar {
+    width: 30px;
+    height: 30px;
+
+}
+
+.importattribution {
+    font-size: smaller;
+    font-style: italic;
+    border: 1px solid blue;
+    border-radius: 3px;
+    display: inline-block;
+    padding: 5px;
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+    background-color: grey;
+    border: 1px dashed red;
+}
+
+.modal, .googmodal {
+    display: none;
+    position: fixed;
+    z-index: 1;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.4);
+}
+
+.modal-content, .googmodal-content {
+    background-color: #fefefe;
+    margin: 15% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+}
 
 
-    /* the body td */
-    td:nth-child(2) {
-        width: 60vw;
-        display: inline;
-        padding: 0;
-        white-space: normal;
-        
-    }
-    
-    /* the tags td */
-    td:nth-child(3) {
-        width: 15vw;
-        padding: 0px;
-        border: 2px solid lightgreen;
-    }
 
-    td:nth-child(4) {
-        width: 10vw;
-        padding: 0px;
-    }
+@keyframes animatetop {
+    from {top: -300px; opacity: 0}
+    to {top: 0; opacity: 1}
+}
 
-    .tag {
-        font-size: 100%;
-        color: white;
-        background-color: gray;
-        border-radius: 3px;
-        padding: 2px;
-        display: block;
-        margin: 2px;
-    }
 
-    .itemmoddate {
-        font-style: italic;
-        display: block;
-    }
 
-    .itemeditlink {
-        border: 1px solid grey;
-        border-radius: 3px;
-        display: block;
-        text-align: right;
-    }
 
-    .itemdeletelink {
-        border: 1px solid grey;
-        border-radius: 3px;
-        display: block;
-        text-align: right;
-    }
 
-    .moveitemlink {
-        border: 1px solid grey;
-        border-radius: 3px;
-        display: block;
-        text-align: right;
-    }
+.button {
+    display: inline-block;
+    padding: 5px 5px;
+    margin: 3px;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    outline: none;
+    color: #fff;
+    background-color: #4CAF50;
+    border: none;
+    border-radius: 3px;
+    box-shadow: 0 2px #999;
+}
 
-    .context-menu {
-        display: none; 
-        position: absolute; 
-        z-index: 1000; 
-        background-color: #fff;
-        border: 1px solid #ccc;
-    }
+.button:hover {background-color: #3e8e41}
 
-    .context-menu-link-regular {
-        display: block; 
-        padding: 10px; 
-        text-decoration: none; 
-        color: #000;
-    }
+.button:active {
+    background-color: #3e8e41;
+    box-shadow: 0 2px #666;
+    transform: translateY(4px);
+}
 
-    .context-menu-link-recent {
-        display: block; 
-        padding: 10px; 
-        text-decoration: none; 
-        color: #ffcc99;
-    }
+.button.admin {
+    display: inline-block;
+    padding: 5px 5px;
+    margin: 3px;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    outline: none;
+    color: #fff;
+    background-color: blue;
+    border: none;
+    border-radius: 3px;
+    box-shadow: 0 2px #999;
+}
 
-    .tagsearch {
-        
-        display: inline-block;
-        border-radius: 3px;
-        right: 0;
-        height: 25px;
-        width: 30vw;
-        padding: 5px;
-        background-color: lightgreen;
-    }
+.button.admin:hover {background-color: lightblue}
 
-    .result {
-        left: 5vw;
-        width: 65vw;
-        height: 25px;
-        display: inline-block;
-        border-radius: 3px;
-        padding: 5px;
-        background-color: lightblue
-    }
+.button.admin:active {
+    background-color: blue;
+    box-shadow: 0 2px #666;
+    transform: translateY(4px);
+}
 
-    .indexeditlink, .indexregenlik {
-        border: 1px solid grey;
-        border-radius: 3px;
-        display: inline-block;
-        padding: 5px;
-    }
+.button.debug {
+    display: inline-block;
+    padding: 5px 5px;
+    margin: 3px;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    outline: none;
+    color: #fff;
+    background-color: #d32f2f;
+    border: none;
+    border-radius: 3px;
+    box-shadow: 0 2px #999;
+}
 
-    /* oposter and opavatar for Mastodon OP poster */
+.button.debug:hover {background-color: pink}
 
-    .oposter {
-        border: 1px solid red;
-        border-radius: 3px;
-        display: inline-block;
-        padding: 5px;
-    }
-
-    .opavatar {
-        width: 30px;
-        height: 30px;
-        
-    }
-
-    .importattribution {
-        font-size: smaller;
-        font-style: italic;
-        border: 1px solid blue;
-        border-radius: 3px;
-        display: inline-block;
-        padding: 5px;
-    }
-
-    input:disabled, textarea:disabled, select:disabled {
-        background-color: grey;
-        border: 1px dashed red;
-    }
+.button.debug:active {
+    background-color: #d32f2f;
+    box-shadow: 0 2px #666;
+    transform: translateY(4px);
+}
