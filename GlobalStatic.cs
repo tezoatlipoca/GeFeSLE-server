@@ -169,6 +169,14 @@ public static class GlobalStatic
                     request.Headers["Origin"].ToString().StartsWith("chrome-extension://"));
         }
 
+        public static bool IsOriginAllowed(string origin)
+        {
+            return origin.Contains("localhost") ||
+                   origin.Contains(GlobalConfig.Hostname) ||
+                   origin.StartsWith("moz-extension://") ||  // EXTEND THIS WITH ACTUAL IDS WHEN KNOWN
+                   origin.StartsWith("chrome-extension://");
+        }
+
         public static void AddCorsHeaders(HttpRequest request, HttpResponse response)
         {
             // add this to prevent CORS rejection from the plugin's XMLHttpRequest

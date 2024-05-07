@@ -60,11 +60,12 @@ public static class UserSessionService
     }
 
 
-    public static string createJWToken(string username, string role)
+    public static string createJWToken(string userid, string username, string role)
     {
         // create a claims identity
         var claims = new List<Claim>
         {
+            new Claim(ClaimTypes.NameIdentifier, userid), //TODO: change to email (or add email as a claim
             new Claim(ClaimTypes.Name, username),
             new Claim(ClaimTypes.Role, role)
         };

@@ -583,10 +583,11 @@ app.UseStaticFiles();
 
 app.UseCors(builder =>
         {
-            builder.WithOrigins(GlobalConfig.Hostname)
-                    .AllowAnyHeader()
+            builder.AllowAnyHeader()
                    .AllowAnyMethod()
-                   .AllowCredentials();
+                   .AllowCredentials()
+                   .SetIsOriginAllowed(origin => GlobalStatic.IsOriginAllowed(origin));
+
 
         });
 
@@ -1746,7 +1747,7 @@ app.MapPost("/me", async (HttpContext context,
         {
             if (isJSApi)
             {
-                var token = UserSessionService.createJWToken(login.Username, realizedRole);
+                var token = UserSessionService.createJWToken(user.Id, user.UserName, realizedRole);
                 var antiforgerytoken = antiforgery.GetAndStoreTokens(context);
                 DBg.d(LogLevel.Trace, $"{fn} LOGIN: User {login.Username} logged in as {realizedRole} VIA API RETURNING 200 + TOKEN");
 
