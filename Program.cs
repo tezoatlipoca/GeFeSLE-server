@@ -20,6 +20,7 @@ using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 using GeFeSLE.Controllers;
+using Microsoft.AspNetCore.HttpOverrides;
 
 
 // check a bunch of stuff; we MUST have a configuration file AND
@@ -338,7 +339,12 @@ builder.Services.Configure<KestrelServerOptions>(options =>
 builder.Services.AddScoped<GeListController>();
 
 var app = builder.Build();
-
+// this configures the middleware to respect the X-Forwarded-For and X-Forwarded-Proto headers
+// that are set by any reverse proxy server (nginx, apache, etc.)
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
 
 // SeedRoles makes sure our roles in the IdentifyUser system are created
 // here's where we would add any default database stuffing as well
@@ -2444,9 +2450,13 @@ app.MapGet("/me/delete", (HttpContext httpContext) =>
     httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     // delete every Cookie
     foreach (var cookie in httpContext.Request.Cookies)
-    {
-        httpContext.Response.Cookies.Delete(cookie.Key);
-    }
+{
+    httpContext.Response.Cookies.Append(cookie.Key, "", new CookieOptions { Expires = DateTime.UtcNow.AddDays(-1) });
+}
+    // foreach (var cookie in httpContext.Request.Cookies)
+    // {
+    //     httpContext.Response.Cookies.Delete(cookie.Key);
+    // }
     // kill all Session storage
     httpContext.Session.Clear();
     // create an html page with javascript that clears localStorage and sessionStorage

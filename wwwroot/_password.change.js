@@ -132,7 +132,8 @@ async function sendHARDReset(e) {
     let [userid, username, role] = await amloggedin();
     try {
         let serverUrl = window.location.origin;
-        apiUrl = serverUrl + '/users/' + userid + '/password';
+	let resetUser = document.getElementById('userid').value;
+        apiUrl = serverUrl + '/users/' + resetUser + '/password';
         console.debug(fn + ' | API URL: ' + apiUrl);
 
         // create a PasswordChangeDto:
