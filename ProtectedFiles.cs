@@ -21,8 +21,16 @@ public static class ProtectedFiles
     };
 
 
+// "D:\repos\GeFeSLE-server\wwwroot\_modal.google.js"
+// "D:\repos\GeFeSLE-server\wwwroot\_modal.mastodon.js"
+// "D:\repos\GeFeSLE-server\wwwroot\_password.change.html"
+// "D:\repos\GeFeSLE-server\wwwroot\_password.change.js"
+
     private static ConcurrentDictionary<string, string> Files = new ConcurrentDictionary<string, string>();
     // first string is the FILE name, the second is the list name, which is the KEY to the next dictionary
+    // basically: check Files above for the filename. If its an "internal protected file" OR
+    // its associated with a List that is not public, it will be in here. The VALUE is the NAME of the LIST
+    // which you use to look up the List object in the next dictionary (saves a DB query)
     private static ConcurrentDictionary<string, GeList> Lists = new ConcurrentDictionary<string, GeList>();
 
 

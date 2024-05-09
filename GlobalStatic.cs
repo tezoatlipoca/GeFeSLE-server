@@ -10,6 +10,7 @@ public static class GlobalStatic
     public static string applicationName = "GeFeSLE";
     public static string authCookieName = "GeFeSLEAuthCookie"; // if you change this, change function amLoggedIn in frontend _utils.js too
     public static string sessionCookieName = "GeFeSLESessionCookie";
+    public static string JWTCookieName = "GeFeSLEJWTCookie";
     public static string antiForgeryCookieName = "GeFeSLEAntiForgeryCookie";
     public static string webSite = "https://awadwatt.com/gefesle";
 

@@ -21,6 +21,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 using GeFeSLE.Controllers;
 using Microsoft.AspNetCore.HttpOverrides;
+using System.IdentityModel.Tokens.Jwt;
 
 
 // check a bunch of stuff; we MUST have a configuration file AND
@@ -209,6 +210,7 @@ builder.Services.AddAuthentication(options =>
             OnMessageReceived = context =>
             {
                 var fn = "_Middleware.JWT_";
+                context.Token = context.Request.Cookies[GlobalStatic.JWTCookieName]; // get token from cookie not rqst headers
                 //DBg.d(LogLevel.Trace, $"{fn} OnMessageReceived");
                 return Task.CompletedTask;
             },
@@ -308,15 +310,15 @@ builder.Services.AddAuthorization(options =>
 
 });
 
-builder.Services.AddAntiforgery(options =>
-{
-    options.Cookie.Name = GlobalStatic.antiForgeryCookieName;
-    options.Cookie.SameSite = SameSiteMode.None;
-    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
-        ? CookieSecurePolicy.None
-        : CookieSecurePolicy.Always;
+// builder.Services.AddAntiforgery(options =>
+// {
+//     options.Cookie.Name = GlobalStatic.antiForgeryCookieName;
+//     options.Cookie.SameSite = SameSiteMode.None;
+//     options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+//         ? CookieSecurePolicy.None
+//         : CookieSecurePolicy.Always;
 
-});
+// });
 
 builder.Services.AddControllers().AddNewtonsoftJson();
 
@@ -337,6 +339,7 @@ builder.Services.Configure<KestrelServerOptions>(options =>
 
 // lastly register our own controller services so they play nicely with the DI system
 builder.Services.AddScoped<GeListController>();
+builder.Services.AddScoped<GeListFileController>();
 
 var app = builder.Build();
 // this configures the middleware to respect the X-Forwarded-For and X-Forwarded-Proto headers
@@ -441,6 +444,32 @@ else
     app.UseExceptionHandler("/Home/Error"); // improve this. actually define that route for one. 
     app.UseHsts();
 }
+
+// // DEBUGGING *******
+// app.Use(async (context, next) =>
+// {
+//     // Log JWT token
+//     var jwtToken = context.Request.Headers["Authorization"].FirstOrDefault()?.Split(" ").Last();
+//     if (jwtToken != null)
+//     {
+//         var handler = new JwtSecurityTokenHandler();
+//         var jwtSecurityToken = handler.ReadJwtToken(jwtToken);
+//         var claims = jwtSecurityToken.Claims.Select(c => new { c.Type, c.Value });
+//         DBg.d(LogLevel.Information, $"JWT Claims: {claims.ToString}");
+//     }
+
+//     // Log antiforgery token
+//     var antiforgeryToken = context.Request.Headers["RequestVerificationToken"].FirstOrDefault();
+//     if (antiforgeryToken != null)
+//     {
+//         DBg.d(LogLevel.Information, $"Antiforgery Token: {antiforgeryToken}");
+//     }
+
+//     await next.Invoke();
+// });
+// DEBUGGING*********
+
+
 
 app.UseRouting();
 app.UseSession(); // Add this line to enable session.
@@ -1755,14 +1784,16 @@ app.MapPost("/me", async (HttpContext context,
             {
                 var token = UserSessionService.createJWToken(user.Id, user.UserName, realizedRole);
                 var antiforgerytoken = antiforgery.GetAndStoreTokens(context);
+                context.Response.Cookies.Append(GlobalStatic.JWTCookieName, token, new CookieOptions { HttpOnly = true, Secure = true });
+                //context.Response.Cookies.Append(GlobalStatic.antiForgeryCookieName, antiforgerytoken.RequestToken, new CookieOptions { HttpOnly = false, Secure = true });
+                
                 DBg.d(LogLevel.Trace, $"{fn} LOGIN: User {login.Username} logged in as {realizedRole} VIA API RETURNING 200 + TOKEN");
 
                 return Results.Ok(new
                 {
-                    token,
-                    antiforgerytoken,
                     username = login.Username,
                     role = realizedRole,
+                    aftoken = antiforgerytoken.RequestToken
                 });
             } // good login -API
             else
@@ -2485,6 +2516,14 @@ app.MapPost("/fileuploadxfer", async (IFormFile file,
     DBg.d(LogLevel.Trace, "fileupload");
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
+    GlobalStatic.DumpHTTPRequestHeaders(httpContext.Request);
+    GlobalStatic.DumpClaims(httpContext);
+    //GlobalStatic.DumpToken(httpContext);
+    GlobalStatic.dumpRequest(httpContext);
+
+
+
+
     try
     {
         await antiforgery.ValidateRequestAsync(httpContext);
@@ -2540,6 +2579,11 @@ app.MapGet("/shitsgoingon", () =>
     var status = ProcessTracker.ShitsGoingOn();
     return Results.Ok(status);
     
+});
+
+app.MapGet("/files/orphan", async (GeListFileController geListFileController) => {
+    StringBuilder sb = await geListFileController.GetAllFilesInWWWRoot();
+    return Results.Content(sb.ToString(), "text/html");
 });
 
 // lets always generate index.html once before we start
