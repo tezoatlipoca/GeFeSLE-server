@@ -126,9 +126,9 @@ public class GeList
         var dest = Path.Combine(GlobalConfig.wwwroot!, filename);
 
 
-        // get all the items for the list
-        var items = await db.Items.Where(item => item.ListId == Id).ToListAsync();
-
+        
+        var items = await db.Items.Where(item => item.ListId == Id && item.Visible).ToListAsync();
+        DBg.d(LogLevel.Trace, $"Found {items.Count} items for list {Name}");
 
         var sb = new StringBuilder();
         await GlobalStatic.GenerateHTMLHead(sb, $"{GlobalConfig.sitetitle}:{Name}");
@@ -200,6 +200,7 @@ sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"win
             sb.AppendLine($"<span class=\"itemeditlink\" style=\"display: none;\"><a href=\"_edit.item.html?listid={item.ListId}&itemid={item.Id}\" >Edit</a></span>");
             // call the deleteitem endpoint but then refresh the page as well
             sb.AppendLine($"<span class=\"itemdeletelink\" style=\"display: none;\"><a href=\"#\" onclick=\"deleteItem({item.ListId},{item.Id}); return;\" >Delete</a></span>");
+            sb.AppendLine($"<span class=\"itemreportlink\"><a href=\"#\" onclick=\"reportItem({item.ListId},{item.Id}); return;\" >Report</a></span>");
             sb.AppendLine("</div>");
 
             sb.AppendLine("</div>");
@@ -210,6 +211,7 @@ sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"win
         sb.AppendLine("<script src=\"_list_view.js\"></script>");
         sb.AppendLine("<script src=\"_modal.mastodon.js\"></script>");
         sb.AppendLine("<script src=\"_modal.google.js\"></script>");
+        sb.AppendLine("<script src=\"_modal.report.item.js\"></script>");
 
 
         await GlobalStatic.GeneratePageFooter(sb);
@@ -222,7 +224,7 @@ sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"win
         DBg.d(LogLevel.Trace, $"GenerateRssFeed {Id}");
         // create new database context
 
-        var items = await db.Items.Where(item => item.ListId == Id).ToListAsync();
+        var items = await db.Items.Where(item => item.ListId == Id && item.Visible).ToListAsync();
         // if there are no items then return
         if (items.Count == 0) return;
         var list = await db.Lists.FindAsync(Id);
@@ -265,7 +267,7 @@ sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"win
     public async Task GenerateJSON(GeFeSLEDb db)
     {
         DBg.d(LogLevel.Trace, $"GenerateJSON {Id}");
-        var items = await db.Items.Where(item => item.ListId == Id).ToListAsync();
+        var items = await db.Items.Where(item => item.ListId == Id && item.Visible).ToListAsync();
         if (items.Count == 0) return;
         var list = await db.Lists.FindAsync(Id);
         if (list is null) return;

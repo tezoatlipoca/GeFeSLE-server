@@ -1148,11 +1148,12 @@ app.MapGet("/lists", async (GeFeSLEDb db,
         if (isAllowed || sessionUser.Role == "SuperUser")
         {
             visibleLists.Add(list);
-            if (!isAllowed && sessionUser.Role == "SuperUser") {
-                 DBg.d(LogLevel.Warning, $"{fn} SuperUser bypassed list permissions for {list.Name}");
-            } 
+            if (!isAllowed && sessionUser.Role == "SuperUser")
+            {
+                DBg.d(LogLevel.Warning, $"{fn} SuperUser bypassed list permissions for {list.Name}");
+            }
         }
-      
+
     }
     if (visibleLists.Count == 0)
     {
@@ -1184,18 +1185,19 @@ app.MapGet("/lists/{listid}", async (GeFeSLEDb db,
         (bool isAllowed, string? ynot) = list.IsUserAllowedToView(me);
         if (isAllowed || sessionUser.Role == "SuperUser")
         {
-            if (!isAllowed && sessionUser.Role == "SuperUser") {
-                 DBg.d(LogLevel.Warning, $"{fn} SuperUser bypassed list permissions for {list.Name}");
+            if (!isAllowed && sessionUser.Role == "SuperUser")
+            {
+                DBg.d(LogLevel.Warning, $"{fn} SuperUser bypassed list permissions for {list.Name}");
             }
             return Results.Ok(list);
-            
+
         }
         else
         {
             // TODO: contrive to return the ynot message as well.
             return Results.Unauthorized();
         }
-        
+
     }
 });
 
@@ -1211,6 +1213,9 @@ app.MapPost("/lists", async (GeList newlist,
     if (newlist.Name.IsNullOrEmpty())
     {
         return Results.BadRequest("Cannot have a list with no name. A Horse maybe... but not a list.");
+    }
+    else if(newlist.Name == GlobalConfig.modListName) {
+        return Results.BadRequest($"List name {GlobalConfig.modListName} is RESERVED.");
     }
     DBg.d(LogLevel.Trace, $"{fn} - new list name: {newlist.Name}");
 
@@ -1341,6 +1346,7 @@ app.MapPut("/modifyitem", async (GeListItem inputItem,
     moditem.IsComplete = inputItem.IsComplete;
     moditem.Tags = inputItem.Tags;
     moditem.ModifiedDate = DateTime.Now;
+    moditem.Visible = inputItem.Visible;
 
     await db.SaveChangesAsync();
     var list = await db.Lists.FindAsync(inputItem.ListId);
@@ -1553,7 +1559,7 @@ app.MapGet("/lists/regen", async (GeFeSLEDb db,
 {
     DBg.d(LogLevel.Trace, "regenerate");
     var referer = httpContext.Request.Headers["Referer"].ToString();
-    if(referer.IsNullOrEmpty()) referer = "/index.html";
+    if (referer.IsNullOrEmpty()) referer = "/index.html";
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // add check for if listowner is owner of THIS list
 
@@ -1581,7 +1587,7 @@ app.MapGet("/lists/{listid}/regen", async (int listid,
 {
     DBg.d(LogLevel.Trace, $"regenerate/{listid}");
     var referer = httpContext.Request.Headers["Referer"].ToString();
-    if(referer.IsNullOrEmpty()) referer = "/index.html";
+    if (referer.IsNullOrEmpty()) referer = "/index.html";
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // add check for if contributor is contributor of THIS list
     // add check for if listowner is owner of THIS list
@@ -1782,18 +1788,15 @@ app.MapPost("/me", async (HttpContext context,
         {
             if (isJSApi)
             {
+                DBg.d(LogLevel.Trace, $"{fn} --1784: userid: {user.Id ?? "no userid"}, username: {user.UserName ?? "no username"}, role: {realizedRole ?? "no role"}");
                 var token = UserSessionService.createJWToken(user.Id, user.UserName, realizedRole);
-                var antiforgerytoken = antiforgery.GetAndStoreTokens(context);
-                context.Response.Cookies.Append(GlobalStatic.JWTCookieName, token, new CookieOptions { HttpOnly = true, Secure = true });
-                //context.Response.Cookies.Append(GlobalStatic.antiForgeryCookieName, antiforgerytoken.RequestToken, new CookieOptions { HttpOnly = false, Secure = true });
-                
                 DBg.d(LogLevel.Trace, $"{fn} LOGIN: User {login.Username} logged in as {realizedRole} VIA API RETURNING 200 + TOKEN");
-
+                UserSessionService.createSession(context, user.Id, user.UserName, realizedRole);
+                _ = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
                 return Results.Ok(new
                 {
                     username = login.Username,
-                    role = realizedRole,
-                    aftoken = antiforgerytoken.RequestToken
+                    role = realizedRole
                 });
             } // good login -API
             else
@@ -2010,9 +2013,10 @@ app.MapPost("/lists/{listid}", async Task<IResult> (HttpContext httpContext) =>
     }
     else
     {
-        if (!canMod && sessionUser.Role == "SuperUser") {
-                 DBg.d(LogLevel.Warning, $"{fn} SuperUser bypassed list permissions for {list.Name}");
-            }
+        if (!canMod && sessionUser.Role == "SuperUser")
+        {
+            DBg.d(LogLevel.Warning, $"{fn} SuperUser bypassed list permissions for {list.Name}");
+        }
         return await Task.FromResult<IResult>(await geListController.ListImport(httpContext, importListDto, list, user)); // Change return type to Task<IResult>
     }
 
@@ -2047,16 +2051,16 @@ app.MapGet("/me", (HttpContext httpContext) =>
 {
     var fn = "/me"; DBg.d(LogLevel.Trace, fn);
     //GlobalStatic.DumpHTTPRequestHeaders(httpContext.Request);
-    if(GlobalStatic.IsAPIRequest(httpContext.Request))
+    if (GlobalStatic.IsAPIRequest(httpContext.Request))
     {
         DBg.d(LogLevel.Trace, $"{fn} API request");
-        
+
     }
     else
     {
         DBg.d(LogLevel.Trace, $"{fn} Web request");
-        
-    
+
+
     }
 
     UserDto sessionUser = UserSessionService.amILoggedIn(httpContext);
@@ -2481,9 +2485,9 @@ app.MapGet("/me/delete", (HttpContext httpContext) =>
     httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     // delete every Cookie
     foreach (var cookie in httpContext.Request.Cookies)
-{
-    httpContext.Response.Cookies.Append(cookie.Key, "", new CookieOptions { Expires = DateTime.UtcNow.AddDays(-1) });
-}
+    {
+        httpContext.Response.Cookies.Append(cookie.Key, "", new CookieOptions { Expires = DateTime.UtcNow.AddDays(-1) });
+    }
     // foreach (var cookie in httpContext.Request.Cookies)
     // {
     //     httpContext.Response.Cookies.Delete(cookie.Key);
@@ -2507,19 +2511,29 @@ app.MapGet("/me/delete", (HttpContext httpContext) =>
 
 app.MapGet("/", () => { return Results.Redirect("/index.html"); });
 
+app.MapGet("/antiforgerytoken", async (HttpContext context, 
+    IAntiforgery antiforgery) => {
+    string fn = "antiforgerytoken"; DBg.d(LogLevel.Trace, fn);
+    DBg.d(LogLevel.Trace, $"{fn} -- {UserSessionService.dumpClaims(context)}");
+    var tokens = antiforgery.GetAndStoreTokens(context);
+    return tokens;
+
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser,listowner"
+});
+
 app.MapPost("/fileuploadxfer", async (IFormFile file,
     IAntiforgery antiforgery,
     GeFeSLEDb db,
     UserManager<GeFeSLEUser> userManager,
     HttpContext httpContext) =>
 {
-    DBg.d(LogLevel.Trace, "fileupload");
+    string fn = "/fileuploadxfer"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
-    GlobalStatic.DumpHTTPRequestHeaders(httpContext.Request);
-    GlobalStatic.DumpClaims(httpContext);
-    //GlobalStatic.DumpToken(httpContext);
-    GlobalStatic.dumpRequest(httpContext);
+    DBg.d(LogLevel.Trace, $"{fn} -- {UserSessionService.dumpClaims(httpContext)}");
 
 
 
@@ -2571,20 +2585,90 @@ app.MapGet("/checkprogress/{token}", (string token) =>
 {
     var status = ProcessTracker.GetProcessStatus(token);
     return Results.Ok(status);
-    
+
 });
 
 app.MapGet("/shitsgoingon", () =>
 {
     var status = ProcessTracker.ShitsGoingOn();
     return Results.Ok(status);
-    
+
 });
 
-app.MapGet("/files/orphan", async (GeListFileController geListFileController) => {
+app.MapGet("/files/orphan", async (GeListFileController geListFileController) =>
+{
     StringBuilder sb = await geListFileController.GetAllFilesInWWWRoot();
     return Results.Content(sb.ToString(), "text/html");
 });
+
+
+app.MapPost("/items/{itemid}/report", async (int itemid,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    RoleManager<IdentityRole> roleManager,
+    GeListController geListController, 
+    HttpContext context) =>
+{
+    string fn = "/items/{itemid}/report"; DBg.d(LogLevel.Trace, fn);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
+    
+    // there's going to be a "reason" parameter, and if user == null, a user contact 
+    // parameter in a form submission. get those two
+    var reason = context.Request.Form["reason"];
+    
+    var item = await db.Items.FindAsync(itemid);
+    if (item is null) return Results.NotFound($"Item {itemid} not found.");
+    // find the LIST that the item is in
+    var itemList = await db.Lists.FindAsync(item.ListId);
+    if(itemList is null) return Results.NotFound($"Item LIST {item.ListId} not found.");
+
+    DBg.d(LogLevel.Trace, $"{fn} -- reporting item {itemid} in list {itemList.Name} for: {reason}");
+    // a reported item creates a reference item in a special MODERATOR list
+    // that only SuperUsers and listowners can see. 
+    // first, create the MODERATION list if it doesn't exist
+    var modlist = await db.Lists.FirstOrDefaultAsync(l => l.Name == GlobalConfig.modListName);
+    if(modlist == null) {
+        DBg.d(LogLevel.Trace, $"{fn} Creating MODLIST named {GlobalConfig.modListName}");
+        modlist = new GeList {
+            Name = GlobalConfig.modListName,
+            Visibility = GeListVisibility.ListOwners,
+            Creator = user
+        };
+        
+        db.Lists.Add(modlist);
+        // save the db to get the list id
+        await db.SaveChangesAsync();
+    }
+    // now create a new GeListItem IN the MODERATION list
+    var moditem = new GeListItem {
+        Name = $"{itemList.Name}#{itemid} <= by {user.UserName}",
+        ListId = modlist.Id,
+        Tags = { "REPORTED", itemList.Name }
+    };
+    moditem.Comment += $"Reported by {user.UserName}  ";
+    moditem.Comment += $"Item has been preemptively marked as invisible pending moderation  ";
+    moditem.Comment += $"Rationale for report:  ";
+    moditem.Comment += $"{reason}  ";
+    moditem.Comment += $"---------  ";
+    moditem.Comment += $"<a href=\"_edit.item.html?listid={itemList.Id}&itemid={itemid}\">LINK TO VIEW/FIX</a>";
+    // change the original item's visibility to false
+    item.Visible = false;
+    
+    DBg.d(LogLevel.Trace, $"{fn} -- SAVING MOD ITEM: {moditem.Comment}");
+    db.Items.Add(moditem);
+    // save all changes
+    await db.SaveChangesAsync();
+    // regen the item's list
+    _ = itemList.GenerateHTMLListPage(db);
+    _ = itemList.GenerateRSSFeed(db);
+    _ = itemList.GenerateJSON(db);
+
+    // regen the MODLIST
+    _ = modlist.GenerateHTMLListPage(db);
+    return Results.Ok();
+
+}).AllowAnonymous();
+
 
 // lets always generate index.html once before we start
 // for a new setup, it won't exist. 

@@ -62,6 +62,7 @@ public static class UserSessionService
 
     public static string createJWToken(string userid, string username, string role)
     {
+        string fn = "createJWToken"; DBg.d(LogLevel.Trace, $"{fn} -- {userid ?? "no userid"} // {username ?? "no username"} / {role ?? "no role"}");
         // create a claims identity
         var claims = new List<Claim>
         {
@@ -224,6 +225,15 @@ public static class UserSessionService
         //DBg.d(LogLevel.Debug, $"{fn} returning {sessionUser}");
         return sessionUser;
 
+    }
+
+    public static string dumpClaims(HttpContext context) {
+        string? Id = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
+        string? UserName = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name)?.Value;
+        bool IsAuthenticated = context.User.Identity?.IsAuthenticated ?? false;
+        //DBg.d(LogLevel.Trace, $"{fn} isAuthenticated: {isAuthenticated}");
+        string? Role = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
+        return $"id:{Id ?? "no userid"} / username:{UserName ?? "no username"} / role:{Role ?? "no role"} / isauth: {IsAuthenticated}";
     }
 
 

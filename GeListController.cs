@@ -133,6 +133,10 @@ namespace GeFeSLE.Controllers
             // if the name of the list has changed, delete the old html file; new one is created below anyway
             if (modlist.Name != inputList.Name)
             {
+                // if the new name is a reserved list name, say no
+                if(inputList.Name == GlobalConfig.modListName) {
+                    return BadRequest($"List name {GlobalConfig.modListName} is RESERVED.");
+                }
 
                 var filename = $"{modlist.Name}.html";
                 var dest = Path.Combine(GlobalConfig.wwwroot!, filename);

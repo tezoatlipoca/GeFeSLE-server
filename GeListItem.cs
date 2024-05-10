@@ -10,6 +10,8 @@ public class GeListItem
     public string? Comment { get; set; }
     public bool IsComplete { get; set; }
 
+    public bool Visible {get; set;} = true;
+
     // add a member that is a collection of tags (which are strings)
     public List<string> Tags { get; set; } = new List<string>();
 

@@ -19,6 +19,8 @@ public static class GlobalConfig
     
     public static string? wwwroot { get; set; }
 
+    public static string? modListName {get; set;} 
+
     public static LogLevel CURRENT_LEVEL { get; set; }
 
     public static bool Debugging { get; set; } // enables debug tools in the page header. 
@@ -77,6 +79,10 @@ public static class GlobalConfig
         {
             Directory.CreateDirectory(wwwroot);
         }
+
+        modListName = config.GetValue<string>("ServerSettings:modLIstName");
+        if(modListName == null) modListName = "MODERATION";
+
         DBg.d(LogLevel.Debug, $"Port: {Port}");
         DBg.d(LogLevel.Debug, $"Bind: {Bind}");
         DBg.d(LogLevel.Debug, $"Hostname: {Hostname}");
