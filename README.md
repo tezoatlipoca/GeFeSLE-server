@@ -1,5 +1,7 @@
 # GeFeSLE - Generic, Federated, Subscribable List Engine
-Yet _another_ list making tool? Yes. **BUT** with the primary goals of:
+Yet _another_ list making tool? Yes. (Here's why)[rationale.md]
+
+**BUT** THIS ONE is:
 * designed around sharing and collaboration: with friends, communities or the internet at large
 * self-hosted: lightweight and self-contained single binary (except for the runtime environment)
 * simple html+css presentation: view lists on any device (if it can run a browser)
@@ -21,7 +23,7 @@ Yet _another_ list making tool? Yes. **BUT** with the primary goals of:
   * .. write your own!
 * self-hosted web interface for administration and list curation
   * browser plugins (Firefox for now) to quickly add new list items - no matter what page you're on; take a snip of the current browser tab to add to your new item
-  * Windows systray widget to add new list items - wouldn't it be nice if you could add an item to Trello without opening Trello?
+  * (SOON) Windows systray widget to add new list items - wouldn't it be nice if you could add an item to Trello without opening Trello?
   * (soon to be fully documented) REST API - don't like our apps? write your own.
 
 (1) so long as you don't change the list name
@@ -68,17 +70,6 @@ to make sure noone's toots are recorded forever someplace they didn't intend).
   - search engine friendly: robots.txt, sitemaps, crawl-me requests
  - GeFeSLE already hosts static pages with _file level_ access control restrictions and file uploading capabilities. Its a hop, skip and a jump from here to having a single binary webserver for static HTML and Javascript hosting. Bring back Web 1.0 (just with better CSS support)!
 
-## Um, ok. But Why? 
-I left Twitter in November of 2022 and discovered the Fediverse. I noticed that - because there's no algorithm.. or rather YOU and your network are the algorithm - discovery is somewhat manual. When Twitter started suspending journalists, many folks started "Lists of Journalists to follow on Mastodon/the Fediverse". Other people started curating really amazing lists of Very Cool Things. These lists were in a WordPress blog, a Substack or maybe a Google Sheet - what if someone starts a list that one of those services took objection to, like "Alternatives to WordPress"? Or if the user switched platforms (like the recent Substack exodus), links TO the list would bork. 
-
-After a few months of using Mastodon, and bookmarking so many interesting toots, I realized that I had no way to curate them! There's no export from your Mastodon bookmarks outside of using the API and exporting the raw JSON. (There is the excellent [Pocket Toots FIrefox plugin](https://addons.mozilla.org/en-US/firefox/addon/pockettoots/) which exports _new_ bookmarks to Pocket, but its not retroactive.)
-
-Have your grocery list in Trello? Great! Now you have to use the Trello app to access your grocery list! Ok, I just need to add milk- TOO BAD! Its now time for two factor authentication! Can't remember that email address password? TWO two-factor authentications (ah ah ah!) arrg. Ill just write "milk" on my arm in Sharpie. _Ok smart guy just use a note app on your smartphone!_ Sure, now my family can't add stuff - or rather my grocery list is now a string of text messages. We can do better. 
-
-Lastly, there is the (**enshittification** problem)[https://pluralistic.net/2023/01/21/potemkin-ai/#hey-guys]: what happens to your content when the platform that hosts it turns evil: spams your readers with too many ads, invites the nazis in or just removes or bans your content because of something you said? (That should be up to YOUR readers to decide, not the platform!) The way to fight enshittification is to **self-host**. 
-
-This service will only be about making, and hosting, _lists of things_ and will only add features in service of that end.  
-
 ## State of the Project
 (as of 2024-04-08)
 **Working towards v0.1.0 MVP**
@@ -94,10 +85,15 @@ This service will only be about making, and hosting, _lists of things_ and will 
 - users can log in from OAuth: Mastodon, Microsoft and Google (although they have to ALSO be lised in the database to have a role assigned and do anything)
 
 ### TODO Before v0.1.0 MVP:
-- Refactor API according to CRUD and HATEOAS; ensure meaningful HTTP error codes and consistent data returns; consistent access restriction on endpoints by user role; probably should verson control too e.g. `/endpoint` -> `/api/v1/endpoint`.
-- .. and then fix the browser plugin. 
-- lock down all static file serving, restricting access on basis of list viewership (images/media uploads currently are not considered protected files) :[#2](https://github.com/tezoatlipoca/GeFeSLE-server/issues/2)
-- (https://github.com/tezoatlipoca/GeFeSLE-server/issues/72)
-- (https://github.com/tezoatlipoca/GeFeSLE-server/issues/74)
+- https://github.com/tezoatlipoca/GeFeSLE-server/issues/81
+- FINISH Refactoring API according to CRUD and HATEOAS; ensure meaningful HTTP error codes and consistent data returns; consistent access restriction on endpoints by user role; probably should verson control too e.g. `/endpoint` -> `/api/v1/endpoint`.
+
+# yeah yeah how do I install it? 
+- Windows (same machine use only)
+- Windows (as a service)
+- Linux (same machine use)
+- Linux (service)
+- putting GeFeSLE behind NGINX
+- MacOS? 
 
 
