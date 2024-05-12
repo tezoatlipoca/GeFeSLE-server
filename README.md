@@ -1,5 +1,5 @@
 # GeFeSLE - Generic, Federated, Subscribable List Engine
-Yet _another_ list making tool? Yes. (Here's why)[rationale.md]
+Yet _another_ list making tool? Yes. [Here's why](rationale.md)
 
 **BUT** THIS ONE is:
 * designed around sharing and collaboration: with friends, communities or the internet at large
