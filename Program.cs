@@ -2588,7 +2588,7 @@ app.MapPost("/fileuploadxfer", async (IFormFile file,
     if (file.Length > 0)
     {
         // the filepath will be wwwroot/uploads/user/filename
-        string filePath = Path.Combine($"{GlobalConfig.wwwroot}/{GlobalStatic.uploadsFolder}/{user.UserName}", file.FileName);
+        string filePath = Path.Combine(GlobalConfig.wwwroot,GlobalStatic.uploadsFolder,user.UserName,file.FileName);
         DBg.d(LogLevel.Trace, $"fileupload - file will be saved at (filepath): {filePath}");
         //creates the folder if it doesn't exist
         Directory.CreateDirectory(Path.GetDirectoryName(filePath));

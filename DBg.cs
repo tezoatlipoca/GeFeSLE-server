@@ -19,7 +19,11 @@ public static class DBg
         string now = DateTime.Now.ToString("s");
         var debugNfo = "";
         if(file is not null && member is not null) {
-            string filename = Path.GetFileName(file);
+            // trick won't work if we run on a diff platform than we were compiled on:
+                string normalizedFile = file.Replace('/', Path.DirectorySeparatorChar)
+                                .Replace('\\', Path.DirectorySeparatorChar);
+
+            string filename = Path.GetFileName(normalizedFile);
             debugNfo = $"[{member}//{filename}:{line}]";
         }
         

@@ -295,7 +295,7 @@ namespace GeFeSLE.Controllers
                 DBg.d(LogLevel.Trace, $"{fn} -- deleting {file}");
                 System.IO.File.Delete(file);
             }
-            string dontDELETE = $"{GlobalConfig.wwwroot}\\{GlobalStatic.uploadsFolder}";
+            string dontDELETE = Path.Combine(GlobalConfig.wwwroot,GlobalStatic.uploadsFolder);
             string[] subdir = Directory.GetDirectories(GlobalConfig.wwwroot, "*", SearchOption.TopDirectoryOnly);
             foreach (string sub in subdir)
             {
