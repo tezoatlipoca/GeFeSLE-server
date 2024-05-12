@@ -729,3 +729,51 @@ async function checkImportStatus(processToken) {
 
         });
 }
+
+
+async function reportItem(listId, itemid) {
+    let fn = "reportItem"; console.log(fn);
+    if (islocal()) return;
+    let areUsure = false;
+    let reportreason = await showModalReportForm();
+    if(reportreason == null) {
+        return;
+    }
+    else {
+        areUsure = confirm('Are you sure you want to report this item? (for reason: ' + reportreason + ')')
+    }
+
+
+    if (areUsure) {
+        let apiUrl = 'items/' + itemid + '/report';
+        let data = new URLSearchParams();
+        data.append('reason', reportreason);
+        console.debug(`${fn} --> ${apiUrl} <== {reason: ${reportreason}} `);
+        fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                "GeFeSLE-XMLHttpRequest": "true"
+            },
+            body: data  // refactor all post endpoints to handle crap body an absense of content-types
+        })
+            .then(handleResponse)
+            .then(response => {
+                console.log('Response IS:', response);
+                // if the response is ok, redirect to the list page
+                if (response.ok) {
+                    // save ourselves a result message in localstorage
+                    localStorage.setItem('result', 'Item ' + itemid + ' in list ' + listId + ' deleted successfully');
+
+                    // just refresh the page
+                    location.reload();
+                }
+                
+            })
+            .catch((error) => {
+                console.error(error);
+                d(error);
+                c(RC.ERROR);
+            });
+    }
+}

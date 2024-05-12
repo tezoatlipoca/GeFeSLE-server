@@ -14,6 +14,8 @@ public static class GlobalStatic
     public static string antiForgeryCookieName = "GeFeSLEAntiForgeryCookie";
     public static string webSite = "https://awadwatt.com/gefesle";
 
+    public static string uploadsFolder = "uploads"; // name of the sub in wwwroot into which uploads go - is NOT purged in a clean
+
     // TODO: move these to config file for users to create their own. 
     public static string googleClientID = "633241786177-0mlrsg1leiu9i3et858idmmn9rtrc2fi.apps.googleusercontent.com";
     public static string googleClientSecret = "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";
@@ -42,8 +44,17 @@ public static class GlobalStatic
         await GenerateHTMLHead(sb, $"{GlobalConfig.sitetitle} - Index of lists");
         if (GlobalConfig.bodyHeader != null)
         {
-            var header = await File.ReadAllTextAsync(GlobalConfig.bodyHeader);
-            sb.AppendLine(header);
+            if (File.Exists(GlobalConfig.bodyHeader))
+            {
+                var bodyhead = await File.ReadAllTextAsync(GlobalConfig.bodyHeader);
+                sb.AppendLine(bodyhead);
+            }
+            else
+            {
+                DBg.d(LogLevel.Error, $"Configured page header {GlobalConfig.bodyHeader} file does not exist");
+                DBg.d(LogLevel.Error, "Double check your config file for \"SiteCustomize\" : { \"bodyheader\" : \"<filename>\"}"); 
+            }
+
         }
         sb.AppendLine($"<h1 class=\"indextitle\">{GlobalConfig.sitetitle}</h1>");
         sb.AppendLine($"<div class=\"button admin indexeditlink\" onclick=\"window.location.href='/_edit.list.html'\" style=\"display: none;\">Add new list</div> ");
@@ -85,8 +96,16 @@ public static class GlobalStatic
         sb.AppendLine("<footer>");
         if (GlobalConfig.bodyFooter != null)
         {
-            var footer = await File.ReadAllTextAsync(GlobalConfig.bodyFooter);
-            sb.AppendLine(footer);
+            if (File.Exists(GlobalConfig.bodyFooter))
+            {
+                var foot = await File.ReadAllTextAsync(GlobalConfig.bodyFooter);
+                sb.AppendLine(foot);
+            }
+            else
+            {
+                DBg.d(LogLevel.Error, $"Configured page header {GlobalConfig.bodyFooter} file does not exist");
+                DBg.d(LogLevel.Error, "Double check your config file for \"SiteCustomize\" : { \"bodyfooter\" : \"<filename>\"}"); 
+            }
         }
 
 
@@ -104,14 +123,22 @@ public static class GlobalStatic
         sb.AppendLine("<html>");
         sb.AppendLine("<head>");
         sb.AppendLine("<meta charset=\"utf-8\">");
-        sb.AppendLine("<link rel=\"icon\" href=\"/gefesle.ff.png\" type=\"image/x-icon\">");
+        sb.AppendLine("<link rel=\"icon\" href=\"/gefesleff.png\" type=\"image/x-icon\">");
 
 
         if (GlobalConfig.htmlHead != null)
         {
             // Kestrel (the .NET web server) doesn't support the <!--#include virtual="filename" --> directive, so we have to read the file and inject it into the output
-            var head = await File.ReadAllTextAsync(GlobalConfig.htmlHead);
-            sb.AppendLine(head);
+            if (File.Exists(GlobalConfig.htmlHead))
+            {
+                var head = await File.ReadAllTextAsync(GlobalConfig.htmlHead);
+                sb.AppendLine(head);
+            }
+            else
+            {
+                DBg.d(LogLevel.Error, $"Configured page header {GlobalConfig.htmlHead} file does not exist");
+                DBg.d(LogLevel.Error, "Double check your config file for \"SiteCustomize\" : { \"sitehead\" : \"<filename>\"}"); 
+            }
         }
         else
         {
@@ -127,6 +154,8 @@ public static class GlobalStatic
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/session'\">Session</div>");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/me/delete'\">KILL Session</div>");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/lists/regen'\">REGEN</div>");
+            sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/files/orphan'\">File Orphans</div>");
+            sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/files/clean'\">CLEAN HTML</div>");
             sb.AppendLine("</div>");
         }
         sb.AppendLine($"<div class=\"admin\">");

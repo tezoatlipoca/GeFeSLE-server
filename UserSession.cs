@@ -26,7 +26,7 @@ public static class UserSessionService
             GeFeSLEDb db,
             UserManager<GeFeSLEUser> userManager)
     {
-        var fn = "UpdateSessionAccessTime"; //DBg.d(LogLevel.Trace, fn);
+        
 
         var sessionUser = amILoggedIn(context);
         if (sessionUser.IsAuthenticated)
@@ -39,21 +39,21 @@ public static class UserSessionService
                 // var roles = userManager.GetRolesAsync(user).Result;         //TODO: use role from DTo not this
                 // string realizedRole = GlobalStatic.FindHighestRole(roles);
 
-                DBg.d(LogLevel.Debug, $"{fn}: User {sessionUser.UserName} [{sessionUser.Role}] TO {context.Request.Path} FROM {context.Connection.RemoteIpAddress}");
+                DBg.d(LogLevel.Debug, $"User {sessionUser.UserName} [{sessionUser.Role}] TO {context.Request.Path} FROM {context.Connection.RemoteIpAddress}");
                 return user;
             } // user in db 
             else
             {
                 // could be an anonymous OAuth user - someone who has logged in via an OAuth source 
                 // but they're not in our database (i.e. have been invited/added by a legit usesr)
-                DBg.d(LogLevel.Debug, $"{fn}: User {sessionUser.UserName} (OAuth guest) [{sessionUser.Role}] to {context.Request.Path} from {context.Connection.RemoteIpAddress}");
+                DBg.d(LogLevel.Debug, $"User {sessionUser.UserName} (OAuth guest) [{sessionUser.Role}] to {context.Request.Path} from {context.Connection.RemoteIpAddress}");
                 return null;
             } // user NOT in db.
 
         }
         else // not authenticated
         {
-            DBg.d(LogLevel.Debug, $"{fn}: Anonymous access TO {context.Request.Path} FROM {context.Connection.RemoteIpAddress}");
+            DBg.d(LogLevel.Debug, $"Anonymous access TO {context.Request.Path} FROM {context.Connection.RemoteIpAddress}");
             return null;
         }
 
@@ -62,7 +62,7 @@ public static class UserSessionService
 
     public static string createJWToken(string userid, string username, string role)
     {
-        string fn = "createJWToken"; DBg.d(LogLevel.Trace, $"{fn} -- {userid ?? "no userid"} // {username ?? "no username"} / {role ?? "no role"}");
+        DBg.d(LogLevel.Trace, $"{userid ?? "no userid"} // {username ?? "no username"} / {role ?? "no role"}");
         // create a claims identity
         var claims = new List<Claim>
         {
@@ -94,20 +94,20 @@ public static class UserSessionService
     }
     public static void storeProvider(HttpContext httpContext, string provider)
     {
-        DBg.d(LogLevel.Trace, $"storeProvider: {provider}");
+        DBg.d(LogLevel.Trace, provider);
         httpContext.Session.SetString("provider", provider);
     }
 
     public static string? getProvider(HttpContext httpContext)
     {
-        DBg.d(LogLevel.Trace, "getProvider");
+        DBg.d(LogLevel.Trace, null);
         return httpContext.Session.GetString("provider");
     }
 
 
     public static void createSession(HttpContext httpContext, string userid, string username, string role)
     {
-        DBg.d(LogLevel.Trace, "createSession");
+        DBg.d(LogLevel.Trace, null);
         // create a claims identity
         var claims = new List<Claim>
         {
@@ -141,7 +141,7 @@ public static class UserSessionService
     // a method that takes username and an OAuth2AccessTokenResponse and stores it in the user session
     public static void AddAccessToken(HttpContext context, string provider, string accessToken)
     {
-        DBg.d(LogLevel.Trace, "AddAccessTokenResponse");
+        DBg.d(LogLevel.Trace, null);
 
         if (provider == null || accessToken == null)
         {
@@ -158,10 +158,10 @@ public static class UserSessionService
     // a method that takes username and provider and returns the OAuth2AccessTokenResponse
     public static string? GetAccessToken(HttpContext context, string provider)
     {
-        DBg.d(LogLevel.Trace, "GetAccessToken");
+        DBg.d(LogLevel.Trace, null);
         if (provider == null)
         {
-            DBg.d(LogLevel.Error, "GetAccessToken: provider is null");
+            DBg.d(LogLevel.Error, "Provider is null");
             return null;
         }
         else
@@ -170,7 +170,7 @@ public static class UserSessionService
             string? token = context.Session.GetString(provider);
             if (token == null)
             {
-                DBg.d(LogLevel.Error, "GetAccessToken: No token found for provider: " + provider);
+                DBg.d(LogLevel.Error, "No token found for provider: " + provider);
                 return null; // Add null check here
             }
             return token;
@@ -181,11 +181,11 @@ public static class UserSessionService
     public static async Task<GeFeSLEUser?> mapUserNameToDBUser(string username,
         UserManager<GeFeSLEUser> userManager)
     {
-        string? fn = "mapUserNameToDBUser"; DBg.d(LogLevel.Trace, fn);
+        DBg.d(LogLevel.Trace, null);
 
         if (username == null)
         {
-            DBg.d(LogLevel.Trace, $"{fn} null username");
+            DBg.d(LogLevel.Trace, $"Null username");
             return null;
         }
         else
@@ -193,12 +193,12 @@ public static class UserSessionService
             GeFeSLEUser? user = await userManager.FindByNameAsync(username);
             if (user == null)
             {
-                DBg.d(LogLevel.Debug, $"{fn} username {username} does NOT exist in the Database!");
+                DBg.d(LogLevel.Debug, $"Username {username} does NOT exist in the Database!");
                 return null;
             }
             else
             {
-                DBg.d(LogLevel.Debug, $"{fn} username {user.UserName} does exist in the Database!");
+                DBg.d(LogLevel.Debug, $"Username {user.UserName} does exist in the Database!");
                 return user;
             }
         }
@@ -213,16 +213,12 @@ public static class UserSessionService
     //       can we even have .isAuthenticated with a non-nul username? i.e. can we just check isAuthenticated?
     public static UserDto amILoggedIn(HttpContext context)
     {
-        string fn = "amILoggedIn"; //DBg.d(LogLevel.Trace, fn);
         UserDto sessionUser = new UserDto();
         //GlobalStatic.dumpRequest(httpContext);
         sessionUser.Id = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
         sessionUser.UserName = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name)?.Value;
-        //DBg.d(LogLevel.Trace, $"{fn} username: {username}");
         sessionUser.IsAuthenticated = context.User.Identity?.IsAuthenticated ?? false;
-        //DBg.d(LogLevel.Trace, $"{fn} isAuthenticated: {isAuthenticated}");
         sessionUser.Role = context.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
-        //DBg.d(LogLevel.Debug, $"{fn} returning {sessionUser}");
         return sessionUser;
 
     }

@@ -51,20 +51,44 @@
   </ItemGroup>
 
   <ItemGroup>
-  <Content Update="wwwroot\rss*.xml" CopyToPublishDirectory="Never" />
-  <Content Update="wwwroot\*.json" CopyToPublishDirectory="Never" />
-  <Content Update="wwwroot\_*.html" CopyToPublishDirectory="Always" />
-  
-  <Content Update="wwwroot\*.css" CopyToPublishDirectory="Always" /> 
-  <Content Update="wwwroot\*.js" CopyToPublishDirectory="Always" />
-  <Content Update="wwwroot\*.png" CopyToPublishDirectory="Always" /> 
-</ItemGroup>
+  <Content Update="wwwroot\**\*" CopyToPublishDirectory="Never" />
+  </ItemGroup>
 <ItemGroup>
-  <Content Update="wwwroot\*.html" CopyToPublishDirectory="Never" />
-  <Content Remove="wwwroot\_*.html" />
+    <EmbeddedResource Include="wwwroot\lib\easymde\easymde.min.css" />
+    <EmbeddedResource Include="wwwroot\lib\easymde\easymde.min.js" />
+    <EmbeddedResource Include="wwwroot\__samplebodyhead.html" />
+    <EmbeddedResource Include="wwwroot\__samplefooter.html" />
+    <EmbeddedResource Include="wwwroot\__samplehead.html" />
+    <EmbeddedResource Include="wwwroot\_edit.item.html" />
+    <EmbeddedResource Include="wwwroot\_edit.item.js" />
+    <EmbeddedResource Include="wwwroot\_edit.list.html" />
+    <EmbeddedResource Include="wwwroot\_edit.list.js" />
+    <EmbeddedResource Include="wwwroot\_edituser.html" />
+    <EmbeddedResource Include="wwwroot\_edituser.js" />
+    <EmbeddedResource Include="wwwroot\_index.js" />
+    <EmbeddedResource Include="wwwroot\_list_view.js" />
+    <EmbeddedResource Include="wwwroot\_login.html" />
+    <EmbeddedResource Include="wwwroot\_login.js" />
+    <EmbeddedResource Include="wwwroot\_modal.google.js" />
+    <EmbeddedResource Include="wwwroot\_modal.mastodon.js" />
+    <EmbeddedResource Include="wwwroot\_modal.report.item.js" />
+    <EmbeddedResource Include="wwwroot\_password.change.html" />
+    <EmbeddedResource Include="wwwroot\_password.change.js" />
+    <EmbeddedResource Include="wwwroot\_utils.js" />
+    <EmbeddedResource Include="wwwroot\gefesle.default.css" />
+    <EmbeddedResource Include="wwwroot\gefesleff.png" />
+    <EmbeddedResource Include="wwwroot\_fileupload.js" />
+    
 </ItemGroup>
 <ItemGroup>
     <!-- Other PackageReference elements... -->
     
 </ItemGroup>
+  <!-- some Identity using package keeps adding this-->
+  <Target AfterTargets="Publish" Name="RemoveIdentityFolderAfterPublish">
+    <RemoveDir Directories="$(PublishDir)wwwroot\Identity" />
+    <RemoveDir Directories="$(PublishDir)wwwroot" />
+</Target>
+
+
 </Project>

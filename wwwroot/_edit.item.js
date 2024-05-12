@@ -7,38 +7,35 @@ document.addEventListener('DOMContentLoaded', getItem);
 // gets the listid from the url querystring and then 
 // populates the form in _edit.item.html with the list data
 async function getItem() {
-    let fn = 'getItem';
-    console.log(fn)
+    let fn = 'getItem'; console.log(fn)
 
     if (islocal()) {
         d("Cannot call API from a local file!");
         c(RC.BAD_REQUEST);
         return;
         }
+    
     let [id, username, role] = await amloggedin();
-        console.debug(fn + ' | username: ' + username);
-        console.debug(fn + ' | role: ' + role);
-    if (!isSuperUser(role) && !isListOwner(role)){
-        d("You are not logged in! <a href='_login.html'>Login here.</a>");
-        c(RC.UNAUTHORIZED);
-        // the link back to the list page is now bork, change back to site index.
-        // (if the user really wants they can hit browser back button)
-        document.getElementById('back2list').href = 'index.html';
-        // disable the form submit action and disable the editable fields
-        let form = document.getElementById('edititemform');
-        let formElements = form.elements;
-        for (var i = 0; i < formElements.length; i++) {
-            formElements[i].readOnly = true;
-        }
-        return;
-    }
+        console.debug(fn + ' -- username: ' + username);
+        console.debug(fn + ' -- role: ' + role);
+    
 
     // Get the itemid from the querystring
     let urlParams = new URLSearchParams(window.location.search);
     let itemid = urlParams.get('itemid');
-    console.debug(' | itemid: ' + itemid);
+    console.debug(fn + ' -- itemid: ' + itemid);
     let listid = urlParams.get('listid');
-    console.debug(' | listid: ' + listid);
+    console.debug(fn + ' -- listid: ' + listid);
+    // set the value of the isSuggestion field with this value
+    let suggestionBox = document.getElementById('isSuggestion');
+    let isSuggestion = urlParams.get('suggestion');
+    console.debug(fn + ' -- suggestion? ' + isSuggestion);
+        
+    if (!isSuperUser(role) && !isListOwner(role)){
+        isSuggestion = true;   
+    }
+    suggestionBox.checked = isSuggestion;
+    
     if (itemid == null || itemid == '') {
         // not necessarily bad; if we have a listid, then we are creating a new item
 
@@ -54,14 +51,29 @@ async function getItem() {
             document.getElementById('item.name').readOnly = true;
             document.getElementById('item.comment').readOnly = true;
             document.getElementById('item.tags').readOnly = true;
+            document.getElementById('item.visible').disabled = true;
             return;
         } else {
 
 
             // populate the listid field in the form
             document.getElementById('item.listid').value = listid;
-            d('Creating new item in list ' + listid + '.');
-            c(RC.OK);
+            if(isSuggestion) {
+                // get the first <h1> tag in the DOM
+                let h1 = document.querySelector('h1');
+                
+                h1.innerText = 'SUGGEST new item in list ' + listid;
+                
+                document.getElementById('item.visible').disabled = true;
+                document.getElementById('item.visible').checked = false;
+                
+                d('Creating SUGGESTION in list ' + listid + '.');
+                c(RC.OK);
+            } else {
+                document.getElementById('item.visible').checked = true;
+                d('Creating new item in list ' + listid + '.');
+                c(RC.OK);
+            }
         }
 
 
@@ -79,6 +91,7 @@ async function getItem() {
             document.getElementById('item.name').readOnly = true;
             document.getElementById('item.comment').readOnly = true;
             document.getElementById('item.tags').readOnly = true;
+            document.getElemebtById('item.visible').disabled = true;
             return;
         } else {
             // populate the listid field in the form
@@ -89,6 +102,7 @@ async function getItem() {
             c(RC.OK);
             // oh and set the radio button to "update"
             document.getElementById('update').checked = true;
+            
         }
     }
 
@@ -98,10 +112,9 @@ async function getItem() {
     apiUrl = window.location.href;
     // get just the hostname and port from the url
     apiUrl = apiUrl.substring(0, apiUrl.indexOf('/_edit.item.html'));
-    console.debug(' | API URL: ' + apiUrl);
+    console.debug(fn + ' -- apiUrl: ' + apiUrl);
     if (itemid != null) {
-        console.debug(' | API URL: ' + apiUrl);
-        console.debug(' | Getting item ' + itemid + ' in list ' + listid + '.')
+        console.debug(fn + ' -- Getting item ' + itemid + ' in list ' + listid + '.')
         fetch(apiUrl + '/showitems/' + listid + '/' + itemid)
             .then(response => {
                 if (response.ok) {
@@ -117,6 +130,7 @@ async function getItem() {
                 // Populate the form with the data from the API
                 document.getElementById('item.id').value = data.id;
                 document.getElementById('item.name').value = data.name;
+                document.getElementById('item.visible').checked = data.visible;
                 //document.getElementById('item.comment').value = data.comment;
                 easymde.value(data.comment);
                 document.getElementById('item.tags').value = data.tags.join(' ');
@@ -164,7 +178,9 @@ async function updateItem(e) {
     let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
-    if (!isSuperUser(role) && !isListOwner(role)){
+    let isSuggestion = document.getElementById("isSuggestion").checked;
+    
+    if (!isSuperUser(role) && !isListOwner(role) && !isSuggestion){
         d("You are not logged in! <a href='_login.html'>Login here.</a>");
         c(RC.UNAUTHORIZED);
         return;
@@ -182,6 +198,7 @@ async function updateItem(e) {
         let id = document.getElementById('item.id').value;
         let listid = document.getElementById('item.listid').value;
         let name = document.getElementById('item.name').value;
+        let visible = document.getElementById('item.visible').checked; 
         //let comment = document.getElementById('item.comment').value;
         let comment = easymde.value();
         //alert(comment);
@@ -195,8 +212,13 @@ async function updateItem(e) {
         // if id is null or empty, then this is a new item
         // and we need to call the API to create a new item
         if (id == null || id == '') {
-            apiUrl = apiUrl + '/additem/' + listid;
-            data = { listid, name, comment, tags: tags.split(' ') };
+            
+            if(isSuggestion) {
+                apiUrl = '/lists/' + listid + '/suggest';
+            } else {
+                apiUrl = apiUrl + '/additem/' + listid;
+            }
+            data = { listid, name, comment, tags: tags.split(' '), visible };
             apiMethod = 'POST';
         }
         else {
@@ -208,7 +230,7 @@ async function updateItem(e) {
                 // if id is not null or empty, then this is an existing item
                 // and we need to call the API to update the list
                 apiUrl = apiUrl + '/modifyitem';
-                data = { id, listid, name, comment, tags: tags.split(' ') };
+                data = { id, listid, name, comment, tags: tags.split(' '), visible };
                 apiMethod = 'PUT';
             }
         }

@@ -358,3 +358,18 @@ async function getLists() {
             c(RC.ERROR);
         });
 }
+
+function copyToClipboard(id) {
+    
+    // Create the bookmark URL
+    var urlToCopy = window.location.href.split('#')[0] + '#' + id;
+
+    // Copy the URL to the clipboard
+    navigator.clipboard.writeText(urlToCopy)
+        .then(() => {
+            console.debug('Url:' + urlToCopy + ' copied to clipboard!');
+        })
+        .catch(err => {
+            console.error('Could not copy URL: ', err);
+        });
+}

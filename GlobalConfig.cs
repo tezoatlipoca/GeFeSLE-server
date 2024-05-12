@@ -226,7 +226,7 @@ public static class GlobalConfig
         string? configPath = null; ;
         if (configArg == null)
         {
-            DBg.d(LogLevel.Critical, "StartupNo config file specified. Exiting.");
+            DBg.d(LogLevel.Critical, "Startup No config file specified. Exiting.");
             return null;
         }
         else
@@ -237,7 +237,7 @@ public static class GlobalConfig
         // check that the config file exists
         if (!File.Exists(configPath))
         {
-            DBg.d(LogLevel.Critical, $"Startupspecified Config file {configPath} does not exist. Exiting.");
+            DBg.d(LogLevel.Critical, $"Startup specified Config file {configPath} does not exist. Exiting.");
             return null;
         }
         else

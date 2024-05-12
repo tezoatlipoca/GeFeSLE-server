@@ -1214,7 +1214,8 @@ app.MapPost("/lists", async (GeList newlist,
     {
         return Results.BadRequest("Cannot have a list with no name. A Horse maybe... but not a list.");
     }
-    else if(newlist.Name == GlobalConfig.modListName) {
+    else if (newlist.Name == GlobalConfig.modListName)
+    {
         return Results.BadRequest($"List name {GlobalConfig.modListName} is RESERVED.");
     }
     DBg.d(LogLevel.Trace, $"{fn} - new list name: {newlist.Name}");
@@ -1300,10 +1301,11 @@ app.MapPost("/additem/{listid}", async (int listid,
     GeListItem newitem,
     GeFeSLEDb db,
     UserManager<GeFeSLEUser> userManager,
-    HttpContext httpContext) =>
+    HttpContext httpContext,
+    GeListFileController geListFileController) =>
 {
-
-    DBg.d(LogLevel.Trace, $"additem/{listid} <- {System.Text.Json.JsonSerializer.Serialize(newitem)}");
+    string fn = $"additem/{listid} <- {System.Text.Json.JsonSerializer.Serialize(newitem)}";
+    DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // if the ListId of newitem is 0 (which is ok - no value in json int is 0), then set it to listid
     if (newitem.ListId == 0)
@@ -1316,9 +1318,22 @@ app.MapPost("/additem/{listid}", async (int listid,
     }
     db.Items.Add(newitem);
     await db.SaveChangesAsync();
+    
     // find the list that corresponds to listid
     var list = await db.Lists.FindAsync(listid);
     if (list is null) return Results.NotFound();
+    
+    // "attachments" protection check - if the item references an upload we want to set the protection to match 
+    // the list that its in
+    List<string> itemfiles = newitem.LocalFiles();
+    if (list.Visibility > GeListVisibility.Public) {
+        // does this item contain any file references? 
+        
+        geListFileController.ProtectFiles(itemfiles, list.Name);    
+    } else {
+        geListFileController.UnProtectFiles(itemfiles, list.Name); // TODO: handle situation when a file is in two lists of differing vis levels
+    }
+    
     await list.GenerateHTMLListPage(db);
     await list.GenerateRSSFeed(db);
     await list.GenerateJSON(db);
@@ -1333,7 +1348,8 @@ app.MapPost("/additem/{listid}", async (int listid,
 app.MapPut("/modifyitem", async (GeListItem inputItem,
         GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
-        HttpContext httpContext) =>
+        HttpContext httpContext,
+        GeListFileController geListFileController) =>
 {
     DBg.d(LogLevel.Trace, $"modifyitem: <- {System.Text.Json.JsonSerializer.Serialize(inputItem)}");
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
@@ -1351,6 +1367,25 @@ app.MapPut("/modifyitem", async (GeListItem inputItem,
     await db.SaveChangesAsync();
     var list = await db.Lists.FindAsync(inputItem.ListId);
     if (list is null) return Results.NotFound();
+
+    // "attachments" protection check - if the item references an upload we want to set the protection to match 
+    // the list that its in
+    List<string> itemfiles = moditem.LocalFiles();
+    if (list.Visibility > GeListVisibility.Public) {
+        // does this item contain any file references? 
+        
+        geListFileController.ProtectFiles(itemfiles, list.Name);    
+    } else {
+        // if the item is in a public list, but it is not visible, its attachments shouldn't be either:
+        if(moditem.Visible) {
+            geListFileController.UnProtectFiles(itemfiles, list.Name); // TODO: handle situation when a file is in two lists of differing vis levels
+        } else {
+            geListFileController.ProtectFiles(itemfiles, GlobalConfig.modListName); // TODO: this means the image is only visible to superusers. we can do better. 
+        }
+
+    }
+
+
     await list.GenerateHTMLListPage(db);
     await list.GenerateRSSFeed(db);
     await list.GenerateJSON(db);
@@ -2511,8 +2546,9 @@ app.MapGet("/me/delete", (HttpContext httpContext) =>
 
 app.MapGet("/", () => { return Results.Redirect("/index.html"); });
 
-app.MapGet("/antiforgerytoken", async (HttpContext context, 
-    IAntiforgery antiforgery) => {
+app.MapGet("/antiforgerytoken", async (HttpContext context,
+    IAntiforgery antiforgery) =>
+{
     string fn = "antiforgerytoken"; DBg.d(LogLevel.Trace, fn);
     DBg.d(LogLevel.Trace, $"{fn} -- {UserSessionService.dumpClaims(context)}");
     var tokens = antiforgery.GetAndStoreTokens(context);
@@ -2552,7 +2588,7 @@ app.MapPost("/fileuploadxfer", async (IFormFile file,
     if (file.Length > 0)
     {
         // the filepath will be wwwroot/uploads/user/filename
-        string filePath = Path.Combine($"{GlobalConfig.wwwroot}/uploads/{user.UserName}", file.FileName);
+        string filePath = Path.Combine($"{GlobalConfig.wwwroot}/{GlobalStatic.uploadsFolder}/{user.UserName}", file.FileName);
         DBg.d(LogLevel.Trace, $"fileupload - file will be saved at (filepath): {filePath}");
         //creates the folder if it doesn't exist
         Directory.CreateDirectory(Path.GetDirectoryName(filePath));
@@ -2562,9 +2598,11 @@ app.MapPost("/fileuploadxfer", async (IFormFile file,
             await file.CopyToAsync(stream);
         }
         // we want to return the URL of the file that was uploaded
-        string url = $"{GlobalConfig.Hostname}/uploads/{user.UserName}/{file.FileName}";
+        string relpath = $"{GlobalStatic.uploadsFolder}/{user.UserName}/{file.FileName}";
+        string url = $"{GlobalConfig.Hostname}/{relpath}";
+        // proactively protect the file until the item it is registered in is added
 
-
+        ProtectedFiles.AddFile(relpath, GlobalConfig.modListName);
 
 
         return Results.Ok(url);
@@ -2599,6 +2637,41 @@ app.MapGet("/files/orphan", async (GeListFileController geListFileController) =>
 {
     StringBuilder sb = await geListFileController.GetAllFilesInWWWRoot();
     return Results.Content(sb.ToString(), "text/html");
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser"
+});
+
+app.MapGet("/files/clean", async (GeListFileController geListFileController,
+    HttpContext httpContext,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager) =>
+{
+    string fn = "/files/clean"; DBg.d(LogLevel.Trace, fn);
+    
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    
+    await geListFileController.FreshStart();
+    // loads the "restricted" internal files into the protected files lookup cache
+    ProtectedFiles.ReLoadFiles(db);
+    // loads the "restricted" uploads/attachment files into the protected files lookup cache
+    _ = geListFileController.ProtectUploadFiles();
+    var lists = await db.Lists.ToListAsync();
+    foreach (var list in lists)
+    {
+        DBg.d(LogLevel.Trace, $"{fn} -- rebuilding {list.Name}");
+        await list.GenerateHTMLListPage(db);
+        await list.GenerateRSSFeed(db);
+        await list.GenerateJSON(db);
+    }
+    await GlobalStatic.GenerateHTMLListIndex(db);
+
+    return Results.Redirect("/files/orphan");
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser"
 });
 
 
@@ -2606,46 +2679,50 @@ app.MapPost("/items/{itemid}/report", async (int itemid,
     GeFeSLEDb db,
     UserManager<GeFeSLEUser> userManager,
     RoleManager<IdentityRole> roleManager,
-    GeListController geListController, 
-    HttpContext context) =>
+    GeListController geListController,
+    HttpContext context, 
+    GeListFileController fileController) =>
 {
     string fn = "/items/{itemid}/report"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
-    
+
     // there's going to be a "reason" parameter, and if user == null, a user contact 
     // parameter in a form submission. get those two
     var reason = context.Request.Form["reason"];
-    
+
     var item = await db.Items.FindAsync(itemid);
     if (item is null) return Results.NotFound($"Item {itemid} not found.");
     // find the LIST that the item is in
     var itemList = await db.Lists.FindAsync(item.ListId);
-    if(itemList is null) return Results.NotFound($"Item LIST {item.ListId} not found.");
+    if (itemList is null) return Results.NotFound($"Item LIST {item.ListId} not found.");
 
     DBg.d(LogLevel.Trace, $"{fn} -- reporting item {itemid} in list {itemList.Name} for: {reason}");
     // a reported item creates a reference item in a special MODERATOR list
     // that only SuperUsers and listowners can see. 
     // first, create the MODERATION list if it doesn't exist
     var modlist = await db.Lists.FirstOrDefaultAsync(l => l.Name == GlobalConfig.modListName);
-    if(modlist == null) {
+    if (modlist == null)
+    {
         DBg.d(LogLevel.Trace, $"{fn} Creating MODLIST named {GlobalConfig.modListName}");
-        modlist = new GeList {
+        modlist = new GeList
+        {
             Name = GlobalConfig.modListName,
             Visibility = GeListVisibility.ListOwners,
             Creator = user
         };
-        
+
         db.Lists.Add(modlist);
         // save the db to get the list id
         await db.SaveChangesAsync();
     }
     // now create a new GeListItem IN the MODERATION list
-    var moditem = new GeListItem {
-        Name = $"{itemList.Name}#{itemid} <= by {user.UserName}",
+    var moditem = new GeListItem
+    {
+        Name = $"{itemList.Name}#{itemid} <= by {user?.UserName ?? "anonymous"}",
         ListId = modlist.Id,
         Tags = { "REPORTED", itemList.Name }
     };
-    moditem.Comment += $"Reported by {user.UserName}  ";
+    moditem.Comment += $"Reported by {user?.UserName ?? "anonymous"}  ";
     moditem.Comment += $"Item has been preemptively marked as invisible pending moderation  ";
     moditem.Comment += $"Rationale for report:  ";
     moditem.Comment += $"{reason}  ";
@@ -2653,7 +2730,12 @@ app.MapPost("/items/{itemid}/report", async (int itemid,
     moditem.Comment += $"<a href=\"_edit.item.html?listid={itemList.Id}&itemid={itemid}\">LINK TO VIEW/FIX</a>";
     // change the original item's visibility to false
     item.Visible = false;
-    
+    // apply visibility of MODERATION list to any attachments // TODO: deal when image is in more than one list w/ varying visibilities
+    List<string> itemFiles = item.LocalFiles();
+    fileController.ProtectFiles(itemFiles, GlobalConfig.modListName); 
+    // don't worry - when the item is modified again, its regular list permissions protection will be reapplied
+    // (see the item itemmodify endpoint) 
+
     DBg.d(LogLevel.Trace, $"{fn} -- SAVING MOD ITEM: {moditem.Comment}");
     db.Items.Add(moditem);
     // save all changes
@@ -2667,6 +2749,94 @@ app.MapPost("/items/{itemid}/report", async (int itemid,
     _ = modlist.GenerateHTMLListPage(db);
     return Results.Ok();
 
+}).AllowAnonymous();
+
+app.MapPost("/lists/{listid}/suggest", async (int listid,
+    GeListItem newitem,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    HttpContext httpContext,
+    GeListFileController geListFileController) =>
+{
+    string fn = $"/lists/{listid}/suggest <- {System.Text.Json.JsonSerializer.Serialize(newitem)}";
+    DBg.d(LogLevel.Trace, fn);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    // if the ListId of newitem is 0 (which is ok - no value in json int is 0), then set it to listid
+    if (newitem.ListId == 0)
+    {
+        newitem.ListId = listid;
+    }
+    else
+    {
+        if (newitem.ListId != listid) return Results.BadRequest("ListId does not match");
+    }
+
+    // because this is a SUGGESTION, turn its visible to off:
+    newitem.Visible = false;
+
+    GeList? newitemList = await db.Lists.FirstOrDefaultAsync(l => l.Id == newitem.ListId);
+    if(newitemList is null) {
+        return Results.BadRequest($"${newitem.ListId} is not a vlaid list");
+    }
+
+
+    // now create the moderator review request // first get the
+    // first, create the MODERATION list if it doesn't exist
+    var modlist = await db.Lists.FirstOrDefaultAsync(l => l.Name == GlobalConfig.modListName);
+    if (modlist == null)
+    {
+        DBg.d(LogLevel.Trace, $"{fn} Creating MODLIST named {GlobalConfig.modListName}");
+        modlist = new GeList
+        {
+            Name = GlobalConfig.modListName,
+            Visibility = GeListVisibility.ListOwners,
+            Creator = user
+        };
+
+        db.Lists.Add(modlist);
+        
+    }
+    // change the new item's visibility to false
+    newitem.Visible = false;
+    // save the db to get the list id; also save the new item so we can get ITS id
+    DBg.d(LogLevel.Trace, $"{fn} -- SAVING SUGGESTION: {System.Text.Json.JsonSerializer.Serialize(newitem)}");
+    db.Items.Add(newitem);
+    await db.SaveChangesAsync();
+    // now create a new GeListItem IN the MODERATION list
+    var moditem = new GeListItem
+    {
+        Name = $"{newitemList.Name}#{newitem.Id} <= by {user?.UserName ?? "anonymous"}",
+        ListId = modlist.Id,
+        Tags = { "SUGGESTED", newitemList.Name }
+    };
+    moditem.Comment += $"SUGGESTED by {user?.UserName ?? "anonymous"}  ";
+    moditem.Comment += $"Item has been preemptively marked as invisible pending approval  ";
+    moditem.Comment += $"---------  ";
+    moditem.Comment += $"<a href=\"_edit.item.html?listid={newitemList.Id}&itemid={newitem.Id}\">LINK TO APPROVE</a>";
+    
+    // apply visibility of MODERATION list to any attachments // TODO: deal when image is in more than one list w/ varying visibilities
+    List<string> itemFiles = newitem.LocalFiles();
+    geListFileController.ProtectFiles(itemFiles, GlobalConfig.modListName); 
+    // don't worry - when the item is modified again, its regular list permissions protection will be reapplied
+    // (see the item itemmodify endpoint) 
+
+    DBg.d(LogLevel.Trace, $"{fn} -- SAVING MOD ITEM: {moditem.Comment}");
+    db.Items.Add(moditem);
+    
+
+    await db.SaveChangesAsync();
+    
+    List<string> itemfiles = newitem.LocalFiles();
+    geListFileController.ProtectFiles(itemfiles, GlobalConfig.modListName);    
+    
+    await newitemList.GenerateHTMLListPage(db);
+    await newitemList.GenerateRSSFeed(db);
+    await newitemList.GenerateJSON(db);
+    await modlist.GenerateHTMLListPage(db);
+    await modlist.GenerateRSSFeed(db);
+    await modlist.GenerateJSON(db);
+    
+    return Results.Created($"/showitems/{newitem.ListId}/{newitem.Id}", newitem);
 }).AllowAnonymous();
 
 
@@ -2684,10 +2854,14 @@ using (var mutex = new Mutex(true, GlobalStatic.applicationName, out createdNew)
         {
             var services = scope.ServiceProvider;
             var db = services.GetRequiredService<GeFeSLEDb>();
+            var geListFileController = services.GetRequiredService<GeListFileController>();
 
-            // Call your method here
+            // generates the index afresh
             _ = GlobalStatic.GenerateHTMLListIndex(db);
+            // loads the "restricted" internal files into the protected files lookup cache
             ProtectedFiles.ReLoadFiles(db);
+            // loads the "restricted" uploads/attachment files into the protected files lookup cache
+            _ = geListFileController.ProtectUploadFiles();
         }
 
         app.Run();

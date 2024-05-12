@@ -9,11 +9,11 @@ public static class ProtectedFiles
 {
     // define a bunch of defaults: List<string>
     private static readonly Dictionary<string, string> internalFiles = new Dictionary<string, string> {
-       { "/_edit.item.html", "contributor" },
-       { "/_edit.item.js", "contributor" },
+    //    { "/_edit.item.html", "contributor" },
+    //    { "/_edit.item.js", "contributor" }, REMOVED (for suggestions)
        { "/_edit.list.js", "listowner" },
        { "/_edit.list.html", "listowner" },
-       { "/_edituser.html", "SuperUser" },
+       { "/_edituser.html", "SuperUser" }, 
        { "/_edituser.js", "SuperUser" },
        { "/_mastobookmark.html", "listowner" },
        { "/_mastobookmark.js", "listowner" }
@@ -38,6 +38,7 @@ public static class ProtectedFiles
     public static void AddFile(string path, string listName)
     {
         Files.TryAdd(path, listName);
+        DBg.d(LogLevel.Trace, $"ProtectedFiles.AddFile: {path} - list name: {listName}");
     }
 
 

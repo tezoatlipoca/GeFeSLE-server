@@ -135,8 +135,16 @@ public class GeList
 
         if (GlobalConfig.bodyHeader != null)
         {
-            var header = await File.ReadAllTextAsync(GlobalConfig.bodyHeader);
-            sb.AppendLine(header);
+            if (File.Exists(GlobalConfig.bodyHeader))
+            {
+                var bodyhead = await File.ReadAllTextAsync(GlobalConfig.bodyHeader);
+                sb.AppendLine(bodyhead);
+            }
+            else
+            {
+                DBg.d(LogLevel.Error, $"Configured page header {GlobalConfig.bodyHeader} file does not exist");
+                DBg.d(LogLevel.Error, "Double check your config file for \"SiteCustomize\" : { \"bodyheader\" : \"<filename>\""); 
+            }
         }
         sb.AppendLine($"<h1 class=\"listtitle\"><a class=\"indexlink\" href=\"index.html\">&lt;-</a> {Name}</h1>");
         sb.AppendLine($"<p class=\"listcreated\">Created: {CreatedDate.ToString("yyyy-MM-dd HH:mm:ss")}");
@@ -155,6 +163,7 @@ sb.AppendLine($"<div class=\"button googletaskslink\" onclick=\"importItems('Goo
 sb.AppendLine($"<div class=\"button regenlink\" onclick=\"window.location.href='/lists/{Id}/regen'\" style=\"display: none;\">Regen</div>");
 sb.AppendLine($"<div class=\"button rsslink\" onclick=\"window.location.href='rss-{Name}.xml'\">RSS Feed</div>");
 sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"window.location.href='{Name}.json'\">JSON</div>");
+sb.AppendLine($"<div class=\"button suggestlink\" onclick=\"window.location.href='_edit.item.html?listid={Id}&suggestion=true'\">SUGGEST</div>");
 
         // display a form with a text box for the text and tags search parameters
         sb.AppendLine($"<span class=\"result\" id=\"result\"></span>");
@@ -173,7 +182,7 @@ sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"win
 
         foreach (var item in items)
         {
-            sb.AppendLine($"<div class=\"namecell\">{item.Name}</div>");
+            sb.AppendLine($"<div class=\"namecell\">{item.Name}<img src=\"{GlobalConfig.Hostname}/gefesleff.png\" width=\"15px\" height=\"15px\" onclick=\"copyToClipboard({item.Id});\"></div>");
             sb.AppendLine($"<div class=\"itemrow\" id=\"{item.Id}\">");
             
 
@@ -288,7 +297,7 @@ sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"win
 
     public (bool, string?) IsUserAllowedToView(GeFeSLEUser? user)
     {
-        string fn = "IsUserAllowedToViewList"; DBg.d(LogLevel.Trace, $"{fn} {(user?.UserName) ?? "anonymous"}");
+        DBg.d(LogLevel.Trace, $"{(user?.UserName) ?? "anonymous"} ? {Name}");
         string? ynot = null;
         bool allowed = false;
         switch (Visibility)
@@ -337,7 +346,7 @@ sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"win
                 }
 
         }
-        DBg.d(LogLevel.Debug, $"{fn} {(user?.UserName) ?? "anonymous"} allowed: {allowed} - {ynot}");
+        DBg.d(LogLevel.Debug, $"{(user?.UserName) ?? "anonymous"} allowed: {allowed} - {ynot}");
         return (allowed, ynot);
 
     }
@@ -353,7 +362,7 @@ sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"win
 
     public (bool, string?) IsUserAllowedToModify(GeFeSLEUser user)
     {
-        string fn = "IsUserAllowedToModify"; DBg.d(LogLevel.Trace, $"{fn} {user.UserName}");
+        DBg.d(LogLevel.Trace, $"{user.UserName} ? {Name}");
         string? ynot = null;
         bool allowed = false;
         if (Contributors.Contains(user) || ListOwners.Contains(user) || Creator == user)
@@ -366,7 +375,7 @@ sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"win
             ynot = $"User {user.UserName} is not a contributor/list owner/creator of list {Name}";
         }
 
-        DBg.d(LogLevel.Debug, $"{fn} {user.UserName} allowed: {allowed} - {ynot}");
+        DBg.d(LogLevel.Debug, $"{user.UserName} allowed: {allowed} - {ynot}");
         return (allowed, ynot);
 
     }

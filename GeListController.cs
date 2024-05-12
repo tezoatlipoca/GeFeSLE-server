@@ -27,15 +27,19 @@ namespace GeFeSLE.Controllers
         private readonly RoleManager<IdentityRole> _roleManager;
         private readonly IServiceScopeFactory _serviceScopeFactory;
 
+        private readonly GeListFileController _fileController;
+
         public GeListController(GeFeSLEDb db,
             UserManager<GeFeSLEUser> userManager,
             RoleManager<IdentityRole> roleManager,
-            IServiceScopeFactory serviceScopeFactory)
+            IServiceScopeFactory serviceScopeFactory,
+            GeListFileController geListFileController)
         {
             _db = db;
             _userManager = userManager;
             _roleManager = roleManager;
             _serviceScopeFactory = serviceScopeFactory;
+            _fileController = geListFileController;
         }
 
         public async Task<IActionResult> ListsDelete(HttpContext httpContext,
@@ -161,7 +165,7 @@ namespace GeFeSLE.Controllers
             modlist.Comment = inputList.Comment;
             modlist.ModifiedDate = DateTime.Now;
             modlist.SetVisibility(inputList.Visibility);
-
+            _ = ProtectAttachments(modlist);
             await _db.SaveChangesAsync();
             await modlist.GenerateHTMLListPage(_db);
             await modlist.GenerateRSSFeed(_db);
@@ -531,6 +535,42 @@ namespace GeFeSLE.Controllers
                 ProcessTracker.UpdateProcess(processtoken, "Completed");
 
             }
+        }
+
+        // given the list in question (and assuming its visibility has changed)
+        // goes and
+        // finds all items in the list
+        // for each item, finds any referenced upload files
+        // for each of those, sets file visibility protection to match the list
+        public async Task ProtectAttachments(GeList list)
+        {
+            string fn = "ProtectAttachments"; DBg.d(LogLevel.Trace, fn);
+            bool protect = true;
+            if(list.Visibility > GeListVisibility.Public) {
+                protect = true;
+            } else {
+                protect = false;
+            }
+             
+            List<GeListItem> listItems = _db.Items.Where(item => item.ListId == list.Id).ToList();
+            if(listItems.Count > 0) {
+                foreach(GeListItem item in listItems) {
+                    List<string> files = item.LocalFiles();
+                    if(files.Count > 0) {
+                        if(protect) {
+                            _fileController.ProtectFiles(files, list.Name);
+                        }
+                        else {
+                            _fileController.UnProtectFiles(files, list.Name);
+                        }
+                    }
+                }
+            } else {
+                DBg.d(LogLevel.Trace, $"{fn} -- no items to process");
+            }
+            
+
+            return;
         }
     }
 }

@@ -178,7 +178,7 @@ td {
     display: block;
 }
 
-.itemeditlink {
+.itemeditlink, .itemreportlink {
     border: 1px solid grey;
     border-radius: 3px;
     display: block;
@@ -299,7 +299,7 @@ select:disabled {
     border: 1px dashed red;
 }
 
-.modal, .googmodal {
+.modal, .googmodal, .reportModal {
     display: none;
     position: fixed;
     z-index: 1;
@@ -311,7 +311,7 @@ select:disabled {
     background-color: rgba(0, 0, 0, 0.4);
 }
 
-.modal-content, .googmodal-content {
+.modal-content, .googmodal-content, .reportModal-content {
     background-color: #fefefe;
     margin: 15% auto;
     padding: 20px;

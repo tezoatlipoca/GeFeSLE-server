@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using Mastonet.Entities;
 
 public class GeListItem
@@ -10,7 +11,7 @@ public class GeListItem
     public string? Comment { get; set; }
     public bool IsComplete { get; set; }
 
-    public bool Visible {get; set;} = true;
+    public bool Visible { get; set; } = true;
 
     // add a member that is a collection of tags (which are strings)
     public List<string> Tags { get; set; } = new List<string>();
@@ -31,14 +32,14 @@ public class GeListItem
 
         Account poster = status.Account;
         StringBuilder sb = new StringBuilder();
-        if(poster is not null)
+        if (poster is not null)
         {
-            
+
             sb.AppendLine($"<div class=\"oposter\">");
             sb.AppendLine($"<img src=\"{poster.StaticAvatarUrl}\" alt=\"{poster.DisplayName}\" class=\"opavatar\">");
             sb.AppendLine($"<a href=\"{poster.ProfileUrl}\">{poster.DisplayName}({poster.AccountName})</a></div>");
-            
-            }
+
+        }
         sb.AppendLine($"<span class=\"status_Content\">{status.Content}</span>");
 
 
@@ -67,12 +68,60 @@ public class GeListItem
         // if so, add the card url to the comment
         if (status.Card is not null)
         {
-            
+
             sb.AppendLine($"<span class=\"status_card\">{status.Card.Description}");
             sb.AppendLine($"<img src=\"{status.Card.Image}\" alt=\"{status.Card.Title}\"></span>");
         }
         Comment = sb.ToString();
         return true;
     }
+
+    // looks in the Comment field for reference to files that are local and returns those paths
+    // relative to wwwroot, in a List. 
+    public List<string> LocalFiles()
+    {
+        string fn = "LocalFiles"; DBg.d(LogLevel.Trace, fn);
+
+        // search the Comment field for any occurances of an image or link markdown reference
+        // where the first part of the URL is GlobalConfig.Hostname
+        // e.g. [receipt](https://lists.awadwatt.com/uploads/backadmin/screenshot-2024-05-11T02-29-53.983Z.png)
+        // or
+        // [<something>](<GlobalConfig.Hostname>/<relative path>)
+        // then capture that relative path
+
+        List<string> returnMatches = new List<string>{};
+
+        // Assuming item.Comment contains the comment
+        string comment = Comment;
+
+        // Define the regex pattern
+        string pattern = @"\[.*?\]\(" + GlobalConfig.Hostname + @"[[/\\](.*?)\)";
+
+        // Create a regex object
+        Regex regex = new Regex(pattern);
+
+        // Search the comment for matches
+        MatchCollection matches = regex.Matches(comment);
+
+        // Loop through the matches and print the relative paths
+        foreach (Match match in matches)
+        {
+            DBg.d(LogLevel.Trace, $"{fn} -- item {Id} - found FILE REFERENCE: {match})");
+            // so the match was for the markdown file reference
+            // e.g. [receipt](http://localhost:7036/uploads/backadmin/screenshot-2024-05-11T14-08-36.727Z.png
+            // but we just want the relative path name part after the hostname
+            // this is match.Groups[1].Value
+
+            if (match.Groups.Count > 1)
+            {
+                string relativePath = match.Groups[1].Value;
+                returnMatches.Add($"/{relativePath}");
+            }
+        }
+        return returnMatches;
+
+    }
+
+    
 
 }

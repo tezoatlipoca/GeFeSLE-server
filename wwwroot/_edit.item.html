@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <!-- include stylesheet and gefesle icon -->
   <link rel="stylesheet" href="gefesle.default.css">
-  <link rel="icon" href="gefesle.ff.png" type="image/x-icon">
+  <link rel="icon" href="gefesleff.png" type="image/x-icon">
   <!-- Include EasyMDE library -->
   <link rel="stylesheet" href="lib/easymde/easymde.min.css">
   <script src="lib/easymde/easymde.min.js"></script>
@@ -17,6 +17,8 @@
   <a href="" id="back2list">Back to list view</a>
   <form id="edititemform">
     <!--radio button with two values for new or update -->
+    <input type="checkbox" id="isSuggestion" name="isSuggestion" value="false" style="display:none">
+    
     <input type="radio" id="new" name="neworupdate" value="new" checked>
     <label for="new">New</label>
     <input type="radio" id="update" name="neworupdate" value="update">
@@ -24,16 +26,19 @@
     
 
     <label for="item.id">ID:</label>
-    <input type="text" id="item.id" name="item.id" readonly><br>
+    <input type="text" id="item.id" name="item.id" readonly>
     <label for="item.listid">List ID:</label>
-    <input type="text" id="item.listid" name="item.listid" readonly><br>
+    <input type="text" id="item.listid" name="item.listid" readonly>
+    <label for="item.visible">Visible:</label>
+    <input type="checkbox" id="item.visible" name="item.visible" readonly>
+    <br>
     <label for="item.name">Name:</label>
     <input type="text" id="item.name" name="item.name"><br>
     <label for="item.comment">comment</label>
     <input type="textarea" id="item.comment" name="item.comment"><br>
     <label for="item.tags">tags</label>
-    <input type="text" id="item.tags" name="item.tags"><br>
-    <input type="submit" value="ADD NEW or UPDATE"><br>
+    <input type="text" id="item.tags" name="item.tags">
+    <input type="submit" value="ADD NEW or UPDATE">
     <span id="result"></span>
     <!-- Initialize EasyMDE for the textarea -->
     <script>
@@ -41,6 +46,11 @@
       easymde.value("");
     </script>
   </form>
+  <form>Attach a file: 
+    <input type="file" id="uploadfileselect" name="uploadfileselect">
+    <button id="uploadbutton" name="uploadbutton" onclick="uploadFile(event)">UPLOAD</button> 
+  </form>
+  <script src="_fileupload.js"></script>
   <script src="_utils.js"></script>
   <script src="_edit.item.js"></script>
 </body>
