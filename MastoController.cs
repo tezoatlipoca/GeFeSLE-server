@@ -111,19 +111,24 @@ public static class MastoController
     //        in the database. 
     public static async Task<(ApplicationToken?, string)> registerAppWithInstance(string instance)
     {
-        string fn = "registerAppWithInstance"; DBg.d(LogLevel.Trace, fn);
         string? ynot = null;
         ApplicationToken? application = null;
         // construct our redirect Uri using our external hostname and port
         string redirectUri = Uri.EscapeDataString($"{GlobalConfig.Hostname}/mastocallback");
 
-        string scopes = GlobalStatic.mastoScopes;
+        string scopes = GlobalConfig.mastoScopes;
+        if(scopes is null || GlobalConfig.mastoClient_Name is null)
+        {
+            ynot = "No Mastodon API scopes/Client name defined in config file - cannot register app with instance.";
+            return (application, ynot);
+        }
+
 
         string appRegisterUrl = $"{instance}/api/v1/apps";
-        DBg.d(LogLevel.Trace, $"{fn} - registering app at: {appRegisterUrl}");
+        DBg.d(LogLevel.Trace, $"Registering app at: {appRegisterUrl}");
 
-        string postData = $"client_name={GlobalStatic.mastoClient_Name}&redirect_uris={redirectUri}&scopes={scopes}&website={GlobalStatic.webSite}";
-        DBg.d(LogLevel.Trace, $"{fn} - sending registration postData: {postData}");
+        string postData = $"client_name={GlobalConfig.mastoClient_Name}&redirect_uris={redirectUri}&scopes={scopes}&website={GlobalStatic.webSite}";
+        DBg.d(LogLevel.Trace, $"Sending registration postData: {postData}");
 
         var content = new StringContent(postData, Encoding.UTF8, "application/x-www-form-urlencoded");
         var client = new HttpClient();
@@ -165,9 +170,8 @@ public static class MastoController
 
     public static void storeMastoToken(HttpContext context, ApplicationToken application)
     {
-        string fn = "storeMastoToken"; DBg.d(LogLevel.Trace, fn);
         string applicationStr = JsonConvert.SerializeObject(application);
-        DBg.d(LogLevel.Trace, $"{fn} - storing Mastodon Application token in session: {applicationStr}");
+        DBg.d(LogLevel.Trace, $"Storing Mastodon Application token in session: {applicationStr}");
         context.Session.SetString("masto.app_id", application.id);
         context.Session.SetString("masto.client_id", application.client_id);
         context.Session.SetString("masto.client_secret", application.client_secret);
@@ -176,7 +180,6 @@ public static class MastoController
 
     public static ApplicationToken? getMastoToken(HttpContext context)
     {
-        string fn = "getMastoToken"; DBg.d(LogLevel.Trace, fn);
         string? appId = context.Session.GetString("masto.app_id");
         string? clientId = context.Session.GetString("masto.client_id");
         string? clientSecret = context.Session.GetString("masto.client_secret");
@@ -205,17 +208,21 @@ public static class MastoController
 
     public static string? getMastodonOAuthUrl(ApplicationToken application)
     {
-        string fn = "getMastodonOAuthUrl"; DBg.d(LogLevel.Trace, fn);
         string? getMastodonOAuthUrl = null;
+        if(GlobalConfig.mastoScopes is null)
+        {
+            DBg.d(LogLevel.Error, $"No Mastodon API scopes defined in config file - cannot construct authorization URL.");
+            return null;
+        }
         if (!(application.id is null ||
             application.client_id is null ||
             application.client_secret is null ||
             application.instance is null))
         {
             string redirectUri = Uri.EscapeDataString($"{GlobalConfig.Hostname}/mastocallback");
-            DBg.d(LogLevel.Debug, $"{fn} constructed redirectUri: {redirectUri}");
-            getMastodonOAuthUrl = $"{application.instance}/oauth/authorize?client_id={application.client_id}&response_type=code&redirect_uri={redirectUri}&scope={Uri.EscapeDataString(GlobalStatic.mastoScopes)}";
-            DBg.d(LogLevel.Trace, $"{fn} constructed authorizationUrl: {getMastodonOAuthUrl}");
+            DBg.d(LogLevel.Debug, $"Constructed redirectUri: {redirectUri}");
+            getMastodonOAuthUrl = $"{application.instance}/oauth/authorize?client_id={application.client_id}&response_type=code&redirect_uri={redirectUri}&scope={Uri.EscapeDataString(GlobalConfig.mastoScopes)}";
+            DBg.d(LogLevel.Trace, $"Constructed authorizationUrl: {getMastodonOAuthUrl}");
 
         }
         return getMastodonOAuthUrl;

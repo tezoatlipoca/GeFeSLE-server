@@ -41,11 +41,20 @@ public static class GlobalConfig
     // we're using only the default HS256 algorithm, so your secret key SHOULD be 
     // at least 32 characters long, the longer the better and with a mix of uc/lc/numbers/specials.  
     // these will last for the specified duration below
-    public static string? apiTokenSecretKey { get; set; } = "IlikeBIGbuttsandIcannotlie!Youotherbrotherscan'tdeny!WhenagirlwalksinwithanittybittywaistandaroundthinginyourfaceyougetSPRUNG!";
+    public static string? apiTokenSecretKey { get; set; }
 
     public static TimeSpan apiTokenDuration { get; set; } = TimeSpan.Parse("1.00:00:00"); // 1 day   
 
+    public static string? googleClientID;
+    public static string? googleClientSecret;
 
+    public static string? microsoftClientId;
+    public static string? microsoftClientSecret;
+    
+    public static string? microsoftTenantId;
+
+    public static string? mastoClient_Name = "GeFeSLE";
+    public static string? mastoScopes = "read write:bookmarks";
 
     // constructor that receives a builder.Configuration and configures the application
     public static string? ParseConfigFile(IConfiguration config)
@@ -179,6 +188,29 @@ public static class GlobalConfig
             GlobalConfig.apiTokenDuration = TimeSpan.Parse(apiTokenDuration);
             DBg.d(LogLevel.Debug, $"API Token duration override: {apiTokenDuration}");
         }
+
+        // read all of the API and OAuth2, 2nd party site settings
+
+        googleClientID = config.GetValue<string>("OtherSites:Google:googleClientID");
+        googleClientSecret = config.GetValue<string>("OtherSites:Google:googleClientSecret");
+        if(googleClientID == null || googleClientSecret == null)
+        {
+            DBg.d(LogLevel.Warning, "Google OAuth2/Import settings not found in config file.");
+        }
+        microsoftClientId = config.GetValue<string>("OtherSites:Microsoft:microsoftClientId");
+        microsoftClientSecret = config.GetValue<string>("OtherSites:Microsoft:microsoftClientSecret");
+        microsoftTenantId = config.GetValue<string>("OtherSites:Microsoft:microsoftTenantId");
+        if(microsoftClientId == null || microsoftClientSecret == null || microsoftTenantId == null)
+        {
+            DBg.d(LogLevel.Warning, "Microsoft OAuth2/Import settings not found in config file.");
+        }
+        mastoClient_Name = config.GetValue<string>("OtherSites:Mastodon:mastoClient_Name");
+        mastoScopes = config.GetValue<string>("OtherSites:Mastodon:mastoScopes");
+        if(mastoClient_Name == null || mastoScopes == null)
+        {
+            DBg.d(LogLevel.Warning, "Mastodon OAuth2/Import settings not found in config file.");
+        }
+        
 
         // lastly, the ONE thing we MUST get from the config file is the db file:
         // its an absolute path

@@ -222,12 +222,14 @@ builder.Services.AddAuthentication(options =>
             },
 
         };
-    })
+    });
 
-.AddGoogle("Google", options =>
+if (!string.IsNullOrEmpty(GlobalConfig.googleClientID) && !string.IsNullOrEmpty(GlobalConfig.googleClientSecret))
+{
+    builder.Services.AddAuthentication().AddGoogle("Google", options =>
     {
-        options.ClientId = GlobalStatic.googleClientID;
-        options.ClientSecret = GlobalStatic.googleClientSecret;
+        options.ClientId = GlobalConfig.googleClientID;
+        options.ClientSecret = GlobalConfig.googleClientSecret;
         // Use the authorization code grant type - this is default for .AddGoogle
         //options.SaveTokens = true;
         options.SignInScheme = IdentityConstants.ExternalScheme;
@@ -258,49 +260,54 @@ builder.Services.AddAuthentication(options =>
             }
         };
 
-    })
-.AddMicrosoftAccount("Microsoft", options =>
+    });
+}
+
+if (!string.IsNullOrEmpty(GlobalConfig.microsoftClientId) && !string.IsNullOrEmpty(GlobalConfig.microsoftClientSecret))
 {
-    options.ClientId = GlobalStatic.microsoftClientId;
-    options.ClientSecret = GlobalStatic.microsoftClientSecret;
-    options.SignInScheme = IdentityConstants.ExternalScheme;
-    options.Events.OnCreatingTicket = (context) =>
+    builder.Services.AddAuthentication().AddMicrosoftAccount("Microsoft", options =>
     {
-        if (context != null)
+        options.ClientId = GlobalConfig.microsoftClientId;
+        options.ClientSecret = GlobalConfig.microsoftClientSecret;
+        options.SignInScheme = IdentityConstants.ExternalScheme;
+        options.Events.OnCreatingTicket = (context) =>
         {
-            context?.Identity?.AddClaim(new Claim(ClaimTypes.AuthenticationMethod, "Microsoft"));
-        }
-        return Task.CompletedTask;
-    };
-
-    // there are several locations where "notes" and lists of "things" are 
-    // stored in Microsoft's Graph API. 
-    // first we have the Windows 10+ "Sticky Notes" app. These are actually 
-    // elements stored in Outlook mail:
-    // https://graph.microsoft.com/v1.0/me/MailFolders/notes/messages
-
-    options.Scope.Add("https://graph.microsoft.com/Mail.Read");
-
-
-
-    // To-Do --> outlook Tasks
-    // OneNote 
-    // Microsoft Lists (coughLAMEcough)
-
-    // we have to EXPLICITLY store the access token for the Microsoft Graph API
-    // if we want to make use of it across multiple requests/endpoints.
-    options.Events = new OAuthEvents
-    {
-        OnCreatingTicket = context =>
-        {
-            var accessToken = context.AccessToken;
-            DBg.d(LogLevel.Trace, "Microsoft - OnCreatingTicket - token: " + accessToken);
-            UserSessionService.AddAccessToken(context.HttpContext, "Microsoft", accessToken!);
+            if (context != null)
+            {
+                context?.Identity?.AddClaim(new Claim(ClaimTypes.AuthenticationMethod, "Microsoft"));
+            }
             return Task.CompletedTask;
-        }
-    };
+        };
 
-});
+        // there are several locations where "notes" and lists of "things" are 
+        // stored in Microsoft's Graph API. 
+        // first we have the Windows 10+ "Sticky Notes" app. These are actually 
+        // elements stored in Outlook mail:
+        // https://graph.microsoft.com/v1.0/me/MailFolders/notes/messages
+
+        options.Scope.Add("https://graph.microsoft.com/Mail.Read");
+
+
+
+        // To-Do --> outlook Tasks
+        // OneNote 
+        // Microsoft Lists (coughLAMEcough)
+
+        // we have to EXPLICITLY store the access token for the Microsoft Graph API
+        // if we want to make use of it across multiple requests/endpoints.
+        options.Events = new OAuthEvents
+        {
+            OnCreatingTicket = context =>
+            {
+                var accessToken = context.AccessToken;
+                DBg.d(LogLevel.Trace, "Microsoft - OnCreatingTicket - token: " + accessToken);
+                UserSessionService.AddAccessToken(context.HttpContext, "Microsoft", accessToken!);
+                return Task.CompletedTask;
+            }
+        };
+
+    });
+}
 
 builder.Services.AddAuthorization(options =>
 {
@@ -1318,22 +1325,25 @@ app.MapPost("/additem/{listid}", async (int listid,
     }
     db.Items.Add(newitem);
     await db.SaveChangesAsync();
-    
+
     // find the list that corresponds to listid
     var list = await db.Lists.FindAsync(listid);
     if (list is null) return Results.NotFound();
-    
+
     // "attachments" protection check - if the item references an upload we want to set the protection to match 
     // the list that its in
     List<string> itemfiles = newitem.LocalFiles();
-    if (list.Visibility > GeListVisibility.Public) {
+    if (list.Visibility > GeListVisibility.Public)
+    {
         // does this item contain any file references? 
-        
-        geListFileController.ProtectFiles(itemfiles, list.Name);    
-    } else {
+
+        geListFileController.ProtectFiles(itemfiles, list.Name);
+    }
+    else
+    {
         geListFileController.UnProtectFiles(itemfiles, list.Name); // TODO: handle situation when a file is in two lists of differing vis levels
     }
-    
+
     await list.GenerateHTMLListPage(db);
     await list.GenerateRSSFeed(db);
     await list.GenerateJSON(db);
@@ -1371,15 +1381,21 @@ app.MapPut("/modifyitem", async (GeListItem inputItem,
     // "attachments" protection check - if the item references an upload we want to set the protection to match 
     // the list that its in
     List<string> itemfiles = moditem.LocalFiles();
-    if (list.Visibility > GeListVisibility.Public) {
+    if (list.Visibility > GeListVisibility.Public)
+    {
         // does this item contain any file references? 
-        
-        geListFileController.ProtectFiles(itemfiles, list.Name);    
-    } else {
+
+        geListFileController.ProtectFiles(itemfiles, list.Name);
+    }
+    else
+    {
         // if the item is in a public list, but it is not visible, its attachments shouldn't be either:
-        if(moditem.Visible) {
+        if (moditem.Visible)
+        {
             geListFileController.UnProtectFiles(itemfiles, list.Name); // TODO: handle situation when a file is in two lists of differing vis levels
-        } else {
+        }
+        else
+        {
             geListFileController.ProtectFiles(itemfiles, GlobalConfig.modListName); // TODO: this means the image is only visible to superusers. we can do better. 
         }
 
@@ -1927,12 +1943,16 @@ app.MapGet("/mastocallback", async (string code,
     {
         return Results.BadRequest("BAD/MISSING Mastodon parameters in session cookie - dunno, did you forget to _login.html -> /mastoconnect -> /mastologin?");
     }
+    if (GlobalConfig.mastoScopes.IsNullOrEmpty())
+    {
+        return Results.BadRequest("BAD/MISSING Mastodon scopes in config"); // should never be null due to default value
+    }
 
     string redirectUri = Uri.EscapeDataString($"{GlobalConfig.Hostname}/mastocallback");
 
     string grantType = "authorization_code";
     string tokenUrl = $"{appToken.instance}/oauth/token";
-    string postData = $"client_id={appToken.client_id}&client_secret={appToken.client_secret}&grant_type={grantType}&code={code}&redirect_uri={redirectUri}&scope={GlobalStatic.mastoScopes}";
+    string postData = $"client_id={appToken.client_id}&client_secret={appToken.client_secret}&grant_type={grantType}&code={code}&redirect_uri={redirectUri}&scope={GlobalConfig.mastoScopes}";
     // create httpClient
     var client = new HttpClient();
     var content = new StringContent(postData, Encoding.UTF8, "application/x-www-form-urlencoded");
@@ -2588,7 +2608,7 @@ app.MapPost("/fileuploadxfer", async (IFormFile file,
     if (file.Length > 0)
     {
         // the filepath will be wwwroot/uploads/user/filename
-        string filePath = Path.Combine(GlobalConfig.wwwroot,GlobalStatic.uploadsFolder,user.UserName,file.FileName);
+        string filePath = Path.Combine(GlobalConfig.wwwroot, GlobalStatic.uploadsFolder, user.UserName, file.FileName);
         DBg.d(LogLevel.Trace, $"fileupload - file will be saved at (filepath): {filePath}");
         //creates the folder if it doesn't exist
         Directory.CreateDirectory(Path.GetDirectoryName(filePath));
@@ -2649,9 +2669,9 @@ app.MapGet("/files/clean", async (GeListFileController geListFileController,
     UserManager<GeFeSLEUser> userManager) =>
 {
     string fn = "/files/clean"; DBg.d(LogLevel.Trace, fn);
-    
+
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-    
+
     await geListFileController.FreshStart();
     // loads the "restricted" internal files into the protected files lookup cache
     ProtectedFiles.ReLoadFiles(db);
@@ -2680,7 +2700,7 @@ app.MapPost("/items/{itemid}/report", async (int itemid,
     UserManager<GeFeSLEUser> userManager,
     RoleManager<IdentityRole> roleManager,
     GeListController geListController,
-    HttpContext context, 
+    HttpContext context,
     GeListFileController fileController) =>
 {
     string fn = "/items/{itemid}/report"; DBg.d(LogLevel.Trace, fn);
@@ -2732,7 +2752,7 @@ app.MapPost("/items/{itemid}/report", async (int itemid,
     item.Visible = false;
     // apply visibility of MODERATION list to any attachments // TODO: deal when image is in more than one list w/ varying visibilities
     List<string> itemFiles = item.LocalFiles();
-    fileController.ProtectFiles(itemFiles, GlobalConfig.modListName); 
+    fileController.ProtectFiles(itemFiles, GlobalConfig.modListName);
     // don't worry - when the item is modified again, its regular list permissions protection will be reapplied
     // (see the item itemmodify endpoint) 
 
@@ -2775,7 +2795,8 @@ app.MapPost("/lists/{listid}/suggest", async (int listid,
     newitem.Visible = false;
 
     GeList? newitemList = await db.Lists.FirstOrDefaultAsync(l => l.Id == newitem.ListId);
-    if(newitemList is null) {
+    if (newitemList is null)
+    {
         return Results.BadRequest($"${newitem.ListId} is not a vlaid list");
     }
 
@@ -2794,7 +2815,7 @@ app.MapPost("/lists/{listid}/suggest", async (int listid,
         };
 
         db.Lists.Add(modlist);
-        
+
     }
     // change the new item's visibility to false
     newitem.Visible = false;
@@ -2813,29 +2834,29 @@ app.MapPost("/lists/{listid}/suggest", async (int listid,
     moditem.Comment += $"Item has been preemptively marked as invisible pending approval  ";
     moditem.Comment += $"---------  ";
     moditem.Comment += $"<a href=\"_edit.item.html?listid={newitemList.Id}&itemid={newitem.Id}\">LINK TO APPROVE</a>";
-    
+
     // apply visibility of MODERATION list to any attachments // TODO: deal when image is in more than one list w/ varying visibilities
     List<string> itemFiles = newitem.LocalFiles();
-    geListFileController.ProtectFiles(itemFiles, GlobalConfig.modListName); 
+    geListFileController.ProtectFiles(itemFiles, GlobalConfig.modListName);
     // don't worry - when the item is modified again, its regular list permissions protection will be reapplied
     // (see the item itemmodify endpoint) 
 
     DBg.d(LogLevel.Trace, $"{fn} -- SAVING MOD ITEM: {moditem.Comment}");
     db.Items.Add(moditem);
-    
+
 
     await db.SaveChangesAsync();
-    
+
     List<string> itemfiles = newitem.LocalFiles();
-    geListFileController.ProtectFiles(itemfiles, GlobalConfig.modListName);    
-    
+    geListFileController.ProtectFiles(itemfiles, GlobalConfig.modListName);
+
     await newitemList.GenerateHTMLListPage(db);
     await newitemList.GenerateRSSFeed(db);
     await newitemList.GenerateJSON(db);
     await modlist.GenerateHTMLListPage(db);
     await modlist.GenerateRSSFeed(db);
     await modlist.GenerateJSON(db);
-    
+
     return Results.Created($"/showitems/{newitem.ListId}/{newitem.Id}", newitem);
 }).AllowAnonymous();
 

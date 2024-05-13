@@ -16,17 +16,6 @@ public static class GlobalStatic
 
     public static string uploadsFolder = "uploads"; // name of the sub in wwwroot into which uploads go - is NOT purged in a clean
 
-    // TODO: move these to config file for users to create their own. 
-    public static string googleClientID = "633241786177-0mlrsg1leiu9i3et858idmmn9rtrc2fi.apps.googleusercontent.com";
-    public static string googleClientSecret = "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";
-
-    public static string microsoftClientId = "7167c2f7-7c2f-4039-8195-a046c6b05032";
-    public static string microsoftClientSecret = "Bk98Q~rgkjDANYv8RMoKVQJ0D-1Usa4cBkXBLbbs";
-    // secret ID: 504b1740-ce89-40fe-bbbf-b470393259e1
-    public static string microsoftTenantId = "f8cdef31-a31e-4b4a-93e4-5f571e91255a";
-
-    public static string mastoClient_Name = "GeFeSLE";
-    public static string mastoScopes = "read write:bookmarks";
 
     public static List<string> roleNames = new List<string> { "SuperUser", "listowner", "contributor" };
 
