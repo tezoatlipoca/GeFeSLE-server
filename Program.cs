@@ -317,16 +317,6 @@ builder.Services.AddAuthorization(options =>
 
 });
 
-// builder.Services.AddAntiforgery(options =>
-// {
-//     options.Cookie.Name = GlobalStatic.antiForgeryCookieName;
-//     options.Cookie.SameSite = SameSiteMode.None;
-//     options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
-//         ? CookieSecurePolicy.None
-//         : CookieSecurePolicy.Always;
-
-// });
-
 builder.Services.AddControllers().AddNewtonsoftJson();
 
 builder.Services.AddControllersWithViews();
@@ -337,11 +327,6 @@ builder.Services.Configure<KestrelServerOptions>(options =>
  {
      //$"http://{GlobalConfig.Bind}:{GlobalConfig.Port}
      options.ListenAnyIP(GlobalConfig.Port);
-     // UNCOMMET THIS FOR SSL SUPPORT
-     //, listenOptions =>
-     //     {
-     //         listenOptions.UseHttps("d:\\repos\\GeFeSLE-server\\cert.pfx", "Kagero99$");
-     //     });
  });
 
 // lastly register our own controller services so they play nicely with the DI system
@@ -2876,7 +2861,8 @@ using (var mutex = new Mutex(true, GlobalStatic.applicationName, out createdNew)
             var services = scope.ServiceProvider;
             var db = services.GetRequiredService<GeFeSLEDb>();
             var geListFileController = services.GetRequiredService<GeListFileController>();
-
+            // make sure our embedded files are always fresh and THERE
+            await geListFileController.FreshStart();
             // generates the index afresh
             _ = GlobalStatic.GenerateHTMLListIndex(db);
             // loads the "restricted" internal files into the protected files lookup cache

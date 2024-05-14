@@ -64,7 +64,7 @@ public static class GlobalConfig
         Port = config.GetValue<int>("ServerSettings:Port");
         if (Port == 0) Port = 5000;
         Bind = config.GetValue<string>("ServerSettings:Bind");
-        if (Bind == null) Bind = "localhost";
+        if (Bind == null) Bind = "*";
         Hostname = config.GetValue<string>("ServerSettings:Hostname");
         if (Hostname == null) Hostname = "http://localhost";
         
@@ -89,7 +89,7 @@ public static class GlobalConfig
             Directory.CreateDirectory(wwwroot);
         }
 
-        modListName = config.GetValue<string>("ServerSettings:modLIstName");
+        modListName = config.GetValue<string>("ServerSettings:modListName");
         if(modListName == null) modListName = "MODERATION";
 
         DBg.d(LogLevel.Debug, $"Port: {Port}");

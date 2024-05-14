@@ -88,12 +88,19 @@ to make sure noone's toots are recorded forever someplace they didn't intend).
 - https://github.com/tezoatlipoca/GeFeSLE-server/issues/81
 - FINISH Refactoring API according to CRUD and HATEOAS; ensure meaningful HTTP error codes and consistent data returns; consistent access restriction on endpoints by user role; probably should verson control too e.g. `/endpoint` -> `/api/v1/endpoint`.
 
-# yeah yeah how do I install it? 
+# Yeah yeah how do I install it? 
 - Windows (same machine use only)
 - Windows (as a service)
 - Linux (same machine use)
 - Linux (service)
+- [Configuring GeFeSLE / config file](Configuration.md)
+- [Microsoft, Google, Mastodon - OAuth providers and import sources](Microsoft.Google.md)
 - putting GeFeSLE behind NGINX
-- MacOS? 
+- MacOS?
+
+# How do I use it? 
+- [Basic use](Basic.Use.md)
+- [managing users](managing.users.md)
+- [Moderation](moderation.md)
 
 

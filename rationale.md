@@ -7,4 +7,13 @@ Have your grocery list in Trello? Great! Now you have to use the Trello app to a
 
 Lastly, there is the (**enshittification** problem)[https://pluralistic.net/2023/01/21/potemkin-ai/#hey-guys]: what happens to your content when the platform that hosts it turns evil: spams your readers with too many ads, invites the nazis in or just removes or bans your content because of something you said? (That should be up to YOUR readers to decide, not the platform!) The way to fight enshittification is to **self-host**. 
 
-This service will only be about making, and hosting, _lists of things_ and will only add features in service of that end.  
+This service will only be about making, and hosting, _lists of things_ and will only add features in service of that end.  Our goals:
+
+- nothing but lists
+- import lists from places easily
+- export lists in forms that can be easily taken elsewhere
+- preemptively support takedown requests and content moderation
+- let you control who can SEE your lists, who can help curate your lists. 
+- make self-hosting lists fun and easy
+
+IMDB started off as a bunch of TEXT file lists of actors and movies shared via newsgroups. Before search engines got good, we found stuff through lists of things, even other lists! Lets bring that back. 
