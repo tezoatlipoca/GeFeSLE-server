@@ -23,6 +23,10 @@ namespace GeFeSLE.Controllers
         {
             "/lib/easymde/easymde.min.css",
             "/lib/easymde/easymde.min.js",
+            // "/lib/emoji_js/emoji.min.js",   // NOTE _ not - >> .NET BUILD subs this
+            // "/lib/emoji_js/emoji.js",       // NOTE _ not - >> .NET BUILD subs this
+            // "/lib/emoji_js/emoji.css",      // NOTE _ not - >> .NET BUILD subs this
+            // "/lib/emoji_js/jquery.emoji.js", // NOTE _ not - >> .NET BUILD subs this
             "/__samplebodyhead.html",
             "/__samplefooter.html",
             "/__samplehead.html",
@@ -45,6 +49,7 @@ namespace GeFeSLE.Controllers
             "/gefesle.default.css",
             "/gefesleff.png",
             "/_fileupload.js"
+            
         };
 
         private readonly GeFeSLEDb _db;
@@ -319,6 +324,17 @@ namespace GeFeSLE.Controllers
         {
             string fn = "FreshStart"; DBg.d(LogLevel.Trace, fn);
             await CleanWWWRoot();
+
+            // dump all embedded resource names:
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            var resourceNames = assembly.GetManifestResourceNames();
+
+            foreach (var resourceName in resourceNames)
+            {
+                DBg.d(LogLevel.Trace, $"Embedded resource: {resourceName}");
+            }
+
+
 
             // verify all the protected files
             foreach (var file in protectedFiles)

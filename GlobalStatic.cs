@@ -115,6 +115,8 @@ public static class GlobalStatic
         sb.AppendLine("<head>");
         sb.AppendLine("<meta charset=\"utf-8\">");
         sb.AppendLine("<link rel=\"icon\" href=\"/gefesleff.png\" type=\"image/x-icon\">");
+        // sb.AppendLine("<link href=\"/lib/emoji_js/emoji.css\" rel=\"stylesheet\" type=\"text/css\" />");
+        // sb.AppendLine("<script src=\"/lib/emoji_js/emoji.js\" type=\"text/javascript\"></script>");
 
 
         if (GlobalConfig.htmlHead != null)

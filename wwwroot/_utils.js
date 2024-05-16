@@ -240,16 +240,16 @@ function make1stcelllinks() {
         var text = div.textContent;
         console.debug(fn + ' | div: ' + div.textContent);
         var urlPattern = /^\s*(http|https):\/\/[^ "]+\s*$/;
-
+    
         if (urlPattern.test(text)) {
             var a = document.createElement('a');
             a.href = text;
             a.textContent = text;
-
+    
             while (div.firstChild) {
                 div.removeChild(div.firstChild);
             }
-
+    
             div.appendChild(a);
         }
     });
@@ -360,7 +360,7 @@ async function getLists() {
 }
 
 function copyToClipboard(id) {
-
+    
     // Create the bookmark URL
     var urlToCopy = window.location.href.split('#')[0] + '#' + id;
 
@@ -374,86 +374,20 @@ function copyToClipboard(id) {
         });
 }
 
+// function MojiSwap() {
 
+//     var emoji = new EmojiConvertor();
+//     // the following page elements MAY have emojis:
+//     // <p> div class="namecell", "commentcell", span/div class="tag","tagscell"
+//     // get a list of these elements
+//     let elements = document.querySelectorAll('.namecell, .commentcell, .tag, .tagscell');
+//     for (let e of elements) {
+//         let text = e.textContent;
+//         console.debug('MojiSwap | text: ' + text);
+//         let newText = emoji.replace_colons(text);
+//         console.debug('MojiSwap | newText: ' + newText);
+//         e.innerHTML = newText;
+//     }
+// }
 
-async function triggerImport() {
-    let fn = 'triggerImport'; console.debug(fn);
-    // prevent default form submission
-    event.preventDefault();
-
-    // Create a file input element
-    var fileInput = document.createElement('input');
-    fileInput.type = 'file';
-
-    // Add an event listener for when a file is selected
-    fileInput.addEventListener('change', uploadImportFile);
-
-    // Programmatically click the file input element to trigger the file selection dialog
-    fileInput.click();
-}
-
-async function uploadImportFile(e) {
-    let fn = 'uploadImportFile'; console.debug(fn);
-    var file = e.target.files[0];
-    // Create a FormData object
-    var formData = new FormData();
-    formData.append('file', file);
-
-    let aftoken = null;
-    let bail = false;
-    apiUrl = '/antiforgerytoken';
-    console.debug(`${fn} --> ${apiUrl}`);
-    await fetch(apiUrl, {
-        headers: {
-            "GeFeSLE-XMLHttpRequest": "true"
-        },
-        credentials: 'include'
-    })
-        .then(handleResponse)
-        .then(response => response.json())
-        .then(json => {
-            aftoken = json;
-            console.debug(`${fn} -- aftoken: ${aftoken.requestToken}`)
-            return aftoken;
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            d('Error: ' + error);
-            c(RC.ERROR);
-            bail = true;
-        });
-    if (bail) {
-        return;
-    }
-
-
-    console.info(`${fn} -- aftoken: >>${aftoken.requestToken}<<`);
-    // Call the REST API
-
-    
-    apiUrl = '/lists/import';
-    console.debug(`${fn} --> ${apiUrl}`);
-    let apiMethod = 'POST';
-    await fetch(apiUrl, {
-        method: apiMethod,
-        headers: {
-            "GeFeSLE-XMLHttpRequest": "true",
-            'RequestVerificationToken': aftoken.requestToken
-        },
-        credentials: 'include',
-        body: formData
-    })
-        .then(handleResponse)
-        .then(response => response.json())
-        .then(data => {
-            d(data);
-            c(RC.OK);
-            return data;
-        })
-        .catch(error => {
-            console.error(error);
-            d('Error: ' + error);
-            c(RC.ERROR);
-            return null;
-        });
-}
+// MojiSwap();

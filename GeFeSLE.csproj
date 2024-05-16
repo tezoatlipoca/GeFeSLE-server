@@ -54,8 +54,12 @@
   <Content Update="wwwroot\**\*" CopyToPublishDirectory="Never" />
   </ItemGroup>
 <ItemGroup>
-    <EmbeddedResource Include="wwwroot\lib\easymde\easymde.min.css" />
+    <EmbeddedResource Include="wwwroot\lib\easymde\easymde.min.css" />  
     <EmbeddedResource Include="wwwroot\lib\easymde\easymde.min.js" />
+ <!--<EmbeddedResource Include="wwwroot\lib\emoji_js\emoji.min.js" /> see GeListFileController.cs on how this name gets changed 
+    <EmbeddedResource Include="wwwroot\lib\emoji_js\emoji.js" />
+    <EmbeddedResource Include="wwwroot\lib\emoji_js\emoji.css" />
+    <EmbeddedResource Include="wwwroot\lib\emoji_js\jquery.emoji.js" />-->
     <EmbeddedResource Include="wwwroot\__samplebodyhead.html" />
     <EmbeddedResource Include="wwwroot\__samplefooter.html" />
     <EmbeddedResource Include="wwwroot\__samplehead.html" />
