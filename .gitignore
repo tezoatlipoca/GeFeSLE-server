@@ -5,3 +5,4 @@ olddbs/
 node_modules/
 *.db
 wwwroot/uploads
+wwwRootBACKUP

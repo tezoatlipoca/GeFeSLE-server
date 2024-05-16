@@ -4,6 +4,8 @@ using System.IdentityModel.Tokens.Jwt;
 using Newtonsoft.Json;
 using Microsoft.AspNetCore.Identity;
 using System.Security.Claims;
+using System;
+using System.IO.Compression;
 
 public static class GlobalStatic
 {
@@ -145,6 +147,8 @@ public static class GlobalStatic
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/lists/regen'\">REGEN</div>");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/files/orphan'\">File Orphans</div>");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/files/clean'\">CLEAN HTML</div>");
+            sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/lists/export'\">EXPORT</div>");
+            sb.AppendLine($"<div class=\"button debug\" onclick=\"triggerImport()\">IMPORT</div>");
             sb.AppendLine("</div>");
         }
         sb.AppendLine($"<div class=\"admin\">");
@@ -400,6 +404,72 @@ public static class GlobalStatic
             }
             string attribution = $"<div class=\"importattribution\">Imported from {whereFrom} on {DateTime.Now} by {username} to list {listName}</div>";
             return attribution;
+        }
+
+        public static string SiteExport(GeFeSLEDb db) {
+            string exportFileNamePrefix = $"{DateTime.Now:yyyyMMddHHmmss}-{GlobalConfig.CookieDomain}";
+            DBg.d(LogLevel.Trace, $"Exporting site to {exportFileNamePrefix}");
+            // need to get the database context
+
+
+            // get a list of all GeLists
+            List<GeList> lists = db.Lists.ToList();
+            List<string> filenames = new List<string>();
+            foreach (GeList list in lists) {
+                GeListWithItems listWithItems = new GeListWithItems(db, list.Id);
+                string filename = $"{exportFileNamePrefix}-{list.Name}.json";
+                listWithItems.ExportListJSON(db, filename);
+                filenames.Add(filename);    
+            }
+            // now we have a list of filenames, we need to zip them up
+            string zipFileName = $"{exportFileNamePrefix}-ALL.zip";
+            string zipFileLocalName = Path.Combine(GlobalConfig.wwwroot, zipFileName);
+            using (ZipArchive archive = ZipFile.Open(zipFileLocalName, ZipArchiveMode.Create))
+            {
+                foreach (string filename in filenames)
+                {
+                    archive.CreateEntryFromFile(filename, Path.GetFileName(filename));
+                    // delete the working file
+                    File.Delete(filename);
+                }
+            }
+
+            return zipFileName;
+
+        }
+
+        public static async Task<string> SiteImport(GeFeSLEDb db, string zipFileName, GeFeSLE.GeFeSLEUser user) {
+            DBg.d(LogLevel.Trace, $"Importing site from {zipFileName}");
+            string workingDir = Path.GetDirectoryName(zipFileName);
+            DBg.d(LogLevel.Trace, $"Working dir is {workingDir}");        
+            int numlists = 0;    
+            List<string> cleanupfiles = new List<string>();
+            cleanupfiles.Add(zipFileName);
+            using (ZipArchive archive = ZipFile.OpenRead(zipFileName))
+            {
+                foreach (ZipArchiveEntry entry in archive.Entries)
+                {
+                    string entryFileName = entry.FullName;
+                    DBg.d(LogLevel.Trace, $"Entry: {entryFileName}");
+                    if (entryFileName.EndsWith(".json"))
+                    {
+                        string jsonFileName = Path.Combine(workingDir, entryFileName);
+                        DBg.d(LogLevel.Trace, $"Extracting {entryFileName} to {jsonFileName}");
+                        entry.ExtractToFile(jsonFileName, true);
+                        DBg.d(LogLevel.Trace, $"Importing {jsonFileName}");
+                        _ = await GeListWithItems.ImportListJSON(db, jsonFileName, true, user);
+                        numlists++;
+                        cleanupfiles.Add(jsonFileName);
+                    }
+                }
+            }
+            //clean up the working files
+            foreach (string filename in cleanupfiles)
+            {
+                File.Delete(filename);
+            }
+            string justfilename = Path.GetFileName(zipFileName);
+            return $"Imported {numlists} lists from file {justfilename}";
         }
 
     }

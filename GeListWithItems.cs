@@ -1,10 +1,13 @@
 using System.Text.Json;
+using GeFeSLE;
 using Microsoft.EntityFrameworkCore;
 
 public class GeListWithItems
 {
     public GeList List { get; set; }
     public IEnumerable<GeListItem> Items { get; set; }
+
+    public GeListWithItems() {}
 
     // constructor that takes a db context and a list id
     public GeListWithItems(GeFeSLEDb db, int listId)
@@ -48,7 +51,7 @@ public class GeListWithItems
 
     // for now keep simple; this is really just for import and export. 
     // importing will create new List and items, creating new Ids for them
-    public static async Task<GeListWithItems?> ImportListJSON(GeFeSLEDb db, string inFile, bool keepDates)
+    public static async Task<GeListWithItems?> ImportListJSON(GeFeSLEDb db, string inFile, bool keepDates, GeFeSLEUser user)
     {
         try
         {
@@ -71,7 +74,8 @@ public class GeListWithItems
                         Name = inList.List.Name,
                         Comment = inList.List.Comment,
                         CreatedDate = keepDates ? inList.List.CreatedDate : DateTime.Now,
-                        ModifiedDate = keepDates ? inList.List.ModifiedDate : DateTime.Now
+                        ModifiedDate = keepDates ? inList.List.ModifiedDate : DateTime.Now,
+                        CreatorId = user.Id
                     };
                     db.Lists.Add(newList);
                     await db.SaveChangesAsync();

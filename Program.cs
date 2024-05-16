@@ -2845,6 +2845,67 @@ app.MapPost("/lists/{listid}/suggest", async (int listid,
     return Results.Created($"/showitems/{newitem.ListId}/{newitem.Id}", newitem);
 }).AllowAnonymous();
 
+app.MapGet("/lists/export", async (GeFeSLEDb db) => {
+    string zipFile = GlobalStatic.SiteExport(db);
+    // the zipFileName will be in wwwroot
+    zipFile = $"{GlobalConfig.Hostname}/{zipFile}";
+    DBg.d(LogLevel.Information, $"Exported site to {zipFile}");
+    return Results.Redirect(zipFile);
+
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser"
+});
+
+app.MapPost("/lists/import", async (IFormFile file,
+    IAntiforgery antiforgery,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    HttpContext httpContext) => {
+    
+
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+
+    DBg.d(LogLevel.Trace, $"{UserSessionService.dumpClaims(httpContext)}");
+
+    try
+    {
+        await antiforgery.ValidateRequestAsync(httpContext);
+    }
+    catch (Exception e)
+    {
+        return Results.BadRequest(e.Message);
+    }
+
+    if (user is null) return Results.BadRequest("User is null");
+    if (file is null) return Results.BadRequest("No file uploaded");
+    if (file.Length > 0)
+    {
+        // the filepath will be wwwroot/uploads/user/filename
+        string filePath = Path.Combine(GlobalConfig.wwwroot, GlobalStatic.uploadsFolder, user.UserName, file.FileName);
+        DBg.d(LogLevel.Trace, $"fileupload - file will be saved at (filepath): {filePath}");
+        //creates the folder if it doesn't exist
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await file.CopyToAsync(stream);
+        }
+        string results = await GlobalStatic.SiteImport(db, filePath, user);
+        return Results.Ok(results);
+    }
+    else
+    {
+        return Results.BadRequest("File is empty");
+    }
+
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser"
+});
+
 
 // lets always generate index.html once before we start
 // for a new setup, it won't exist. 
