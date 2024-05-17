@@ -5,7 +5,7 @@ After a few months of using Mastodon, and bookmarking so many interesting toots,
 
 Have your grocery list in Trello? Great! Now you have to use the Trello app to access your grocery list! Ok, I just need to add milk- TOO BAD! Its now time for two factor authentication! Can't remember that email address password? TWO two-factor authentications (ah ah ah!) arrg. Ill just write "milk" on my arm in Sharpie. _Ok smart guy just use a note app on your smartphone!_ Sure, now my family can't add stuff - or rather my grocery list is now a string of text messages. We can do better. 
 
-Lastly, there is the (**enshittification** problem)[https://pluralistic.net/2023/01/21/potemkin-ai/#hey-guys]: what happens to your content when the platform that hosts it turns evil: spams your readers with too many ads, invites the nazis in or just removes or bans your content because of something you said? (That should be up to YOUR readers to decide, not the platform!) The way to fight enshittification is to **self-host**. 
+Lastly, there is the [**enshittification** problem - pluralistic](https://pluralistic.net/2023/01/21/potemkin-ai/#hey-guys): what happens to your content when the platform that hosts it turns evil: spams your readers with too many ads, invites the nazis in or just removes or bans your content because of something you said? (That should be up to YOUR readers to decide, not the platform!) The way to fight enshittification is to **self-host**. 
 
 This service will only be about making, and hosting, _lists of things_ and will only add features in service of that end.  Our goals:
 
