@@ -93,8 +93,8 @@ to make sure noone's toots are recorded forever someplace they didn't intend).
 - Windows (as a service)
 - Linux (same machine use)
 - Linux (service)
-- [Configuring GeFeSLE / config file](Configuration.md)
-- [Microsoft, Google, Mastodon - OAuth providers and import sources](Microsoft.Google.md)
+- [Configuring GeFeSLE / config file](/Documentation/Configuration.md)
+- [Microsoft, Google, Mastodon - OAuth providers and import sources](/Documentation/google.microsoft.oauth.md)
 - putting GeFeSLE behind NGINX
 - MacOS?
 
