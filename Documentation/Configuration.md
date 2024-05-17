@@ -80,7 +80,7 @@ For `sitehead`, `bodyheader` and `bodyfooter`, these files should be HTML, but d
 
     },
 ```
-These are the secret keys that let GeFeSLE use OAuth login and to obtain api tokens on the OAuth user's behalf to access those services on their behalf. [See this page over here for Google and Microsoft instructions on how obtain these](Microsoft.Google.md)  For Mastodon it's a bit simpler (? for you anyway) as your GeFeSLE instance needs to register as an application on each _instance_ it wants to allow OAuth and import from. 
+These are the secret keys that let GeFeSLE use OAuth login and to obtain api tokens on the OAuth user's behalf to access those services on their behalf. [See this page over here for Google and Microsoft instructions on how obtain these](google.microsoft.oauth.md)  For Mastodon it's a bit simpler (? for you anyway) as your GeFeSLE instance needs to register as an application on each _instance_ it wants to allow OAuth and import from. 
 * **OtherSites:Mastodon:mastoClient_Name** - This is the name of the service that is requesting OAuth permission from the Mastodon instance. You should change this to be something uniquely identifying, ideally `lists.yourdomain`.
 _NOTE: there IS a website that is passed along with instance app registrations but its hardcoded **FIX**_
 ```
