@@ -190,6 +190,9 @@ public static class UserSessionService
         }
         else
         {
+            // FindByNameAsync uses the NORMALIZED (uppercase) username, so we want to 
+            // uppercase it
+            username = username.ToUpper();
             GeFeSLEUser? user = await userManager.FindByNameAsync(username);
             if (user == null)
             {

@@ -362,7 +362,8 @@ using (var scope = app.Services.CreateScope())
             var userManager = services.GetRequiredService<UserManager<GeFeSLEUser>>();
             var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
             DBg.d(LogLevel.Trace, "Checking to see if backdoorAdmin in db..");
-            GeFeSLEUser? backdoorAdminUser = await userManager.FindByNameAsync(GlobalConfig.backdoorAdmin.UserName);
+            string backdoorAdminName = GlobalConfig.backdoorAdmin.UserName.ToUpper();
+            GeFeSLEUser? backdoorAdminUser = await userManager.FindByNameAsync(backdoorAdminName);
             if (backdoorAdminUser == null)
             {
                 DBg.d(LogLevel.Trace, "backdoorAdmin not found in database, adding");
@@ -374,7 +375,7 @@ using (var scope = app.Services.CreateScope())
 
                 }
                 await db.SaveChangesAsync();
-                GlobalConfig.backdoorAdmin = await userManager.FindByNameAsync(GlobalConfig.backdoorAdmin.UserName);
+                GlobalConfig.backdoorAdmin = await userManager.FindByNameAsync(GlobalConfig.backdoorAdmin.UserName.ToUpper());
             } // backdoorAdmin NOT found in db. added
             else
             {
@@ -383,7 +384,7 @@ using (var scope = app.Services.CreateScope())
 
             // always overwrite the backdoorAdmin password with the one from the config file
             // if one is specified
-            GlobalConfig.backdoorAdmin = await userManager.FindByNameAsync(GlobalConfig.backdoorAdmin.UserName);
+            GlobalConfig.backdoorAdmin = await userManager.FindByNameAsync(GlobalConfig.backdoorAdmin.UserName!.ToUpper());
             if (GlobalConfig.backdoorAdminPassword != null)
             {
                 var removePasswordResult = await userManager.RemovePasswordAsync(GlobalConfig.backdoorAdmin!);
@@ -774,7 +775,7 @@ app.MapGet("/users/{username}", async (string username,
     string fn = "/users/{username} (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
-    var user = await userManager.FindByNameAsync(username);
+    var user = await userManager.FindByNameAsync(username.ToUpper());
     if (user is not null)
     {
         return Results.Ok(user);
@@ -1779,7 +1780,7 @@ app.MapPost("/me", async (HttpContext context,
         else
         {
             // find the user in our userManager by username
-            user = await userManager.FindByNameAsync(login.Username);
+            user = await userManager.FindByNameAsync(login.Username.ToUpper());
             if (user is null)
             {
                 msg = $"{fn} LOGIN: Username not found in database.";
@@ -1998,7 +1999,7 @@ app.MapGet("/mastocallback", async (string code,
             // look this username up in the database, see if they exist
             // if so, get the roles and log them in
 
-            var localuser = await userManager.FindByNameAsync(username!);
+            var localuser = await userManager.FindByNameAsync(username!.ToUpper());
             // if they're not in there, that's fine. Add them, they can have 
             // anonymous role. Not sure why they're logging in tho
             StringBuilder sb = new StringBuilder();
@@ -2257,12 +2258,12 @@ app.MapPost("/setlistuser", async ([FromBody] JsonElement data,
             // not sure how we get here with .Authentication working, but whatever
             else
             {
-                GeFeSLEUser? caller = await userManager.FindByNameAsync(callerUserName!);
+                GeFeSLEUser? caller = await userManager.FindByNameAsync(callerUserName!.ToUpper());
                 if (caller == null) return Results.BadRequest("Caller is not in the database");
                 else
                 {
                     // find the user we want to add to the list
-                    GeFeSLEUser? user = await userManager.FindByNameAsync(username!);
+                    GeFeSLEUser? user = await userManager.FindByNameAsync(username!.ToUpper());
                     if (user == null) return Results.BadRequest($"User {username} does not exist");
 
                     // only the list's creator or a SuperUser can add a listowner
@@ -2399,12 +2400,13 @@ app.MapPost("/deletelistuser", async ([FromBody] JsonElement data,
             // not sure how we get here with .Authentication working, but whatever
             else
             {
-                GeFeSLEUser? caller = await userManager.FindByNameAsync(callerUserName!);
+                GeFeSLEUser? caller = await userManager.FindByNameAsync(callerUserName!.ToUpper());
                 if (caller == null) return Results.BadRequest("Caller is not in the database");
                 else
                 {
                     // find the user we want to add to the list
-                    GeFeSLEUser? user = await userManager.FindByNameAsync(username!);
+
+                    GeFeSLEUser? user = await userManager.FindByNameAsync(username!.ToUpper());
                     if (user == null) return Results.BadRequest($"User {username} does not exist");
 
                     // only the list's creator or a SuperUser can add a listowner
