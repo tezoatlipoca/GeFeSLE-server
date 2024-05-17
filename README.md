@@ -74,7 +74,7 @@ to make sure noone's toots are recorded forever someplace they didn't intend).
 (as of 2024-04-08)
 **Working towards v0.1.0 MVP**
 - GeFeSLE engine is an ASP.NET 8.0 C# executable (yes, we totally started with the ASP.NET 8.0 Core "Minimal API" tutorial)
-- GeFeSLE FireFox plugin `<link>` CURRENTLY BROKEN (API refactoring)- only allows login, list selection and addition of items (body in Markdown); does have "receipt mode" where it takes a snip of the open browser tab, uploads it to server and adds the image link to the item Markdown.
+- [GeFeSLE FireFox plugin](https://github.com/tezoatlipoca/GeFeSLE-plugin-ffox) - only allows login, list selection and addition of items (body in Markdown); does have "receipt mode" where it takes a snip of the open browser tab, uploads it to server and adds the image link to the item Markdown.
  (all other functionality below is for the self-hosted web UI):
 - lists can be created, modified and removed; list description is Markdown
 - list items can be created, modified and removed; item body is Markdown
@@ -85,8 +85,8 @@ to make sure noone's toots are recorded forever someplace they didn't intend).
 - users can log in from OAuth: Mastodon, Microsoft and Google (although they have to ALSO be lised in the database to have a role assigned and do anything)
 
 ### TODO Before v0.1.0 MVP:
-- https://github.com/tezoatlipoca/GeFeSLE-server/issues/81
-- FINISH Refactoring API according to CRUD and HATEOAS; ensure meaningful HTTP error codes and consistent data returns; consistent access restriction on endpoints by user role; probably should verson control too e.g. `/endpoint` -> `/api/v1/endpoint`.
+- [81]
+- ~~FINISH Refactoring API according to CRUD and HATEOAS; ensure meaningful HTTP error codes and consistent data returns; consistent access restriction on endpoints by user role; probably should verson control too e.g. `/endpoint` -> `/api/v1/endpoint`.~~ eh, finish this later. Need soak time 'out there'.
 
 # Yeah yeah how do I install it? 
 - Windows (same machine use only)
