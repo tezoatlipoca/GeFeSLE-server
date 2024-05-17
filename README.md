@@ -71,7 +71,7 @@ to make sure noone's toots are recorded forever someplace they didn't intend).
  - GeFeSLE already hosts static pages with _file level_ access control restrictions and file uploading capabilities. Its a hop, skip and a jump from here to having a single binary webserver for static HTML and Javascript hosting. Bring back Web 1.0 (just with better CSS support)!
 
 ## State of the Project
-(as of 2024-04-08)
+(as of 2024-05-16)
 **Working towards v0.1.0 MVP**
 - GeFeSLE engine is an ASP.NET 8.0 C# executable (yes, we totally started with the ASP.NET 8.0 Core "Minimal API" tutorial)
 - [GeFeSLE FireFox plugin](https://github.com/tezoatlipoca/GeFeSLE-plugin-ffox) - only allows login, list selection and addition of items (body in Markdown); does have "receipt mode" where it takes a snip of the open browser tab, uploads it to server and adds the image link to the item Markdown.
