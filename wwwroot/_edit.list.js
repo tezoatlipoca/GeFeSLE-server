@@ -39,29 +39,8 @@ async function getList() {
     console.debug(fn + ' API URL: ' + apiUrl);
     // Get the list data from the API
     fetch(apiUrl)
-        .then(response => {
-            console.log('Response IS:', response);
-            if (response.status == RC.UNAUTHORIZED) {
-                console.debug(' | GETLIST - Not authorized to get list ' + listid);
-                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else if (response.status == RC.FORBIDDEN) {
-                console.debug(' | GETLIST - Forbidden to get list ' + listid);
-                throw new Error('Forbidden! Are you logged in as an admin?');
-            }
-            else if (response.status == RC.NOT_FOUND) {
-                console.debug(' | GETLIST - List ' + listid + ' not found');
-                throw new Error('List ' + listid + 'not found! Have you created it yet?');
-            }
-            else if (response.status == RC.BAD_REQUEST) {
-                console.debug(' | GETLIST - Bad request for list ' + listid);
-                throw new Error('Malformed request for list (should be an number)' + listid);
-            }
-            else {
-                return response.json();
-            }
-
-        })
+        .then(handleResponse)
+        .then(response => response.json())
         .then(json => {
 
             console.log('Success:', json);
@@ -143,31 +122,7 @@ async function updateList(e) {
         },
         body: JSON.stringify(data),
     })
-        .then(response => {
-            console.log('Response IS:', response);
-            if (response.ok) {
-                return response;
-            }
-            else if (response.status == RC.UNAUTHORIZED) {
-                console.debug(' | ADD/EDIT LIST - Unauthorized');
-                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else if (response.status == RC.FORBIDDEN) {
-                console.debug(' | ADD/EDIT LIST - Forbidden');
-                throw new Error('Forbidden! Are you logged in as SuperUser or Listowner?');
-            }
-            else if (response.status == RC.BAD_REQUEST) {
-                console.debug(' | ADD/EDIT LIST - Bad request');
-                return response.text().then(error => {
-                    throw new Error('Bad request! ' + error);
-
-                });
-            }
-            else {
-                d('Error: ' + response.statusText);
-                c(RC.ERROR);
-            }
-        })
+        .then(handleResponse)
         // by now, response is either json or text
         .then(response => {
             const contentType = response.headers.get("content-type");
@@ -215,12 +170,6 @@ async function updateList(e) {
         });
 }
 
-
-
-
-
-
-
 async function getAllUsers() {
     let fn = 'getAllUsers';
     
@@ -249,22 +198,8 @@ async function getAllUsers() {
             "GeFeSLE-XMLHttpRequest": "true"
         },
     })
-        .then(response => {
-            if (response.ok) {
-                return response.json();
-            }
-            else if (response.status == RC.UNAUTHORIZED) {
-                console.debug(' | getAllUsers - Not authorized to get users');
-                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else if (response.status == RC.FORBIDDEN) {
-                console.debug(' | getAllUsers - Forbidden to get get users');
-                throw new Error('Forbidden! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else {
-                throw new Error(' | getAllUsers - url: ' + apiUrl + ' returned: ' + response.status + ' - ' + response.statusText);
-            }
-        })
+        .then(handleResponse)
+        .then(response => response.json())
         .then(json => {
             // json is a list of users. Put userName and email values into a dictionary
             // iterate over every user collection in the json
@@ -279,7 +214,7 @@ async function getAllUsers() {
             }
         })
         .catch((error) => {
-            console.error('Error:', error);
+            console.error(error);
             d(error);
             c(RC.ERROR);
         });
@@ -316,22 +251,8 @@ async function getListUsers() {
             "GeFeSLE-XMLHttpRequest": "true"
         },
     })
-        .then(response => {
-            if (response.ok) {
-                return response.json();
-            }
-            else if (response.status == RC.UNAUTHORIZED) {
-                console.debug(' | getListUsers - Not authorized to get users');
-                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else if (response.status == RC.FORBIDDEN) {
-                console.debug(' | getListUsers - Forbidden to get get users');
-                throw new Error('Forbidden! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else {
-                throw new Error(' | getListUsers - url: ' + apiUrl + ' returned: ' + response.status + ' - ' + response.statusText);
-            }
-        })
+        .then(handleResponse)
+        .then(response => response.json())
         .then(json => {
             // json is a list of users. Put userName and email values into a dictionary
             // structure of json is: {creator, listowners[], contributors[]} and each of these is a user object
@@ -420,22 +341,8 @@ async function assignUser2List(e) {
         },
         body: JSON.stringify(data),
     })
-        .then(response => {
-            if (response.ok) {
-                return response.text();
-            }
-            else if (response.status == RC.UNAUTHORIZED) {
-                console.debug(' | setListUsers - Not authorized to set users');
-                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else if (response.status == RC.FORBIDDEN) {
-                console.debug(' | setListUsers - Forbidden to set users');
-                throw new Error('Forbidden! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else {
-                throw new Error(' | setListUsers - url: ' + apiUrl + ' returned: ' + response.status + ' - ' + response.statusText);
-            }
-        })
+        .then(handleResponse)
+        .then(response => response.text())
         .then(text => {
             // text is a message from the API
             d(text);
@@ -499,22 +406,8 @@ async function removeUserFromList(e) {
         },
         body: JSON.stringify(data),
     })
-        .then(response => {
-            if (response.ok) {
-                return response.text();
-            }
-            else if (response.status == RC.UNAUTHORIZED) {
-                console.debug(' | removeUserFromList - Not authorized to set users');
-                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else if (response.status == RC.FORBIDDEN) {
-                console.debug(' | removeUserFromList - Forbidden to set users');
-                throw new Error('Forbidden! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else {
-                throw new Error(' | removeUserFromList - url: ' + apiUrl + ' returned: ' + response.status + ' - ' + response.statusText);
-            }
-        })
+        .then(handleResponse)
+        .then(response => response.text())
         .then(text => {
             // text is a message from the API
             d(text);

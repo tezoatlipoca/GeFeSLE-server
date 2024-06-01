@@ -267,7 +267,7 @@ const GeListVisibility =
 function handleResponse(response) {
     console.debug('handleResponse');
     if (response.status === 204) {
-        return null;
+        return response;
     }
     else if (!response.ok) {
         let contentType = response.headers.get("Content-Type");

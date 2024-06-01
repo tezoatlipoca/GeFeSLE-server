@@ -1735,11 +1735,9 @@ app.MapPost("/me", async (HttpContext context,
     UserManager<GeFeSLEUser> userManager,
     RoleManager<IdentityRole> roleManager) =>
 {
-    string fn = "/me"; DBg.d(LogLevel.Trace, fn);
-
     if (!context.Request.HasFormContentType)
     {
-        return Results.BadRequest("No form data.");
+        return Results.BadRequest("No POST form data.");
     }
     var form = await context.Request.ReadFormAsync();
     var login = new LoginDto
@@ -1752,18 +1750,17 @@ app.MapPost("/me", async (HttpContext context,
 
     if (!login.IsValid())
     {
-        return Results.BadRequest("Could not deserialize body to LoginDto");
+        return Results.BadRequest("Could not deserialize POST form body to LoginDto");
     }
-    DBg.d(LogLevel.Trace, $"{fn} - login: {System.Text.Json.JsonSerializer.Serialize(login)}");
+    DBg.d(LogLevel.Trace, $"POST form data: {System.Text.Json.JsonSerializer.Serialize(login)}");
 
     if (login.OAuthProvider.IsNullOrEmpty())
     {
         // check the request headers to see if this is coming from the javascript API
-        // should probably make this a method in GlobalStatic
         bool isJSApi = false;
         if (GlobalStatic.IsAPIRequest(context.Request))
         {
-            DBg.d(LogLevel.Trace, $"{fn} LOGIN: is JS API");
+            DBg.d(LogLevel.Trace, $"Is JS API");
             isJSApi = true;
         }
         StringBuilder sb = new StringBuilder();
@@ -1774,7 +1771,7 @@ app.MapPost("/me", async (HttpContext context,
         // not OAuth, so must be a local login. MUST have login+pwd
         if (login.Username.IsNullOrEmpty() || login.Password.IsNullOrEmpty())
         {
-            msg = $"{fn} LOGIN: Username or password is null.";
+            msg = $"Username or password is null.";
             DBg.d(LogLevel.Trace, msg);
         }
         else
@@ -1783,7 +1780,7 @@ app.MapPost("/me", async (HttpContext context,
             user = await userManager.FindByNameAsync(login.Username.ToUpper());
             if (user is null)
             {
-                msg = $"{fn} LOGIN: Username not found in database.";
+                msg = $"Username not found in database.";
                 DBg.d(LogLevel.Trace, msg);
             } // user not in db
             else
@@ -1800,7 +1797,7 @@ app.MapPost("/me", async (HttpContext context,
                 } // good user pwd
                 else
                 {
-                    msg = $"{fn} LOGIN: Username {user} PASSWORD NOT CORRECT.";
+                    msg = $"LOGIN: Username {user} PASSWORD NOT CORRECT.";
                     // bad login web
 
                 } // bad user pwd
@@ -1811,12 +1808,12 @@ app.MapPost("/me", async (HttpContext context,
         {
             if (isJSApi)
             {
-                DBg.d(LogLevel.Trace, $"{fn} LOGIN: BAD - RETURNING 401");
+                DBg.d(LogLevel.Trace, $"LOGIN: BAD - RETURNING 401");
                 return Results.Unauthorized();
             } // bad login -API
             else
             {
-                DBg.d(LogLevel.Trace, $"{fn} LOGIN: BAD - RETURNING UNAUTH PAGE");
+                DBg.d(LogLevel.Trace, $"LOGIN: BAD - RETURNING UNAUTH PAGE");
                 await GlobalStatic.GenerateUnAuthPage(sb, msg);
                 return Results.Content(sb.ToString(), "text/html");
             } // bad login - web
@@ -1825,9 +1822,9 @@ app.MapPost("/me", async (HttpContext context,
         {
             if (isJSApi)
             {
-                DBg.d(LogLevel.Trace, $"{fn} --1784: userid: {user.Id ?? "no userid"}, username: {user.UserName ?? "no username"}, role: {realizedRole ?? "no role"}");
+                DBg.d(LogLevel.Trace, $"--1784: userid: {user.Id ?? "no userid"}, username: {user.UserName ?? "no username"}, role: {realizedRole ?? "no role"}");
                 var token = UserSessionService.createJWToken(user.Id, user.UserName, realizedRole);
-                DBg.d(LogLevel.Trace, $"{fn} LOGIN: User {login.Username} logged in as {realizedRole} VIA API RETURNING 200 + TOKEN");
+                DBg.d(LogLevel.Trace, $"LOGIN: User {login.Username} logged in as {realizedRole} VIA API RETURNING 200 + TOKEN");
                 UserSessionService.createSession(context, user.Id, user.UserName, realizedRole);
                 _ = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
                 return Results.Ok(new
@@ -1840,13 +1837,13 @@ app.MapPost("/me", async (HttpContext context,
             {
                 UserSessionService.createSession(context, user.Id, user.UserName, realizedRole);
                 _ = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
-                DBg.d(LogLevel.Trace, $"{fn} LOGIN: OK - RETURNING REDIRECT");
+                DBg.d(LogLevel.Trace, $"LOGIN: OK - RETURNING REDIRECT");
                 return Results.Redirect("/");
             } // good login - web
         }
     }
     // its OAuth
-    DBg.d(LogLevel.Debug, $"{fn} - login.OAuthProvider: {login.OAuthProvider}");
+    DBg.d(LogLevel.Debug, $"login.OAuthProvider: {login.OAuthProvider}");
     AuthenticationProperties properties = new AuthenticationProperties { RedirectUri = $"{GlobalConfig.Hostname}/oauthcallback" };
     string? authorizationScheme = null;
     switch (login.OAuthProvider)
@@ -1904,7 +1901,7 @@ app.MapPost("/me", async (HttpContext context,
             }
 
     }
-    DBg.d(LogLevel.Trace, $"{fn} {authorizationScheme} OAuth - sending {properties.RedirectUri} challenge");
+    DBg.d(LogLevel.Trace, $"{authorizationScheme} OAuth - sending {properties.RedirectUri} challenge");
     return new CustomChallengeResult(authorizationScheme, properties);
 
 });
@@ -2006,8 +2003,8 @@ app.MapGet("/mastocallback", async (string code,
 
             if (localuser is null)
             {
-                UserSessionService.createSession(httpContext, null, username!, "anonymous");
-                var msg = $"Hi {username} from the fediverse; You've been logged in with role: anonymous. All this means is you can't modify anything, but at least now you show up in our server logs.";
+                UserSessionService.createSession(httpContext, username!, username!, "anonymous");
+                var msg = $"Hi {username} from the fediverse; You've been logged in with role: anonymous.";
                 await GlobalStatic.GenerateLoginResult(sb, msg);
                 return Results.Content(sb.ToString(), "text/html");
             }
@@ -2847,7 +2844,8 @@ app.MapPost("/lists/{listid}/suggest", async (int listid,
     return Results.Created($"/showitems/{newitem.ListId}/{newitem.Id}", newitem);
 }).AllowAnonymous();
 
-app.MapGet("/lists/export", async (GeFeSLEDb db) => {
+app.MapGet("/lists/export", async (GeFeSLEDb db) =>
+{
     string zipFile = GlobalStatic.SiteExport(db);
     // the zipFileName will be in wwwroot
     zipFile = $"{GlobalConfig.Hostname}/{zipFile}";
@@ -2864,8 +2862,9 @@ app.MapPost("/lists/import", async (IFormFile file,
     IAntiforgery antiforgery,
     GeFeSLEDb db,
     UserManager<GeFeSLEUser> userManager,
-    HttpContext httpContext) => {
-    
+    HttpContext httpContext) =>
+{
+
 
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
@@ -2926,6 +2925,14 @@ using (var mutex = new Mutex(true, GlobalStatic.applicationName, out createdNew)
             var geListFileController = services.GetRequiredService<GeListFileController>();
             // make sure our embedded files are always fresh and THERE
             await geListFileController.FreshStart();
+            // regen all the lists anew
+            var lists = await db.Lists.ToListAsync();
+            foreach (var list in lists)
+            {
+                await list.GenerateHTMLListPage(db);
+                await list.GenerateRSSFeed(db);
+                await list.GenerateJSON(db);
+            }
             // generates the index afresh
             _ = GlobalStatic.GenerateHTMLListIndex(db);
             // loads the "restricted" internal files into the protected files lookup cache

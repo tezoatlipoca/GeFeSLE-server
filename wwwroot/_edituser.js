@@ -68,17 +68,18 @@ function getRoles() {
         }
     }).then(handleResponse)
         .then(response => {
-            
-            if(response.status === RC.NO_CONTENT) {
+
+            if (response.status === RC.NO_CONTENT) {
                 let userroles = document.getElementById('userroles');
                 userroles.innerHTML = '&lt;no roles&gt;';
                 return null;
             }
             else {
                 return response.json();
-            }})
+            }
+        })
         .then(json => {
-            if(json == null) return;
+            if (json == null) return;
             else {
                 userroles.innerHTML = json.join(', ');
             }
@@ -176,7 +177,6 @@ async function changePassword(e) {
         newPassword: newPassword
     };
 
-
     console.info('CHANGEPASSWORD calling: ' + apiUrl + ' with data: ' + JSON.stringify(user));
     fetch(apiUrl, {
         method: 'POST',
@@ -186,51 +186,12 @@ async function changePassword(e) {
         },
         body: JSON.stringify(user)
     })
+        .then(handleResponse)
         .then(response => {
-            // badrequest, no json -- username or newpassword were empty
-            // but WE already trapped for that.
-            // not found if username not found
-            // ok = success
-            // badrequest + json collection of code/description pairs if bad passwords
-            // problem (500) for anything else
-            if (response.ok) {
-                d('Password for ' + userName + ' changed!');
-                c(RC.OK);
-                return;
-            }
-            else if (response.status == RC.NOT_FOUND) {
-                throw new Error('User ' + userName + ' not found!');
-            }
-            else if (response.status == RC.UNAUTHORIZED) {
-                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else if (response.status == RC.FORBIDDEN) {
-                throw new Error('Forbidden! Are you logged in as an admin?');
-            }
-
-
-            else if (response.status == RC.BAD_REQUEST) {
-
-                response.json().then(data => {
-
-                    // its gonna be a collection of code/description pairs
-                    console.debug('CHANGEPASSWORD - bad password: ' + JSON.stringify(data));
-                    // iterate over data - its going to be an array
-                    let msg = '';
-                    data.forEach((item) => {
-                        msg += 'Error: ' + item.code + ' - ' + item.description + '<br>';
-                    })
-                    d(msg);
-                    c(RC.BAD_REQUEST);
-
-                });
-            }
-            else {
-                throw new Error('Error changing password for ' + userName + ' - ' + response.status);
-            }
-
+            d('Password for ' + userName + ' changed!');
+            c(RC.OK);
+            return;
         })
-
         .catch(error => {
             d(error);
             c(RC.ERROR);
@@ -263,72 +224,51 @@ async function addUser(e) {
         },
         body: JSON.stringify(user)
     })
+        .then(handleResponse)
         .then(response => {
-            //uname/pwd is null --> bad request
-            //<created>-> 201.created
-            //<not created>->bad request + collection <errors>
-            //anything else  -> bad request/500
-            if (response.ok) {
-                console.debug('ADDUSER - new user ADD ok!')
-                d('User added:' + JSON.stringify(user));
-                c(RC.CREATED);
-                response.json().then(data => {
-                    // get the value of the radio button in the form
-                    let neworupdated = document.querySelector('input[name="neworupdate"]:checked').value;
-                    console.debug('ADDUSER | neworupdated: ' + neworupdated);
-                    if (neworupdated == 'new') {
-                        // clear the form
-                        document.getElementById('username').value = '';
-                        document.getElementById('newPassword').value = '';
-                        document.getElementById('email').value = '';
-                    }
-                    else {
-                        // now that we have newID, populdate the id field in the form
-                        document.getElementById('userid').value = data.id;
-                        document.getElementById('username').value = data.userName;
-                        document.getElementById('newPassword').value = '';
-                        document.getElementById('email').value = data.email;
 
-                        // and update the url in the browser to include the new username
-                        // RECONSIDER THIS
-                        let newUrl = window.location.href;
-                        newUrl = newUrl.substring(0, newUrl.indexOf('?'));
-                        newUrl = newUrl + '?username=' + data.userName;
-                        window.history.pushState({}, '', newUrl);
-                        console.debug('ADDUSER | New URL: ' + newUrl);
-                    }
+            console.debug('ADDUSER - new user ADD ok!')
+            d('User added:' + JSON.stringify(user));
+            c(RC.CREATED);
+            response.json().then(data => {
 
-                })
-            }
-            else if (response.status == RC.BAD_REQUEST) {
-                console.debug('ADDUSER - bad request');
-                response.json().then(data => {
-                    let msg = '';
-                    data.forEach((item) => {
-                        msg += 'Error: ' + item.code + ' - ' + item.description + '<br>';
-                    })
-                    d(msg);
-                    c(RC.BAD_REQUEST);
-                });
-            }
-            else if (response.status == RC.UNAUTHORIZED) {
-                console.debug('ADDUSER - Not authorized to add user ' + user.userName);
-                throw new Error('Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>');
-            }
-            else if (response.status == RC.FORBIDDEN) {
-                console.debug('ADDUSER - Forbidden to add user ' + user.userName);
-                throw new Error('Forbidden! Are you logged in as an admin?');
-            }
-            else {
-                console.debug('ADDUSER - Error adding user ' + user.userName);
-                throw new Error('Error adding user ' + user.userName + ' - ' + response.status);
-            }
+
+                // now that we have newID, populdate the id field in the form
+                document.getElementById('userid').value = data.id;
+                document.getElementById('username').value = data.userName;
+                document.getElementById('newPassword').value = '';
+                document.getElementById('email').value = data.email;
+
+                // and update the url in the browser to include the new username
+                // RECONSIDER THIS
+                let newUrl = window.location.href;
+                newUrl = newUrl.substring(0, newUrl.indexOf('?'));
+                newUrl = newUrl + '?username=' + data.userName;
+                window.history.pushState({}, '', newUrl);
+                console.debug('ADDUSER | New URL: ' + newUrl);
+                // wait 1 seconds then call getUsers to refresh the users list
+                setTimeout(getUsers, 1000);
+
+            })
+
+
         })
         .catch(error => {
             d(error);
             c(RC.ERROR);
-            console.error('Error:', error);
+            console.error(error);
         });
+}
+
+async function clearForm(e) {
+    e.preventDefault();
+    let fn = 'newUser'; console.debug(fn);
+    document.getElementById('userid').value = '';
+    document.getElementById('username').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('email').value = '';
+    // change the label on the submit button to say "Add User"
+    document.getElementById('submitbutton').value = 'Add User';
 }
 
 async function modifyUser(e) {
@@ -379,18 +319,6 @@ document.addEventListener('DOMContentLoaded', getUsers);
 // When the form is submitted, send it to the REST API
 document.getElementById('edituserform').addEventListener('submit', updateoraddUser);
 
-// add onClick event to the changepassword button
-//document.getElementById('setPassword').addEventListener('click', changePassword);
-//document.getElementById('setPassword').addEventListener('click', sendHARDReset);
-
-// when the radio button neworupdate is changed from update to new, clear the form
-document.getElementById('new').addEventListener('change', function () {
-    document.getElementById('username').value = '';
-    document.getElementById('newPassword').value = '';
-    document.getElementById('email').value = '';
-    document.getElementById('userid').value = '';
-});
-
 // get the addRole button and add an event listener to it
 document.getElementById('addRole').addEventListener('click', setRoles);
 document.getElementById('deleteRole').addEventListener('click', deleteRole);
@@ -427,7 +355,7 @@ function getUsers() {
             let userlist = '<ol>';
             data.forEach((user) => {
                 userlist += '<li><a href=\"_edituser.html?username=' + user.userName + '\">' + user.userName + '</a>';
-                userlist += ' - email: ' + user.email + ' <-- <a href="/deleteuser/' + user.id + '">DELETE</a></li>';
+                userlist += ' - email: ' + user.email + ' <-- <a href=\"#\" onclick=\"deleteUser(\'' + user.id + '\')\">DELETE</a></li>';
             });
             userlist += '</ol>';
             users.innerHTML = userlist;
@@ -481,4 +409,48 @@ function deleteRole() {
             d(error);
             c(RC.ERROR);
         });
+}
+
+function deleteUser(userid) {
+    event.preventDefault();
+    let fn = "deleteUser"; console.debug(fn);
+
+    if (islocal()) return;
+
+    if (userid == null || userid == '') {
+        d('User ID cannot be blank!');
+        c(RC.ERROR);
+        return;
+    }
+    let apiUrl = `/users/${userid}`;
+    console.debug(`${fn} --> ${apiUrl}`);
+    fetch(apiUrl, {
+        method: 'DELETE',
+        headers: {
+            "GeFeSLE-XMLHttpRequest": "true"
+        }
+    })
+        .then(handleResponse)
+        .then(response => {
+            d('User ' + userid + ' deleted!');
+            c(RC.OK);
+            // clear the form
+            document.getElementById('username').value = '';
+            document.getElementById('newPassword').value = '';
+            document.getElementById('email').value = '';
+            document.getElementById('userid').value = '';
+            // redirect the URL of the page to just the list (in case we deleted the user we were looking at)
+            window.location.href = '/_edituser.html';
+
+            // wait 1 seconds then call getUsers to refresh the users list
+            setTimeout(getUsers, 1000);
+            return;
+        })
+        .catch((error) => {
+            console.error(error);
+            d(error);
+            c(RC.ERROR);
+        });
+
+
 }
