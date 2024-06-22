@@ -80,3 +80,6 @@ TODO: permit two app registrations for the Microsoft service, one that is used J
 
 ## So what information from my Microsoft Account does a GeFeSLE instance actually read or store? 
 Outside of importing Sticky Notes, absolutely nothing. When the OAuth control is transfered back to GeFeSLE from Microsoft's authentication backend, we check to see that the claims (i.e. your username or email) are in our user database, and if they are we store the token we receive from Microsoft to access various APIs on your behalf. Right now the only APIs we use this for are the mail APIs to get Sticky Notes. AND, the API token (from Microsoft) we cache only lives as long as your GeFeSLE instance browser session, which right now times out after 30 minutes anyway; none of this is stored in the instance's database or persisted in any way. 
+
+## Google OAuth
+

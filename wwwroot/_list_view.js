@@ -188,9 +188,9 @@ async function createQuickMoveMenu() {
     let listname = document.querySelector('.listtitle').innerText.replace(document.querySelector('.listtitle .indexlink').innerText, '');
     // and the leading space
     listname = listname.substring(1);
+
     for (let list of lists) {
         // if the list is the current list, don't show it in the menu
-
         if (listname == list[1]) {
             continue;
         }
@@ -205,11 +205,8 @@ async function createQuickMoveMenu() {
     document.body.insertAdjacentHTML('beforeend', menuHtml);
 
     for (let list of lists) {
-        if (list[1] == listname) {
-            continue;
-        }
-        let contextMenuLinks = document.getElementsByClassName('context-menu-link-regular');
-        for (let link of contextMenuLinks) {
+        if (listname != list[1]) {
+            let link = document.getElementById(`list${list[0]}`);
             link.addEventListener('click', function (event) {
                 console.debug(`LINK ${currentItemRowId} listid: ${list[0]} listname: ${list[1]}`);
                 moveItem(currentItemRowId, list[0]);
@@ -306,9 +303,9 @@ async function moveItem(itemid, listid) {
                 d(text);
                 c(RC.OK);
                 // asyncronously wait 1 second before reloading the page
-                setTimeout(function () {
+                //setTimeout(function () {
                     location.reload();
-                }, 1000);
+                //}, 1000);
             })
             .catch((error) => {
                 d(error);
@@ -693,7 +690,7 @@ document.querySelectorAll('.commentcell').forEach(cell => {
     });
 });
 
-window.addEventListener('load', function() {
+window.addEventListener('load', function () {
     const commentCells = document.querySelectorAll('.commentcell');
     commentCells.forEach(cell => {
         if (cell.scrollHeight > cell.clientHeight) {
@@ -736,7 +733,7 @@ async function reportItem(listId, itemid) {
     if (islocal()) return;
     let areUsure = false;
     let reportreason = await showModalReportForm();
-    if(reportreason == null) {
+    if (reportreason == null) {
         return;
     }
     else {
@@ -768,7 +765,7 @@ async function reportItem(listId, itemid) {
                     // just refresh the page
                     location.reload();
                 }
-                
+
             })
             .catch((error) => {
                 console.error(error);
