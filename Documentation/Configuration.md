@@ -1,5 +1,7 @@
 # Configuring GeFeSLE Server
-Your configuration file must be well formed json and be specified via command line parameter a la `./GeFeSLE --config=./config.json`
+Your configuration file must be well formed json and be specified via command line parameter: `./GeFeSLE --config=./config.json`
+
+[Here is a sample config file](../config.SAMPLE.json)
 
 Any 
 
