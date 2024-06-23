@@ -335,7 +335,7 @@ async function getLists() {
     })
         .then(handleResponse)
         .then(response => {
-            if (response === null) {
+            if ((response === null) || (response.status === 204)) {
                 d('No lists found');
                 c(RC.NO_CONTENT);
                 console.debug(fn + ' | No lists found');

@@ -1,0 +1,48 @@
+{
+    "DatabaseSettings": {
+        "DatabaseName": "GeFeSLEDb",
+        
+        "DatabaseFile": "foo.db"
+    },
+    "CorsSettings": {
+        "AllowedOrigins": "*"
+    },
+    "ServerSettings": {
+        "Bind": "*",
+        "Port": 7036,
+        "Hostname": "http://localhost:7036"
+    },
+    "SiteCustomize": {
+        "sitetitle": "** < default site title > **",
+        "sitehead": "__samplehead.html",
+        "bodyheader": "__samplebodyhead.html",
+        "bodyfooter": "__samplefooter.html",
+        "owner": "** < default site owner info > **"
+    },
+    "API": {
+        "apiTokenSecretKey" : "IlikeBIGbuttsandIcannotlie!Youotherbrotherscan'tdeny!WhenagirlwalksinwithanittybittywaistandaroundthinginyourfaceyougetSPRUNG!"
+    },
+    "OtherSites": {
+        "Google": {
+            "googleClientID" : "invalid // must set this up",
+            "googleClientSecret" : "invalid // must set this up"
+        },
+        "Microsoft": {
+            "microsoftClientId" : "invalid // must set this up",
+            "microsoftClientSecret" : "invalid // must set this up",
+            "microsoftTenantId" : "invalid // must set this up"
+        },
+        "Mastodon": {
+            "mastoClient_Name" : "My GeFeSLE Instance URL",
+            "mastoScopes" : "read write:bookmarks"
+        }
+
+    },
+    "Users": {
+        "backdooradmin": {
+            "username": "Krang",
+            "password": "Kodos2024",
+            "role": "SuperUser"
+        }
+    }
+}
