@@ -3,7 +3,7 @@ Your configuration file must be well formed json and be specified via command li
 
 [Here is a sample config file](../config.SAMPLE.json)
 
-Any 
+But, going over the sections of that sample config file... 
 
 ``` 
 { "DatabaseSettings": { 
