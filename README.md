@@ -3,7 +3,7 @@ Yet _another_ list making tool? Yes. [Here's why](rationale.md)
 
 **BUT** THIS ONE is:
 * designed around sharing and collaboration: with friends, communities or the internet at large
-* self-hosted: lightweight and self-contained single binary (except for the runtime environment)
+* self-hosted: lightweight and self-contained single binary (except for the .NET runtime environment)
 * simple html+css presentation: view lists on any device (if it can run a browser)
   * human readable static addressing (1) e.g. `myserver.mydomain.org/Big Fat List Of The Year.html`
   * customize your site with page headers/footers and your own CSS stylesheet (without a plugin; eat _that_ WordPress)
@@ -71,7 +71,7 @@ to make sure noone's toots are recorded forever someplace they didn't intend).
  - GeFeSLE already hosts static pages with _file level_ access control restrictions and file uploading capabilities. Its a hop, skip and a jump from here to having a single binary webserver for static HTML and Javascript hosting. Bring back Web 1.0 (just with better CSS support)!
 
 ## State of the Project
-(as of 2024-05-16)
+(as of 2024-06-23)
 **Working towards v0.1.0 MVP**
 - GeFeSLE engine is an ASP.NET 8.0 C# executable (yes, we totally started with the ASP.NET 8.0 Core "Minimal API" tutorial)
 - [GeFeSLE FireFox plugin](https://github.com/tezoatlipoca/GeFeSLE-plugin-ffox) - only allows login, list selection and addition of items (body in Markdown); does have "receipt mode" where it takes a snip of the open browser tab, uploads it to server and adds the image link to the item Markdown.
@@ -89,17 +89,14 @@ to make sure noone's toots are recorded forever someplace they didn't intend).
 - ~~FINISH Refactoring API according to CRUD and HATEOAS; ensure meaningful HTTP error codes and consistent data returns; consistent access restriction on endpoints by user role; probably should verson control too e.g. `/endpoint` -> `/api/v1/endpoint`.~~ eh, finish this later. Need soak time 'out there'.
 
 # Yeah yeah how do I install it? 
-- Windows (same machine use only)
-- Windows (as a service)
-- Linux (same machine use)
-- Linux (service)
+- [installation](/Documentation/installation.md)
 - [Configuring GeFeSLE / config file](/Documentation/Configuration.md)
 - [Microsoft, Google, Mastodon - OAuth providers and import sources](/Documentation/google.microsoft.oauth.md)
 - putting GeFeSLE behind NGINX
 - MacOS?
 
 # How do I use it? 
-- [Basic use](Basic.Use.md)
+- [Basic use](/Documentation/usage.md)
 - [managing users](managing.users.md)
 - [Moderation](moderation.md)
 
