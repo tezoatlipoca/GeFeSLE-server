@@ -22,6 +22,7 @@ This user can _always_ log in, can _always_ see all content. If you're running G
 After reading in the config file, the GeFeSLE service checks to see if the `wwwroot` (or the default of `./wwwroot` if its not specified in the config file) exists. 
 This folder will hold the generated HTML, xml and json files for all lists, as well as the upload folders for any item attachments. 
 It also contains some static `.html` and `.js` files that are served as part of the web interface; if _these_ files don't exist, they're created in `wwwroot` - if they exist, they're overwritten on application startup. 
+⚠️If you customize the stylesheet or create custom site, page header and footer "includes", you may not want to use the same filenames as the default/samples, and you may not want to keep them in the `wwwroot` at all - otherwise they may get clobbered by the application when it restarts or does a cleanup action. See "Protected Files, Customization Files, wwwroot and HTML CLean" 
 
 ## Web interface
 Once the application is running, point a web browser to where you've configured it to listen.
@@ -97,7 +98,7 @@ If you have Contributor or Listowner role for a list then you can add or modify 
  ### Adding/Editing LISTS
  
 
-
+## Protected Files, Customization Files, wwwroot and HTML CLean
 
 ### Debug commands (TEMPORARY)
 The red buttons at the top of each page are debug utilities that will be suppressed with a config parameter once we get closer to v1.0.
