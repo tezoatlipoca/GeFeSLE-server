@@ -1,3 +1,43 @@
+# Fundamentals
+GeFeSLE is a list maker that is designed around self-hosting and collaborative work. It has a minimal self-hosted web interface that can be highly customized with custom javascript and CSS. (browser and system tray applets are in development too, and there is a full REST API if you want to write an app)
+
+There are lists and items. Both lists and items have a comment body that can accept optional Markdown. 
+Lists, when modified, produce or update a static HTML page, a json file and a rudimentary RSS xml feed. For each, the list name IS the URL of each of these resources. 
+`<yoursite.com>/List Name.html`. Each item in that (html) list is itself bookmarkable; if the item name IS a URL, it becomes a clickable link. 
+
+Items can be moved between lists if you have the right permissions to modify both lists. Items have tags (just like Mastodon etc.)
+
+The static html page (including stylesheet, javascript) can be saved by your browser for offline use, meaning you can distribute your lists however you want.
+(The only real functionality in a List Page's javascript are utilities to help you filter long lists by keyword or item tags.)
+
+## List Visibility and User Roles
+List can be 
+* Private - just for you
+* ListOwners/Contributors - just for you and other loggedin users you allow
+* Public - visible to anyone, even without an account
+
+ListOwners and Contributors are other users who have an account and these roles are assigned to each list individually. 
+* Contributors - can add, modify and delete items in a list
+* Listowners - can add new lists, contribute to those lists and assign other Listowners and Contributors; the creator of a list has automatic Listowner permissions on it.
+Both roles can move items between lists if they are listowners or contributors on both. 
+
+User accounts can be local OR you can add someone using their Google, Microsoft or Mastodon account and they can log into your GeFeSLE instance using OAuth.
+There is an additional Role, SuperUser, which can do pretty much anything and can see a bunch of useful debugging tools.
+
+## Importing and Exporting Lists and Items
+Besides the whole-list static `.html`, `.json` and RSS files for each list,
+* List Contributors/Owners logged in with a Microsoft account can import their Microsoft/Windows Sticky Notes to a list.
+* List Contributors/Owners logged in with a Google account can choose one of their Google Task Lists and import those to a list.
+* List Contributors/Owners logged in with a Mastodon account can choose to import their Bookmarked Statuses (with an optional Delete)
+
+SuperUsers can also perform an All-Lists json Export and Import (in liu of a properly working site backup.)
+
+## Moderation
+Every list item has a Report button; when an item is reported, the user (regardless of whether they are a logged in user or not) specifies why they're reporting the item. The item is _immediately_ hidden from its containing list. A moderation item is created in a special LIst called MODERATION; ListOwners and SuperUsers can review the Report rationale and either edit, restore or delete the offending item.
+
+## File uploads (experimental)
+When editing a list item you can attach files to it; the URL to the file is written as an image or link in the Markdown of the item body. 
+
 # First Run
 To run GeFeSLE from the command line, be sure to specify a configuration file with the `--config=` parameter:
 `%> ./GeFeSLE --config=./config.json`
