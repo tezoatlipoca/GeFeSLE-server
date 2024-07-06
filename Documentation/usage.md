@@ -71,14 +71,14 @@ You should see (usage.1.PNG)
 
 The placeholders for page header, site title, page footer and owner can all be customized in the config file. 
 
-### login
+## login
 Takes you to the login screen where you can login with local credentials.
 The other 3 buttons are to OAuth login with a Google, Microsoft or Mastodon account; however to do that we have to [configure those OAuth sources first](google.microsoft.oauth.md).
 .. and THEN we have to add those user accounts as users in our database allowed to login.
 
 For now, the `backdooradmin` user specified in our config file is the only user we have; log in with those credentials. 
 
-### Main / index page
+## Main / index page
 This page shows all lists a user is allowed to view. 
 * change password - goes to the password change screen
 * edit users (SuperUsers) - to manage other users 
@@ -90,7 +90,7 @@ For each list visible on this index there are buttons/links to
 * edit
 * delete - deleting a list (after the _Are You Sure?_ prompt) is immediate and deletes all list items as well
 
-### List View
+## List View
 Each List page is a static HTML file, with a static URL from the root of your GeFeSLE instance. 
 Changing the NAME of the list changes its URL (Future work: add a `forward old list URLs to new URLs` feature.)
 
@@ -135,10 +135,32 @@ If you have Contributor or Listowner role for a list then you can add or modify 
 * Add NEW or UPDATE - submits the form, saves your changes
 * Attach a file - select a file then click Upload. The file is uploaded into a subfolder of the `wwwroot` according to username: `wwwroot/uploads/<username>`; then the URI to the uploaded file is pasted into the item's comment body in Markdown notation. ⚠️IMPROVEMENT: it pastes the markdown assuming the uploaded file is an image, however if its not an image the rendered text isn't a link to the file. Detect the extension of the uploaded file and modify the markdown accordingly if it is NOT an image, just make it a link to the file.
 
- ### Adding/Editing LISTS
- 
+ ## Adding/Editing LISTS
+ If you have ListOwner site role you can add new lists or edit existing Lists where you have been granted ListOwner access.
+
+* Name - there aren't any restrictions^* on List Names, but remember a list's name becomes its URL e.g. `<yoursite.com>/<listname>.html`. Changing a list's name will change that URL (it also changes the URL to the `.json` and RSS `.xml` files too) ^* - that I know of; the Kestrel webserver engine seems to be pretty flexible at interpreting and matching URLencoded characters.
+* Visibility - see "Fundamentals" above; changing the list's visiblity takes place immediately and also applies to to any upload/attachments added to list items IN that list. So for example, if you attach `foo.jpg` to `ListA` and then restrict the visibility of ListA to just Listowners, then only Listowners of `ListA` should be able to see `foo.jpg`, everyone else will get an _Unauthorized_.
+* List Roles
+ * creator - this is whoever created the list initially - can't be changed
+ * owners - users of ListOwner role who have full control over this list including assigning other ListOwners and contributors
+ * contributors - users of Contributor role who can update items but not change the list proper or do any list user management.
+ * comment  (body) - Put whatever you want here; Markdown supported.
+ * Add NEW or UPDATE - submits the form, saves your changes
 
 ## Protected Files, Customization Files, wwwroot and HTML CLean
+Whenever a list (or an item IN that list) is changed, the following files get updated automatically (in the configured `wwwroot` folder):
+* `<list name>.html`
+* `<list name>.json`
+* `rss-<list name>.xml`
+
+If a list is added, deleted or renamed:
+* `index.html`
+
+The list pages (including any upload attachments) and site index are added to a quick lookup table kept in memory so page-level access control doesn't need to hit the database. All of the static `.html` pages and javascript files of the web interface themselves are _protected_ and depending on the function, access controlled themselves with the same mechanism. 
+
+The protected static files of the web interface are also packaged in the executable and whenever GeFeSLE is restarted (or you call the `/files/clean` endpoint), all list related and protected files are _regenerated_. In fact, the whole `wwwroot` is scoured with the exception of the files in the `uploads` folder. 
+
+Thus, if you have created your own Site/Page Header and Footer (see https://github.com/tezoatlipoca/GeFeSLE-server/blob/main/Documentation/Configuration.md), you **_do NOT want to keep them in your `wwwroot`_** otherwise they might get clobbered. Those files can live anywhere accessible to GeFeSLE, they're not "included" in using pages, their contents are literally copied into the `.html` pages for lists when generated.
 
 ### Debug commands (TEMPORARY)
 The red buttons at the top of each page are debug utilities that will be suppressed with a config parameter once we get closer to v1.0.
