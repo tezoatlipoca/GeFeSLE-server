@@ -1,5 +1,9 @@
 # Google, Microsoft - OAuth Setup
 Here we cover how to register your GeFeSLE instance with Google or Microsoft to allow OAuth logins by other users and to import notes and tasks from those services. 
+[#Microsoft OAuth]
+[#Google OAuth]
+[#Mastodon OAuth]
+
 ## Microsoft OAuth
 In order to allow OAuth login from Microsoft account holders YOU need to have a microsoft account; this gets you access to the Microsoft Azure developer portal where we will register your GeFeSLE instance as an app.
 Before we begin, make sure you have your Microsoft account ready. 
@@ -82,4 +86,66 @@ TODO: permit two app registrations for the Microsoft service, one that is used J
 Outside of importing Sticky Notes, absolutely nothing. When the OAuth control is transfered back to GeFeSLE from Microsoft's authentication backend, we check to see that the claims (i.e. your username or email) are in our user database, and if they are we store the token we receive from Microsoft to access various APIs on your behalf. Right now the only APIs we use this for are the mail APIs to get Sticky Notes. AND, the API token (from Microsoft) we cache only lives as long as your GeFeSLE instance browser session, which right now times out after 30 minutes anyway; none of this is stored in the instance's database or persisted in any way. 
 
 ## Google OAuth
+In order to allow OAuth login from Google account holders YOU need to have a Google account; this gets you access to the Google Cloud Console developer portal where we will register your GeFeSLE instance as an app.
+Before we begin, make sure you have your Google account ready. 
 
+### 1. Log into your Google Cloud developer console
+(https://console.cloud.google.com) Don't worry about subscriptions or plans or anything we don't need em. 
+![google cloud console](google1.PNG)
+
+### 2. create a new project
+From the `Select a project` dropdown at the top; then go `New Project`
+![select project > new project](google2.PNG)
+
+### 3. name the project
+This is just for you, its not the name your users will see. 
+![pick a good project name;something inspiring](google3.PNG)
+
+### 4. enable some APIs
+Here's where we tell the Google Cloud what elements of their user's data we want access to when they authenticate. 
+**_If you don't want your users to import from Google Tasks you can skip the APIs_**
+Make sure your new project is selected in the dropdown at the top
+![like this](google4.PNG)
+then from the menu at the left select 
+`APIs & Services` then `Enabled APIs & Services`
+![](google5.PNG)
+and then finally 
+![Enable APIS AND SERVICES](google6.PNG)
+this brings up the API Library.
+![behold: the library where thy APIs are kept](google7.PNG)
+Search for the `Google Tasks API`
+![NOT the Cloud Tasks API](google8.PNG)
+Add it/enable it. Should look like this now:
+![google Tasks API enabled](google9.PNG)
+
+### 5. add some Credentials
+Here's where we specify details that uniquely identify US (as in YOUR GeFeSLE instance).
+Under `APIS & Services` now find `Credentials`
+![APIs & Services > Credentials](google10.PNG)
+.. then `Create Credentials`
+![Create Credentials](google11.PNG)
+.. then `Create OAuth client ID`
+![Create OAuth client ID](google12.PNG)
+Click `Configure Consent Screen`; select `External`
+![External](google13.PNG)
+when prompted, fill in your app name and YOUR contact/support email. 
+THIS is the app or sitename that your users will see when they get prompted for "_Steve's Website of Useful Lists_ wants to access your data". 
+![now if Steve had a list of Taco Trucks](google14A.PNG)
+Fill in the relevant web pages - you can just link to your GeFeSLE's index if you want. 
+![but good for you if you have a privacy policy and terms of service](google14B.PNG)
+then add authorized domains and your contact info. 
+![don't use mine; I don't want msgs about your Big List of Taco Trucks](google14C.PNG)
+
+### 6. Scopes
+Heres where we tell Google how we're gonna use the APIs from before to access the user's data (or not). 
+The permission scopes we need will depend on what APIs we selected above. 
+![non-sensitive scopes are just the user's email address](google15.PNG)
+All we need is the user's primary google Account email address and the personal info they've chosen to make publically available. 
+![although really all we're looking for is their email address](google15A.PNG)
+If you want your users to import Google Tasks, you have to check that API (we only need `.readonly`):
+![only need ../auth/tasks.readonly if users will be importing their Google Tasks](google15B.PNG)
+Your sensitive and non-sensitive scopes should look like this:
+![my sister karved her scopes on a moose once](google15C.PNG)
+
+
+UNDER CONSTRUCTION
