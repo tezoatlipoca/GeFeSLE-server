@@ -97,7 +97,7 @@ to make sure noone's toots are recorded forever someplace they didn't intend).
 
 # How do I use it? 
 - [Basic use](/Documentation/usage.md)
-- [managing users](managing.users.md)
-- [Moderation](moderation.md)
+- [managing users](Documentation/managing.users.md)
+- [Moderation](Documentation/moderation.md)
 
 
