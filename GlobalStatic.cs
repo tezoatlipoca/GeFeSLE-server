@@ -60,7 +60,11 @@ public static class GlobalStatic
         {
             foreach (var list in lists)
             {
-                sb.AppendLine($"<li class=\"indexliitem\" style=\"display: none;\"><a href=\"{list.Name}.html\">{list.Name}</a>");
+                var itemCount = await db.Items.CountAsync(x => x.ListId == list.Id);
+                
+
+
+                sb.AppendLine($"<li class=\"indexliitem\" style=\"display: none;\"><a href=\"{list.Name}.html\">{list.Name}</a> ({itemCount})");
                 sb.AppendLine($"<span class=\"indexeditlink\" style=\"display: none;\"><a href=\"_edit.list.html?listid={list.Id}\">edit</a></span>");
                 sb.AppendLine($"<span class=\"indexeditlink\" style=\"display: none;\"><a href=\"#\" onclick=\"deleteList({list.Id}); return;\">Delete</a></span>");
 
@@ -149,6 +153,7 @@ public static class GlobalStatic
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/lists/regen'\">REGEN</div>");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/files/orphan'\">File Orphans</div>");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/files/clean'\">CLEAN HTML</div>");
+            sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/items/orphan'\">Item Orphans</div>");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/lists/export'\">EXPORT</div>");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"triggerImport()\">IMPORT</div>");
             sb.AppendLine("</div>");

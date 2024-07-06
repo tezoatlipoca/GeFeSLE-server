@@ -144,6 +144,7 @@ async function getItem() {
     }
     // Get the list NAME for the "back to list page" link
     fetch('/lists/' + listid)
+        .then(handleResponse)
         .then(response => response.json())
         .then(data => {
             console.log('Success:', data);
@@ -155,6 +156,8 @@ async function getItem() {
             // write any error to the span with id="result"
             d(error);
             c(RC.ERROR);
+            document.getElementById('back2list').href = '/index.html';
+            document.getElementById('back2list').innerText = 'Nonexistant List - Back to index';
             console.error('Error:', error);
         });
 

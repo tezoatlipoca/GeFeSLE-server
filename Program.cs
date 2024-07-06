@@ -2678,6 +2678,43 @@ app.MapGet("/files/clean", async (GeListFileController geListFileController,
     Roles = "SuperUser"
 });
 
+app.MapGet("/items/orphan", async (GeFeSLEDb db, bool delete = false) =>
+{
+    var geListIds = await db.Lists.Select(g => g.Id).ToListAsync();
+    var geItemOrphans = await db.Items.Where(i => !geListIds.Contains(i.ListId)).ToListAsync();
+    
+    if(delete && geItemOrphans.Count > 0)
+    {
+        db.Items.RemoveRange(geItemOrphans);
+        await db.SaveChangesAsync();
+        return Results.Redirect("/items/orphan");
+    }
+
+
+    StringBuilder sb = new StringBuilder();
+    sb.AppendLine("<!DOCTYPE html><html><body>");
+    sb.AppendLine("<h1>Orphaned Items</h1>");
+    if(geItemOrphans.Count == 0)
+    {
+        sb.AppendLine("<p>No orphaned items found</p>");
+    }
+    else
+    {
+        sb.AppendLine("<p>Orphaned items found:</p>");
+        sb.AppendLine("<p>Would you like to delete them? <a href=\"/items/orphan?delete=true\">Yes</a></p>");
+        foreach (var item in geItemOrphans)
+        {
+            sb.AppendLine($"<p><a href=\"/_edit.item.html?listid={item.ListId}&itemid={item.Id}\">{item.Name}</a></p>");
+        }
+    }
+    sb.AppendLine("</body></html>");
+    return Results.Content(sb.ToString(), "text/html");
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser"
+});
+
 
 app.MapPost("/items/{itemid}/report", async (int itemid,
     GeFeSLEDb db,
