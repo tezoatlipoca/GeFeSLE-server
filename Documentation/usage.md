@@ -168,5 +168,7 @@ The red buttons at the top of each page are debug utilities that will be suppres
 * KILL Session - calls `/me/delete` which trashes the active user session; equivalent to a `LogOUt` (which we don't have yet)
 * REGEN - regenerates List `.html` and rss pages for each list and the index page.
 * File Orphans - recursively scans every file in `wwwroot`; identifies `protected` file, which are restored when the application starts or a clean is invoked, files which are generated for a List, and uploads which are either referenced by an item in a list, or are NOT referenced by any item in a list (an orphan)
+* CLEAN HTML - wipes the `wwwroot`; restores all web interface static `.html`, `.js` and `.css` files to factory default and rebuilts all list pages. The only "safe" files are the contents of the UPLOAD directory; then redirects to File Orphans.
+* Item Orphans - finds any list items in a list that doesn't exist (shouldn't happen, but does sometimes); produces a list of all orphaned items where you can edit and "recover" them to a legitimate list by ID; or click the DELETE link to purge them all. 
 * EXPORT/IMPORT - intermediary backup and restore function - exports/imports every list (and their items) as json
 
