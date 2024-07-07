@@ -2,7 +2,18 @@
 Yet _another_ list making tool? Yes. [Here's why](rationale.md)
 
 ### Screenshots
-<img src="\Documentation\screen1.index.PNG" width="18%"></img> <img src="\Documentation\screen5.list.edit4.PNG" width="18%"></img> <img src="\Documentation\screen5.list.edit3.PNG" width="18%"></img> <img src="\Documentation\screen5.list.edit2.PNG" width="18%"></img> <img src="\Documentation\screen5.list.edit.PNG" width="18%"></img> <img src="\Documentation\screen4.list3.PNG" width="18%"></img> <img src="\Documentation\screen3.list1.PNG" width="18%"></img> <img src="\Documentation\screen2.list2.PNG" width="18%"></img> 
+(hover over for details)<br>
+<img src="\Documentation\screen1.index.PNG" width="18%" title="Main list index showing lists (and how many items are in each)."></img> 
+<img src="\Documentation\screen2.list2.PNG" width="18%" title="Closeup of a list showing some imported Mastodon Bookmarks - if you don't like the style for how these look, customize your CSS!"></img>
+<img src="\Documentation\screen3.list1.PNG" width="18%" title="Each list is a static HTML page with text and tag filter widgets. List items are designed to collapse to fit several on the page at a time, but clicking on the item body expands them."></img>
+<img src="\Documentation\screen4.list3.PNG" width="18%" title="Curating my imported Mastodon bookmarks by moving them to different lists. When you import Mastodon bookmarks you can optionally UN-bookmark them!"></img>
+
+<img src="\Documentation\screen5.list.edit.PNG" width="18%" title="Lets add a new list of hot foot trucks in our area.."></img> 
+<img src="\Documentation\screen5.list.edit3.PNG" width="18%" title="Our newly created list.."></img> 
+<img src="\Documentation\screen5.list.edit2.PNG" width="18%" title=".. and how it appears in the list index"></img>
+<img src="\Documentation\screen5.list.edit4.PNG" width="18%" title="Adding a new list item.."></img> 
+
+<img src="\Documentation\screen5.list.edit5.PNG" width="18%" title=".. and how it appears on our list."></img> 
 
 **BUT** THIS ONE is:
 * designed around sharing and collaboration: with friends, communities or the internet at large
