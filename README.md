@@ -14,6 +14,7 @@ Yet _another_ list making tool? Yes. [Here's why](rationale.md)
 <img src="\Documentation\screen5.list.edit4.PNG" width="18%" title="Adding a new list item.."></img> 
 
 <img src="\Documentation\screen5.list.edit5.PNG" width="18%" title=".. and how it appears on our list."></img> 
+(If you dont like the appearance or layout, customize with your own CSS stylesheet!)
 
 **BUT** THIS ONE is:
 * designed around sharing and collaboration: with friends, communities or the internet at large
