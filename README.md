@@ -1,6 +1,9 @@
 # GeFeSLE - Generic, Federated, Subscribable List Engine
 Yet _another_ list making tool? Yes. [Here's why](rationale.md)
 
+### Screenshots
+<img src="\Documentation\screen1.index.PNG" width="18%"></img> <img src="\Documentation\screen5.list.edit4.PNG" width="18%"></img> <img src="\Documentation\screen5.list.edit3.PNG" width="18%"></img> <img src="\Documentation\screen5.list.edit2.PNG" width="18%"></img> <img src="\Documentation\screen5.list.edit.PNG" width="18%"></img> <img src="\Documentation\screen4.list3.PNG" width="18%"></img> <img src="\Documentation\screen3.list1.PNG" width="18%"></img> <img src="\Documentation\screen2.list2.PNG" width="18%"></img> 
+
 **BUT** THIS ONE is:
 * designed around sharing and collaboration: with friends, communities or the internet at large
 * self-hosted: lightweight and self-contained single binary (except for the .NET runtime environment)
