@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "../../repos/GeFeSLE-server"
+		},
+		{
+			"path": "../../repos/GeFeSLE-plugin-ffox"
+		}
+	],
+	"settings": {
+		"dotnet.preferCSharpExtension": true
+	}
+}
