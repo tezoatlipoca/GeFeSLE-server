@@ -1,10 +1,10 @@
 {
 	"folders": [
 		{
-			"path": "../../repos/GeFeSLE-server"
+			"path": "../GeFeSLE-server"
 		},
 		{
-			"path": "../../repos/GeFeSLE-plugin-ffox"
+			"path": "../GeFeSLE-plugin-ffox"
 		}
 	],
 	"settings": {
