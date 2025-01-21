@@ -16,6 +16,9 @@
 
     <!-- Specify the version suffix (pre-release label) -->
     <VersionSuffix>beta</VersionSuffix>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+     <IncludeAllContentForSelfExtract>false</IncludeAllContentForSelfExtract>
   </PropertyGroup>
 
 
@@ -49,6 +52,13 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="ReverseMarkdown" Version="4.4.0" />
     <PackageReference Include="TootNet" Version="4.2.1" />
+  </ItemGroup>
+
+  <!-- don't trim some of these assemblies, they don't like it (the trimmed bin will barf)-->
+   <ItemGroup>
+    <TrimmerRootAssembly Include="Microsoft.AspNetCore.Identity.UI" />
+    <TrimmerRootAssembly Include="Microsoft.Identity.Web" />
+    <TrimmerRootAssembly Include="Microsoft.AspNetCore.Mvc.Core" />
   </ItemGroup>
 
   <ItemGroup>
