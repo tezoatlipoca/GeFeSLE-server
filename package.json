@@ -1,11 +1,12 @@
 {
   "dependencies": {
+    "braces": "^3.0.3",
     "easymde": "^2.18.0",
     "emoji-data": "^0.2.0",
-    "emoji-js": "^3.8.0"
+    "emoji-js": "^3.8.1"
   },
   "devDependencies": {
-    "eslint": "^9.1.1",
+    "eslint": "^9.20.0",
     "gulp": "^5.0.0"
   }
 }

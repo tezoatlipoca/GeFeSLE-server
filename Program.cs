@@ -52,8 +52,6 @@ else
         bailAfterDBContext = true;
     }
 
-
-
 }
 
 DBg.d(LogLevel.Information, $"GeFeSLE:{GlobalConfig.bldVersion}");
@@ -321,6 +319,7 @@ builder.Services.AddControllers().AddNewtonsoftJson();
 
 builder.Services.AddControllersWithViews();
 
+
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.Configure<KestrelServerOptions>(options =>
@@ -479,10 +478,10 @@ app.Use(async (context, next) =>
         // detect if this is a CORS preflight request and if so, add the headers
         // so its not rejected from the plugins
         var origin = context.Request.Headers["Origin"].FirstOrDefault();
-        if (origin.IsNullOrEmpty())
+        if (string.IsNullOrEmpty(origin))
         {
             origin = context.Request.Headers["Referer"].FirstOrDefault();
-            if (origin.IsNullOrEmpty())
+            if (string.IsNullOrEmpty(origin))
             {
                 origin = "(endpoint direct)";
             }
@@ -630,7 +629,7 @@ app.MapPost("/users", async (GeFeSLEUser user, GeFeSLEDb db,
 {
     string fn = "/users (POST)"; DBg.d(LogLevel.Trace, $"{fn}: {user.UserName} {user.Email}");
     // if username AND email are null, return bad request
-    if (user.UserName.IsNullOrEmpty() && user.Email.IsNullOrEmpty())
+    if (string.IsNullOrEmpty(user.UserName) && string.IsNullOrEmpty(user.Email))
     {
         DBg.d(LogLevel.Trace, $"{fn} username AND email are both null ==> 400");
         return Results.BadRequest();
@@ -638,7 +637,7 @@ app.MapPost("/users", async (GeFeSLEUser user, GeFeSLEDb db,
     else
     {
         // if the username is empty, use the email. This will cover for google and Microsoft accounts. 
-        if (user.UserName.IsNullOrEmpty())
+        if (string.IsNullOrEmpty(user.UserName))
         {
             user.UserName = user.Email;
         }
@@ -867,7 +866,7 @@ app.MapDelete("/users/{userid}/password", async (string userid,
         DBg.d(LogLevel.Trace, msg);
         return Results.NotFound();
     }
-    else if (passwordChangeDto.NewPassword.IsNullOrEmpty())
+    else if (string.IsNullOrEmpty(passwordChangeDto.NewPassword))
     {
         msg = $"{fn} new password is null";
         DBg.d(LogLevel.Trace, msg);
@@ -925,13 +924,13 @@ app.MapPost("/users/{userid}/password", async (string userid,
         DBg.d(LogLevel.Trace, msg);
         return Results.NotFound();
     }
-    else if (passwordChangeDto.NewPassword.IsNullOrEmpty())
+    else if (string.IsNullOrEmpty(passwordChangeDto.NewPassword))
     {
         msg = $"{fn} new password is null";
         DBg.d(LogLevel.Trace, msg);
         return Results.BadRequest(msg);
     }
-    else if (passwordChangeDto.ResetToken.IsNullOrEmpty())
+    else if (string.IsNullOrEmpty(passwordChangeDto.ResetToken))
     {
         msg = $"{fn} reset token is null";
         DBg.d(LogLevel.Trace, msg);
@@ -1203,7 +1202,7 @@ app.MapPost("/lists", async (GeList newlist,
     var fn = "/lists (POST)"; DBg.d(LogLevel.Trace, fn);
 
     // if the newlist.Name is null, return bad request
-    if (newlist.Name.IsNullOrEmpty())
+    if (string.IsNullOrEmpty(newlist.Name))
     {
         return Results.BadRequest("Cannot have a list with no name. A Horse maybe... but not a list.");
     }
@@ -1596,7 +1595,7 @@ app.MapGet("/lists/regen", async (GeFeSLEDb db,
 {
     DBg.d(LogLevel.Trace, "regenerate");
     var referer = httpContext.Request.Headers["Referer"].ToString();
-    if (referer.IsNullOrEmpty()) referer = "/index.html";
+    if (string.IsNullOrEmpty(referer)) referer = "/index.html";
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // add check for if listowner is owner of THIS list
 
@@ -1624,7 +1623,7 @@ app.MapGet("/lists/{listid}/regen", async (int listid,
 {
     DBg.d(LogLevel.Trace, $"regenerate/{listid}");
     var referer = httpContext.Request.Headers["Referer"].ToString();
-    if (referer.IsNullOrEmpty()) referer = "/index.html";
+    if (string.IsNullOrEmpty(referer)) referer = "/index.html";
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // add check for if contributor is contributor of THIS list
     // add check for if listowner is owner of THIS list
@@ -1754,7 +1753,7 @@ app.MapPost("/me", async (HttpContext context,
     }
     DBg.d(LogLevel.Trace, $"POST form data: {System.Text.Json.JsonSerializer.Serialize(login)}");
 
-    if (login.OAuthProvider.IsNullOrEmpty())
+    if (string.IsNullOrEmpty(login.OAuthProvider))
     {
         // check the request headers to see if this is coming from the javascript API
         bool isJSApi = false;
@@ -1769,7 +1768,7 @@ app.MapPost("/me", async (HttpContext context,
         bool success = false;
         string? realizedRole = null;
         // not OAuth, so must be a local login. MUST have login+pwd
-        if (login.Username.IsNullOrEmpty() || login.Password.IsNullOrEmpty())
+        if (string.IsNullOrEmpty(login.Username) || string.IsNullOrEmpty(login.Password))
         {
             msg = $"Username or password is null.";
             DBg.d(LogLevel.Trace, msg);
@@ -1926,7 +1925,7 @@ app.MapGet("/mastocallback", async (string code,
     {
         return Results.BadRequest("BAD/MISSING Mastodon parameters in session cookie - dunno, did you forget to _login.html -> /mastoconnect -> /mastologin?");
     }
-    if (GlobalConfig.mastoScopes.IsNullOrEmpty())
+    if (string.IsNullOrEmpty(GlobalConfig.mastoScopes))
     {
         return Results.BadRequest("BAD/MISSING Mastodon scopes in config"); // should never be null due to default value
     }
@@ -2231,7 +2230,7 @@ app.MapPost("/setlistuser", async ([FromBody] JsonElement data,
 
     // if we don't get valid strings named as above, the exception will be caught. 
     // however they can still be null i.e. { "listname":null }
-    if (listid.IsNullOrEmpty() || username.IsNullOrEmpty() || role.IsNullOrEmpty())
+    if (string.IsNullOrEmpty(listid) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(role))
     {
         return Results.BadRequest("listid, username and role must be specified");
     }
@@ -2251,7 +2250,7 @@ app.MapPost("/setlistuser", async ([FromBody] JsonElement data,
         {
             // find the user who is calling this endpoint. 
             string? callerUserName = httpContext.User.Identity?.Name;
-            if (callerUserName.IsNullOrEmpty()) return Results.BadRequest("Caller is not logged in");
+            if (string.IsNullOrEmpty(callerUserName)) return Results.BadRequest("Caller is not logged in");
             // not sure how we get here with .Authentication working, but whatever
             else
             {
@@ -2370,7 +2369,7 @@ app.MapPost("/deletelistuser", async ([FromBody] JsonElement data,
 
     // if we don't get valid strings named as above, the exception will be caught. 
     // however they can still be null i.e. { "listname":null }
-    if (listid.IsNullOrEmpty() || username.IsNullOrEmpty() || role.IsNullOrEmpty())
+    if (string.IsNullOrEmpty(listid) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(role))
     {
         return Results.BadRequest("listid, username and role must be specified");
     }
@@ -2393,7 +2392,7 @@ app.MapPost("/deletelistuser", async ([FromBody] JsonElement data,
         {
             // find the user who is calling this endpoint. 
             string? callerUserName = httpContext.User.Identity?.Name;
-            if (callerUserName.IsNullOrEmpty()) return Results.BadRequest("Caller is not logged in");
+            if (string.IsNullOrEmpty(callerUserName)) return Results.BadRequest("Caller is not logged in");
             // not sure how we get here with .Authentication working, but whatever
             else
             {

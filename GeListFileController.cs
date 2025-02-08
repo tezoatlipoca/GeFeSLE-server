@@ -204,7 +204,7 @@ namespace GeFeSLE.Controllers
         public bool VerifyPackagedResourceFile(string filename, out string? ynot)
         {
             string fn = "VerifyPackagedResourceFile"; DBg.d(LogLevel.Trace, fn);
-            if (filename.IsNullOrEmpty()) { ynot = "filename is null or empty"; return false; }
+            if (string.IsNullOrEmpty(filename)) { ynot = "filename is null or empty"; return false; }
 
             if (!IsItAProtectedFile(filename)) { ynot = "file is not protected"; return true; }
 
@@ -386,6 +386,12 @@ namespace GeFeSLE.Controllers
 
             // get the absolute path of the uploads folder
             string uploadFolderAbsPath = Path.Combine(GlobalConfig.wwwroot, GlobalStatic.uploadsFolder);
+            // if the uploads folder doesn't exist, create it
+            if (!Directory.Exists(uploadFolderAbsPath))
+            {
+                DBg.d(LogLevel.Warning, $"Uploads folder doesn't exist. Creating it.");
+                Directory.CreateDirectory(uploadFolderAbsPath);
+            }
             DBg.d(LogLevel.Trace, $"Looking for files in uploads fldr: {uploadFolderAbsPath}");
             string[] files = Directory.GetFiles(uploadFolderAbsPath, "*.*", SearchOption.AllDirectories);
             foreach (string file in files)

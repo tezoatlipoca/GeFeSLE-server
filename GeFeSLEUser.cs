@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace GeFeSLE
 {
@@ -8,6 +9,8 @@ namespace GeFeSLE
         public DateTime LastAccessTime { get; set; }
         public List<JwtToken> JwtTokens { get; set; } = new List<JwtToken>();
     }
+
+   
 
 public enum GTokenSource
 {

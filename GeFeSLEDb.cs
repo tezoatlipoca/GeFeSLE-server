@@ -28,6 +28,8 @@ protected override void OnModelCreating(ModelBuilder builder)
 {
     base.OnModelCreating(builder); // This needs to be called for Identity to work properly.
 
+    builder.Entity<JwtToken>()
+        .HasKey(j => j.Id);
 
     builder.Entity<GeList>()    // each list has zero or more listowners
         .HasMany(g => g.ListOwners)
