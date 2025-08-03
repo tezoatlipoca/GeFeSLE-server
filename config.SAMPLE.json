@@ -10,7 +10,8 @@
     "ServerSettings": {
         "Bind": "*",
         "Port": 7036,
-        "Hostname": "http://localhost:7036"
+        "Hostname": "http://localhost:7036",
+        "wwwroot": "/must/be/absolute/path/to/wwwroot"
     },
     "SiteCustomize": {
         "sitetitle": "** < default site title > **",

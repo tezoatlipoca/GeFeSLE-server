@@ -35,7 +35,7 @@ jobs:
         shell: pwsh
         run: |
           cd bin/Release/net8.0/win-x64/publish
-          7z a -tzip GeFeSLE-Server_${env:VERSION}_win-x64.zip GeFeSLE.exe *.dll wwwroot/ appsettings.json config.SAMPLE.json
+          7z a -tzip GeFeSLE-Server_${env:VERSION}_win-x64.zip GeFeSLE.exe *.dll appsettings.json config.SAMPLE.json
           cd -
           mv bin/Release/net8.0/win-x64/publish/GeFeSLE-Server_${env:VERSION}_win-x64.zip .
           echo "path=$(pwd)/GeFeSLE-Server_${env:VERSION}_win-x64.zip" >> $GITHUB_OUTPUT

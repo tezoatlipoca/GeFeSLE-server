@@ -39,7 +39,6 @@ Section "Install"
   ; Add files - copy all files from publish folder
   File "..\bin\Release\net8.0\win-x64\publish\GeFeSLE.exe"
   File "..\bin\Release\net8.0\win-x64\publish\*.dll"
-  File /r "..\bin\Release\net8.0\win-x64\publish\wwwroot"
   File "..\bin\Release\net8.0\win-x64\publish\appsettings.json"
   File "..\bin\Release\net8.0\win-x64\publish\config.SAMPLE.json"
   
@@ -111,7 +110,6 @@ Section "Uninstall"
   Delete "$INSTDIR\install-service.ps1"
   Delete "$INSTDIR\uninstall-service.ps1"
   Delete "$INSTDIR\path.ps1"
-  RMDir /r "$INSTDIR\wwwroot"
   Delete "$INSTDIR\uninstall.exe"
   
   ; Remove shortcuts

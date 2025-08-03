@@ -242,15 +242,32 @@ function make1stcelllinks() {
         var urlPattern = /^\s*(http|https):\/\/[^ "]+\s*$/;
     
         if (urlPattern.test(text)) {
+            // Store existing non-text elements (like bookmark icons) before processing
+            var preservedElements = [];
+            for (var i = 0; i < div.childNodes.length; i++) {
+                var node = div.childNodes[i];
+                // Preserve elements that are not text nodes or are img/button elements
+                if (node.nodeType !== Node.TEXT_NODE) {
+                    preservedElements.push(node.cloneNode(true));
+                }
+            }
+            
             var a = document.createElement('a');
-            a.href = text;
-            a.textContent = text;
+            a.href = text.trim();
+            a.textContent = text.trim();
     
+            // Clear the div content
             while (div.firstChild) {
                 div.removeChild(div.firstChild);
             }
     
+            // Add the link first
             div.appendChild(a);
+            
+            // Re-append preserved elements (like bookmark icons)
+            preservedElements.forEach(function(element) {
+                div.appendChild(element);
+            });
         }
     });
 }

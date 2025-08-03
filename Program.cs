@@ -18,6 +18,7 @@ using GeFeSLE;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.FileProviders;
 
 using GeFeSLE.Controllers;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -184,7 +185,7 @@ builder.Services.AddAuthentication(options =>
         {
             var sb = new StringBuilder();
             string requestedUrl = context.Request.Path + context.Request.QueryString;
-            string msg = $"401 - You need to <a href=\"_login.html\">LOGIN</a> to access {requestedUrl}";
+            string msg = $"401 - You need to <a href=\"/_login.html\">LOGIN</a> to access {requestedUrl}";
             await GlobalStatic.GenerateUnAuthPage(sb, msg);
             DBg.d(LogLevel.Trace, $"{fn} - OnRedirectToLogin [web] {msg}");
             var result = Results.Content(sb.ToString(), "text/html");
@@ -612,8 +613,11 @@ app.Use(async (context, next) =>
 
 
 //app.UseHttpsRedirection();
-app.UseStaticFiles();
-
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(GlobalConfig.wwwroot!),
+    RequestPath = ""
+});
 
 app.UseCors(builder =>
         {
@@ -624,6 +628,80 @@ app.UseCors(builder =>
 
 
         });
+
+// Add a catch-all route for unmatched URLs (must be after all other routes)
+app.MapFallback("/lists/{*rest}", async (string rest, HttpContext context) =>
+{
+    DBg.d(LogLevel.Information, $"Unmatched lists route: /lists/{rest}");
+    
+    var sb = new StringBuilder();
+    string msg = $"404 - The path '/lists/{rest}' was not found. <br/>If you're looking for a specific list, try <a href=\"/index.html\">the main index</a>.";
+    await GlobalStatic.GenerateUnAuthPage(sb, msg);
+    
+    context.Response.StatusCode = 404;
+    return Results.Content(sb.ToString(), "text/html");
+});
+
+// Add fallback routes for item-related endpoints with invalid IDs
+app.MapFallback("/items/{*rest}", async (string rest, HttpContext context) =>
+{
+    DBg.d(LogLevel.Information, $"Unmatched items route: /items/{rest}");
+    
+    var sb = new StringBuilder();
+    string msg = $"404 - The path '/items/{rest}' was not found. <br/>Item IDs must be valid integers.";
+    await GlobalStatic.GenerateUnAuthPage(sb, msg);
+    
+    context.Response.StatusCode = 404;
+    return Results.Content(sb.ToString(), "text/html");
+});
+
+app.MapFallback("/showitems/{*rest}", async (string rest, HttpContext context) =>
+{
+    DBg.d(LogLevel.Information, $"Unmatched showitems route: /showitems/{rest}");
+    
+    var sb = new StringBuilder();
+    string msg = $"404 - The path '/showitems/{rest}' was not found. <br/>List and item IDs must be valid integers.";
+    await GlobalStatic.GenerateUnAuthPage(sb, msg);
+    
+    context.Response.StatusCode = 404;
+    return Results.Content(sb.ToString(), "text/html");
+});
+
+app.MapFallback("/additem/{*rest}", async (string rest, HttpContext context) =>
+{
+    DBg.d(LogLevel.Information, $"Unmatched additem route: /additem/{rest}");
+    
+    var sb = new StringBuilder();
+    string msg = $"404 - The path '/additem/{rest}' was not found. <br/>List ID must be a valid integer.";
+    await GlobalStatic.GenerateUnAuthPage(sb, msg);
+    
+    context.Response.StatusCode = 404;
+    return Results.Content(sb.ToString(), "text/html");
+});
+
+app.MapFallback("/deleteitem/{*rest}", async (string rest, HttpContext context) =>
+{
+    DBg.d(LogLevel.Information, $"Unmatched deleteitem route: /deleteitem/{rest}");
+    
+    var sb = new StringBuilder();
+    string msg = $"404 - The path '/deleteitem/{rest}' was not found. <br/>List and item IDs must be valid integers.";
+    await GlobalStatic.GenerateUnAuthPage(sb, msg);
+    
+    context.Response.StatusCode = 404;
+    return Results.Content(sb.ToString(), "text/html");
+});
+
+app.MapFallback("/getlistuser/{*rest}", async (string rest, HttpContext context) =>
+{
+    DBg.d(LogLevel.Information, $"Unmatched getlistuser route: /getlistuser/{rest}");
+    
+    var sb = new StringBuilder();
+    string msg = $"404 - The path '/getlistuser/{rest}' was not found. <br/>List ID must be a valid integer.";
+    await GlobalStatic.GenerateUnAuthPage(sb, msg);
+    
+    context.Response.StatusCode = 404;
+    return Results.Content(sb.ToString(), "text/html");
+});
 
 
 
@@ -727,7 +805,6 @@ app.MapPut("/users/{userid}", async (GeFeSLEUser user,
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
     Roles = "SuperUser,listowner"
 });
-
 
 // deleteuser endpoint
 app.MapDelete("/users/{userid}", async (string userid,
@@ -1164,7 +1241,7 @@ app.MapGet("/lists", async (GeFeSLEDb db,
     }
 });
 
-app.MapGet("/lists/{listid}", async (GeFeSLEDb db,
+app.MapGet("/lists/{listid:int}", async (GeFeSLEDb db,
     int listid,
     HttpContext httpContext) =>
 {
@@ -1266,7 +1343,7 @@ app.MapPut("/lists", async (HttpContext context,
     });
 
 
-app.MapGet("/showitems/{listId}", async (int listId,
+app.MapGet("/showitems/{listId:int}", async (int listId,
         GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext) =>
@@ -1277,7 +1354,7 @@ app.MapGet("/showitems/{listId}", async (int listId,
     return Results.Ok(items);
 });
 
-app.MapGet("/showitems/{listid}/{id}", async (int listId,
+app.MapGet("/showitems/{listid:int}/{id:int}", async (int listId,
         int id,
         GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
@@ -1296,7 +1373,7 @@ app.MapGet("/showitems/{listid}/{id}", async (int listId,
     }
 });
 
-app.MapPost("/additem/{listid}", async (int listid,
+app.MapPost("/additem/{listid:int}", async (int listid,
     GeListItem newitem,
     GeFeSLEDb db,
     UserManager<GeFeSLEUser> userManager,
@@ -1406,7 +1483,7 @@ app.MapPut("/modifyitem", async (GeListItem inputItem,
 
 
 // add an endpoint that DELETEs an item from a list
-app.MapDelete("/deleteitem/{listid}/{id}", async (int listid,
+app.MapDelete("/deleteitem/{listid:int}/{id:int}", async (int listid,
         int id,
         GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
@@ -1430,8 +1507,6 @@ app.MapDelete("/deleteitem/{listid}/{id}", async (int listid,
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
     Roles = "SuperUser,listowner"
 });
-
-
 
 // moves an item between two lists
 // yes, we could also use the /deleteitem and /additem endpoints but is less of a hit
@@ -1497,7 +1572,7 @@ app.MapPost("/removetag", async (
 {
     var fn = "/removetag"; DBg.d(LogLevel.Trace, fn);
 
-    // stringify the data and log it
+    // stringify the data
     string dumpData = System.Text.Json.JsonSerializer.Serialize(data);
     DBg.d(LogLevel.Trace, $"{fn} -- dump data {dumpData}");
 
@@ -1537,7 +1612,7 @@ app.MapPost("/addtag", async (
 {
     var fn = "/addtag"; DBg.d(LogLevel.Trace, fn);
 
-    // stringify the data and log it
+    // stringify the data
     string dumpData = System.Text.Json.JsonSerializer.Serialize(data);
     DBg.d(LogLevel.Trace, $"{fn} -- dump data {dumpData}");
 
@@ -1581,7 +1656,7 @@ app.MapPost("/addtag", async (
 
 
 // add an endpoint that DELETEs a list
-app.MapDelete("/lists/{id}", async (int id,
+app.MapDelete("/lists/{id:int}", async (int id,
         GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext,
@@ -1593,7 +1668,6 @@ app.MapDelete("/lists/{id}", async (int id,
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
     Roles = "SuperUser, listowner"
 });
-
 
 // add and endpoint that regenerates the html page for all lists
 app.MapGet("/lists/regen", async (GeFeSLEDb db,
@@ -1620,7 +1694,6 @@ app.MapGet("/lists/regen", async (GeFeSLEDb db,
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
     Roles = "SuperUser,listowner"
 });
-
 
 // add an endpoint that regenerates the html page for a list
 app.MapGet("/lists/{listid}/regen", async (int listid,
@@ -1979,7 +2052,7 @@ app.MapGet("/mastocallback", async (string code,
         if (response.StatusCode != System.Net.HttpStatusCode.OK)
         {
             var error = await response.Content.ReadAsStringAsync();
-            return Results.BadRequest($"Mastodon instance {appToken.instance} returned 422: {error} - requested {credentialsUrl}");
+            return Results.BadRequest($"Mastodon instance {appToken.instance} returned  422: {error} - requested {credentialsUrl}");
         }
         else
         {
@@ -2032,7 +2105,7 @@ app.MapGet("/mastocallback", async (string code,
 });
 
 
-app.MapPost("/lists/{listid}", async Task<IResult> (HttpContext httpContext) =>
+app.MapPost("/lists/{listid:int}", async Task<IResult> (HttpContext httpContext) =>
 {
     int listid = int.Parse(httpContext.Request.RouteValues["listid"].ToString());
     GeListImportDto importListDto = await httpContext.Request.ReadFromJsonAsync<GeListImportDto>();
@@ -2115,7 +2188,7 @@ app.MapGet("/me", (HttpContext httpContext) =>
 .RequireAuthorization(new AuthorizeAttribute
 { AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme });
 
-app.MapGet("/getlistuser/{listid}", async (int listid,
+app.MapGet("/getlistuser/{listid:int}", async (int listid,
         GeFeSLEDb db,
 
         HttpContext httpContext,
@@ -2522,7 +2595,6 @@ app.MapGet("/session", async (HttpContext httpContext) =>
 { AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme });
 
 
-// 
 app.MapGet("/me/delete", (HttpContext httpContext) =>
 {
     string fn = "/me"; DBg.d(LogLevel.Trace, fn);
@@ -2722,7 +2794,7 @@ app.MapGet("/items/orphan", async (GeFeSLEDb db, bool delete = false) =>
 });
 
 
-app.MapPost("/items/{itemid}/report", async (int itemid,
+app.MapPost("/items/{itemid:int}/report", async (int itemid,
     GeFeSLEDb db,
     UserManager<GeFeSLEUser> userManager,
     RoleManager<IdentityRole> roleManager,
@@ -2798,7 +2870,7 @@ app.MapPost("/items/{itemid}/report", async (int itemid,
 
 }).AllowAnonymous();
 
-app.MapPost("/lists/{listid}/suggest", async (int listid,
+app.MapPost("/lists/{listid:int}/suggest", async (int listid,
     GeListItem newitem,
     GeFeSLEDb db,
     UserManager<GeFeSLEUser> userManager,

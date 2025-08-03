@@ -159,7 +159,7 @@ public static class GlobalStatic
             sb.AppendLine("</div>");
         }
         sb.AppendLine($"<div class=\"admin\">");
-        sb.AppendLine($"<div class=\"button loginlink admin\" style=\"display: none;\" onclick=\"window.location.href='_login.html'\">login</div>");
+        sb.AppendLine($"<div class=\"button loginlink admin\" style=\"display: none;\" onclick=\"window.location.href='/_login.html'\">login</div>");
         sb.AppendLine($"<div class=\"button pwdchangelink admin\" style=\"display: none;\" onclick=\"window.location.href='_password.change.html'\">change password</div>");
         sb.AppendLine($"<div class=\"button edituserslink admin\" style=\"display: none;\" onclick=\"window.location.href='/_edituser.html'\">edit users</div>");
         sb.AppendLine("</div>");

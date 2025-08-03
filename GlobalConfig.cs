@@ -82,11 +82,45 @@ public static class GlobalConfig
 
 
         wwwroot = config.GetValue<string>("ServerSettings:wwwroot");
-        if (wwwroot == null) wwwroot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+        if (wwwroot == null) 
+        {
+            DBg.d(LogLevel.Critical, "No wwwroot directory specified in config file. This is required for packaged deployments. Exiting.");
+            return null;
+        }
+        
+        // Ensure wwwroot is an absolute path
+        if (!Path.IsPathRooted(wwwroot))
+        {
+            DBg.d(LogLevel.Critical, $"wwwroot path '{wwwroot}' must be an absolute path. Exiting.");
+            return null;
+        }
+        
+        // Get the directory where the application binary is located
+        string appDirectory = AppContext.BaseDirectory;
+        
+        string normalizedWwwroot = Path.GetFullPath(wwwroot);
+        string normalizedAppDir = Path.GetFullPath(appDirectory);
+        
+        // Check if wwwroot is the same as or beneath the application directory
+        if (normalizedWwwroot.StartsWith(normalizedAppDir, StringComparison.OrdinalIgnoreCase))
+        {
+            DBg.d(LogLevel.Critical, $"wwwroot path '{wwwroot}' cannot be within or beneath the application directory '{appDirectory}'. Please specify a separate location. Exiting.");
+            return null;
+        }
+        
         // if wwwroot doesn't exist, create it
         if (!Directory.Exists(wwwroot))
         {
-            Directory.CreateDirectory(wwwroot);
+            try
+            {
+                Directory.CreateDirectory(wwwroot);
+                DBg.d(LogLevel.Information, $"Created wwwroot directory: {wwwroot}");
+            }
+            catch (Exception ex)
+            {
+                DBg.d(LogLevel.Critical, $"Failed to create wwwroot directory '{wwwroot}': {ex.Message}. Exiting.");
+                return null;
+            }
         }
 
         modListName = config.GetValue<string>("ServerSettings:modListName");
@@ -98,16 +132,63 @@ public static class GlobalConfig
         DBg.d(LogLevel.Debug, $"wwwroot: {wwwroot}");
 
         // get filenames for static html head, body header and body footer from the config file
-        // also note these are ASSUMED to be found IN wwwroot (a logical place to put them)
+        // these can be absolute paths, relative paths (from wwwroot), or simple filenames (assumed to be in wwwroot)
+        // TODO: we currently read in and inject these files everytime during page-generation
+        //       Consider reading these in at startup and storing them in static variables - downside is
+        //       you can't change them without restarting the server.
         htmlHead = config.GetValue<string>("SiteCustomize:sitehead");
         if (htmlHead == null) htmlHead = "sitehead.html";
-        htmlHead = Path.Combine(wwwroot, htmlHead);
+        if (Path.IsPathRooted(htmlHead))
+        {
+            // Absolute path - use as-is
+            // htmlHead remains unchanged
+        }
+        else if (htmlHead.Contains(Path.DirectorySeparatorChar) || htmlHead.Contains(Path.AltDirectorySeparatorChar))
+        {
+            // Relative path - combine with wwwroot
+            htmlHead = Path.Combine(wwwroot, htmlHead);
+        }
+        else
+        {
+            // Simple filename - assume it's in wwwroot
+            htmlHead = Path.Combine(wwwroot, htmlHead);
+        }
+        
         bodyHeader = config.GetValue<string>("SiteCustomize:bodyheader");
         if (bodyHeader == null) bodyHeader = "bodyheader.html";
-        bodyHeader = Path.Combine(wwwroot, bodyHeader);
+        if (Path.IsPathRooted(bodyHeader))
+        {
+            // Absolute path - use as-is
+            // bodyHeader remains unchanged
+        }
+        else if (bodyHeader.Contains(Path.DirectorySeparatorChar) || bodyHeader.Contains(Path.AltDirectorySeparatorChar))
+        {
+            // Relative path - combine with wwwroot
+            bodyHeader = Path.Combine(wwwroot, bodyHeader);
+        }
+        else
+        {
+            // Simple filename - assume it's in wwwroot
+            bodyHeader = Path.Combine(wwwroot, bodyHeader);
+        }
+        
         bodyFooter = config.GetValue<string>("SiteCustomize:bodyfooter");
         if (bodyFooter == null) bodyFooter = "bodyfooter.html";
-        bodyFooter = Path.Combine(wwwroot, bodyFooter);
+        if (Path.IsPathRooted(bodyFooter))
+        {
+            // Absolute path - use as-is
+            // bodyFooter remains unchanged
+        }
+        else if (bodyFooter.Contains(Path.DirectorySeparatorChar) || bodyFooter.Contains(Path.AltDirectorySeparatorChar))
+        {
+            // Relative path - combine with wwwroot
+            bodyFooter = Path.Combine(wwwroot, bodyFooter);
+        }
+        else
+        {
+            // Simple filename - assume it's in wwwroot
+            bodyFooter = Path.Combine(wwwroot, bodyFooter);
+        }
 
         // if the files exist, we can only assume they contain valid HTML for injection into our output pages. 
         // if the files do NOT exist, set these (which are really the filenames) to null
