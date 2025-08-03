@@ -1,0 +1,5 @@
+root = true
+
+
+[*.{cs,csx}]
+dotnet_diagnostic.CS8981.severity = none

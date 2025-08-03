@@ -6,3 +6,5 @@ node_modules/
 *.db
 wwwroot/uploads
 wwwRootBACKUP
+wwwroot
+config.json
