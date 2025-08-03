@@ -131,7 +131,33 @@ public static class GlobalConfig
         // lastly get the AssemblyInformationalVersion attribute from the assembly and store it in a static variable
         var bldVersionAttribute = Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>();
         // convert it to a string and store it in a static variable
-        bldVersion = bldVersionAttribute?.InformationalVersion;
+        if (bldVersionAttribute?.InformationalVersion != null)
+        {
+            string fullVersion = bldVersionAttribute.InformationalVersion;
+
+            // Check if the version contains a '+' which separates version from git hash
+            int plusIndex = fullVersion.IndexOf('+');
+            if (plusIndex >= 0 && plusIndex < fullVersion.Length - 1)
+            {
+                // Extract the base version and git hash
+                string baseVersion = fullVersion.Substring(0, plusIndex);
+                string gitHash = fullVersion.Substring(plusIndex + 1);
+
+                // Truncate git hash to 7 characters if it's longer
+                if (gitHash.Length > 7)
+                {
+                    gitHash = gitHash.Substring(0, 7);
+                }
+
+                // Combine the base version with the truncated git hash
+                bldVersion = $"{baseVersion}+{gitHash}";
+            }
+            else
+            {
+                // If there's no git hash or the format is different, use the full version
+                bldVersion = fullVersion;
+            }
+        }
         
         // get the Debugging setting from config file
         // it has to be explicitly set to false to turn off debugging (default is true)

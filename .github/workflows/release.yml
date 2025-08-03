@@ -1,0 +1,204 @@
+name: GeFeSLE Server Release Build
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    outputs:
+      winzip: ${{ steps.winzip.outputs.path }}
+      nsis: ${{ steps.nsis.outputs.path }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Set version variable
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Build
+        run: |
+          dotnet publish -c Release -r win-x64 --self-contained true
+
+      - name: Archive Windows Binary
+        id: winzip
+        shell: pwsh
+        run: |
+          cd bin/Release/net8.0/win-x64/publish
+          7z a -tzip GeFeSLE-Server_${env:VERSION}_win-x64.zip GeFeSLE.exe *.dll wwwroot/ appsettings.json config.SAMPLE.json
+          cd -
+          mv bin/Release/net8.0/win-x64/publish/GeFeSLE-Server_${env:VERSION}_win-x64.zip .
+          echo "path=$(pwd)/GeFeSLE-Server_${env:VERSION}_win-x64.zip" >> $GITHUB_OUTPUT
+
+      - name: Copy files to win.installer
+        shell: pwsh
+        run: |
+          cp bin/Release/net8.0/win-x64/publish/GeFeSLE.exe win.installer/
+          cp bin/Release/net8.0/win-x64/publish/*.dll win.installer/
+          # PowerShell scripts are already in win.installer directory
+
+      - name: Install NSIS
+        run: choco install nsis -y
+
+      - name: Ensure win.installer directory exists
+        run: mkdir -Force win.installer
+        shell: pwsh
+
+      - name: Cleanup previous installer if exists
+        run: Remove-Item win.installer\GeFeSLE-Server_${env:VERSION}_win-x64.setup.exe -ErrorAction SilentlyContinue
+        shell: pwsh
+
+      - name: Build NSIS Installer
+        run: |
+          $outfile = "OutFile `"GeFeSLE-Server_$env:VERSION`_win-x64.setup.exe`""
+          (Get-Content win.installer/install.nsi) -replace 'OutFile ".*"', $outfile | Set-Content win.installer/install.nsi
+          Push-Location win.installer
+          & "C:\Program Files (x86)\NSIS\makensis.exe" "install.nsi"
+          Pop-Location
+        shell: pwsh
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            GeFeSLE-Server_${{ env.VERSION }}_win-x64.zip
+            win.installer/GeFeSLE-Server_${{ env.VERSION }}_win-x64.setup.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    outputs:
+      linuxtar: ${{ steps.linuxtar.outputs.path }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Set version variable
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Build
+        run: |
+          dotnet publish -c Release -r linux-x64 --self-contained true -p:IncludeAllContentForSelfExtract=true
+
+      - name: Archive Linux Binary
+        id: linuxtar
+        run: |
+          tar czf GeFeSLE-Server_${VERSION}_linux_x64.tar.gz bin/Release/net8.0/linux-x64/publish/GeFeSLE
+          echo "path=$(pwd)/GeFeSLE-Server_${VERSION}_linux_x64.tar.gz" >> $GITHUB_OUTPUT
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifact
+          path: GeFeSLE-Server_${{ env.VERSION }}_linux_x64.tar.gz
+
+  create-deb:
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set version variable
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+        shell: bash
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Install dotnet-deb
+        run: dotnet tool install -g dotnet-deb
+      - name: Install Packaging.Targets
+        run: dotnet deb install
+      - name: Restore dependencies with runtime identifier
+        run: dotnet restore -r linux-x64
+      - name: Build Release
+        run: dotnet publish -c Release -r linux-x64 --self-contained true -p:IncludeAllContentForSelfExtract=true
+      - name: Create DEB Package
+        run: dotnet-deb -c Release -r linux-x64
+      - name: Rename DEB Package
+        run: |
+          debfile=$(ls bin/Release/net8.0/linux-x64/*.deb | head -n 1)
+          mv "$debfile" "GeFeSLE-Server_${VERSION}_linux_x64.deb"
+      - name: Upload DEB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-artifact
+          path: GeFeSLE-Server_${{ env.VERSION }}_linux_x64.deb
+
+  create-rpm:
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set version variable
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+        shell: bash
+      - name: Install fpm
+        run: sudo gem install --no-document fpm
+      - name: Build with dotnet
+        run: dotnet publish -c Release -r linux-x64 --self-contained true -p:IncludeAllContentForSelfExtract=true
+      - name: Copy executable for RPM
+        run: |
+          mkdir -p rpm-root/usr/local/bin
+          cp -r bin/Release/net8.0/linux-x64/publish/* rpm-root/usr/local/bin/
+      - name: Create RPM Package
+        run: |
+          fpm -s dir -t rpm -n GeFeSLE-Server -v ${VERSION} -C rpm-root .
+      - name: Rename RPM Package
+        run: |
+          rpmfile=$(ls *.rpm | head -n 1)
+          mv "$rpmfile" "GeFeSLE-Server_${VERSION}_linux_x64.rpm"
+      - name: Upload RPM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-artifact
+          path: GeFeSLE-Server_${{ env.VERSION }}_linux_x64.rpm
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-linux, create-deb, create-rpm]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-artifacts
+          path: ./
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-artifact
+          path: ./
+      - uses: actions/download-artifact@v4
+        with:
+          name: deb-artifact
+          path: ./
+      - uses: actions/download-artifact@v4
+        with:
+          name: rpm-artifact
+          path: ./
+
+      - name: Set version variable
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Upload All Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            **/GeFeSLE-Server_${{ env.VERSION }}_win-x64.zip
+            **/GeFeSLE-Server_${{ env.VERSION }}_win-x64.setup.exe
+            **/GeFeSLE-Server_${{ env.VERSION }}_linux_x64.tar.gz
+            **/GeFeSLE-Server_${{ env.VERSION }}_linux_x64.deb
+            **/GeFeSLE-Server_${{ env.VERSION }}_linux_x64.rpm
+

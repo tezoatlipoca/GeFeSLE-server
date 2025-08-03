@@ -35,6 +35,10 @@ string? configFile = GlobalConfig.CommandLineParse(args);
 string? dbName = null;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure for Windows Service if running as service
+builder.Host.UseWindowsService();
+
 if (string.IsNullOrEmpty(configFile))
 {
     DBg.d(LogLevel.Critical, "No configuration specified or file not found. Exiting.");
@@ -331,6 +335,9 @@ builder.Services.Configure<KestrelServerOptions>(options =>
 // lastly register our own controller services so they play nicely with the DI system
 builder.Services.AddScoped<GeListController>();
 builder.Services.AddScoped<GeListFileController>();
+
+// Add Windows Service support
+builder.Services.AddWindowsService();
 
 var app = builder.Build();
 // this configures the middleware to respect the X-Forwarded-For and X-Forwarded-Proto headers
