@@ -167,12 +167,12 @@ namespace GeFeSLE.Controllers
             modlist.SetVisibility(inputList.Visibility);
             _ = ProtectAttachments(modlist);
             await _db.SaveChangesAsync();
-            await modlist.GenerateHTMLListPage(_db);
-            await modlist.GenerateRSSFeed(_db);
-            await modlist.GenerateJSON(_db);
+            await modlist.RegenerateAllFiles(_db);
             if (namechange)
             {
-                _ = GlobalStatic.GenerateHTMLListIndex(_db);
+                // If there was a name change, we already regenerated the index in RegenerateAllFiles
+                // but if the name didn't change, we still need to regenerate for other potential changes
+                // Actually, RegenerateAllFiles always regenerates the index, so we can remove this
             }
             return Ok();
         }
@@ -266,9 +266,7 @@ namespace GeFeSLE.Controllers
             await _db.SaveChangesAsync();
 
             // regenerate all the list artifacts
-            _ = destList.GenerateHTMLListPage(_db);
-            _ = destList.GenerateRSSFeed(_db);
-            _ = destList.GenerateJSON(_db);
+            _ = destList.RegenerateAllFiles(_db);
 
             //return Results.Redirect($"/{destList.Name}.html");
             return Results.Ok($"Imported {imported} tasks from Microsoft Sticky Notes into {destList.Name}");
@@ -350,9 +348,7 @@ namespace GeFeSLE.Controllers
             await _db.SaveChangesAsync();
 
             // regenerate all the list artifacts
-            _ = destList.GenerateHTMLListPage(_db);
-            _ = destList.GenerateRSSFeed(_db);
-            _ = destList.GenerateJSON(_db);
+            _ = destList.RegenerateAllFiles(_db);
 
             //TODO: list.function that is responsible for a list's file name
             // do for each file type. 
@@ -526,9 +522,7 @@ namespace GeFeSLE.Controllers
                 } // end of while loop!
                   // we don't care about waiting for these tasks to complete. 
                 ProcessTracker.UpdateProcess(processtoken, "Generating HTML pages...");
-                await destList.GenerateHTMLListPage(scopedb);
-                await destList.GenerateRSSFeed(scopedb);
-                await destList.GenerateJSON(scopedb);
+                await destList.RegenerateAllFiles(scopedb);
                 ProcessTracker.UpdateProcess(processtoken, "Unbookmarking Mastodon Items...");
                 await MastoController.unbookmarkMastoItems(token, appToken.instance, unbookmarkIDs);
                 //return Results.Redirect($"/{destList.Name}.html");

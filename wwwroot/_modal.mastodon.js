@@ -1,46 +1,71 @@
 // Check if the modal already exists
 var modal = document.getElementById("myModal");
+var num2Get, unbookmark, btn;
+
 if (!modal) {
     // Create the modal dialog
     modal = document.createElement("div");
     modal.id = "myModal";
-    modal.className = "modal";
+    modal.className = "reportModal"; // Reuse report modal styling
 
     // Create the content container
     var content = document.createElement("div");
-    content.className = "modal-content";
+    content.className = "reportModal-content"; // Reuse report modal content styling
 
     // Create the integer input
     var integerLabel = document.createElement("label");
-    integerLabel.for = "integer";
+    integerLabel.htmlFor = "num2Get";
     integerLabel.textContent = "Number of Bookmarks to get:";
-    var num2Get = document.createElement("input");
+    
+    num2Get = document.createElement("input");
     num2Get.type = "number";
     num2Get.id = "num2Get";
     num2Get.name = "num2Get";
+    num2Get.value = "10"; // Default value
+    num2Get.min = "1";
+    num2Get.max = "100";
 
-    // Create the boolean input
+    // Create the boolean input with better styling
     var booleanLabel = document.createElement("label");
-    booleanLabel.for = "unbookmark";
+    booleanLabel.htmlFor = "unbookmark";
     booleanLabel.textContent = "Unbookmark imported statuses?";
-    var unbookmark = document.createElement("input");
+    
+    var checkboxContainer = document.createElement("div");
+    checkboxContainer.style.marginBottom = "20px";
+    checkboxContainer.style.display = "flex";
+    checkboxContainer.style.alignItems = "center";
+    checkboxContainer.style.gap = "10px";
+    
+    unbookmark = document.createElement("input");
     unbookmark.type = "checkbox";
     unbookmark.id = "unbookmark";
     unbookmark.name = "unbookmark";
+    unbookmark.style.transform = "scale(1.2)";
+
+    var checkboxLabel = document.createElement("span");
+    checkboxLabel.textContent = "Yes, remove bookmarks after import";
+    checkboxLabel.style.fontSize = "14px";
 
     // Create the submit button
-    var btn = document.createElement("button");
+    btn = document.createElement("button");
     btn.id = "submit";
-    btn.textContent = "Submit";
+    btn.textContent = "Import Bookmarks";
 
     // Append the elements
     content.appendChild(integerLabel);
     content.appendChild(num2Get);
     content.appendChild(booleanLabel);
-    content.appendChild(unbookmark);
+    checkboxContainer.appendChild(unbookmark);
+    checkboxContainer.appendChild(checkboxLabel);
+    content.appendChild(checkboxContainer);
     content.appendChild(btn);
     modal.appendChild(content);
     document.body.appendChild(modal);
+} else {
+    // Modal already exists, get references to the elements
+    num2Get = document.getElementById("num2Get");
+    unbookmark = document.getElementById("unbookmark");
+    btn = document.getElementById("submit");
 }
 
 function showModalAndGetValues() {

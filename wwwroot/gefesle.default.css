@@ -398,3 +398,174 @@ select:disabled {
     box-shadow: 0 2px #666;
     transform: translateY(4px);
 }
+
+/* Modal Styles */
+.reportModal {
+    display: none; /* Hidden by default */
+    position: fixed; /* Stay in place */
+    z-index: 1000; /* Sit on top */
+    left: 0;
+    top: 0;
+    width: 100%; /* Full width */
+    height: 100%; /* Full height */
+    overflow: auto; /* Enable scroll if needed */
+    background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+.reportModal-content {
+    background-color: #fefefe;
+    margin: 10% auto; /* 10% from the top and centered */
+    padding: 30px;
+    border: 1px solid #888;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    width: 400px; /* Fixed width for consistency */
+    min-height: 250px; /* Minimum height for consistency */
+    max-width: 90%; /* Responsive on small screens */
+    font-family: sans-serif;
+    animation: slideIn 0.3s ease-in-out;
+}
+
+.reportModal-content label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: #333;
+    font-size: 14px;
+}
+
+.reportModal-content input {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+    transition: border-color 0.3s ease;
+}
+
+.reportModal-content input:focus {
+    outline: none;
+    border-color: #4CAF50;
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+}
+
+.reportModal-content input[readonly] {
+    background-color: #f9f9f9;
+    color: #666;
+    cursor: not-allowed;
+}
+
+.reportModal-content button {
+    background-color: #4CAF50;
+    color: white;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    width: 100%;
+    margin-top: 10px;
+    transition: background-color 0.3s ease;
+}
+
+.reportModal-content button:hover {
+    background-color: #45a049;
+}
+
+.reportModal-content button:active {
+    background-color: #3e8e41;
+    transform: translateY(1px);
+}
+
+/* Modal animations */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideIn {
+    from { 
+        opacity: 0;
+        transform: translateY(-30px);
+    }
+    to { 
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Responsive design for smaller screens */
+@media (max-width: 500px) {
+    .reportModal-content {
+        width: 95%;
+        margin: 5% auto;
+        padding: 20px;
+        min-height: 200px;
+    }
+}
+
+/* Custom styling for select dropdowns in modals */
+.reportModal-content select {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+    background-color: white;
+    cursor: pointer;
+    transition: border-color 0.3s ease;
+}
+
+.reportModal-content select:focus {
+    outline: none;
+    border-color: #4CAF50;
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+}
+
+.reportModal-content select option {
+    padding: 8px;
+}
+
+/* Custom styling for checkbox containers */
+.reportModal-content input[type="checkbox"] {
+    margin-right: 10px;
+    transform: scale(1.2);
+    cursor: pointer;
+}
+
+.reportModal-content input[type="number"] {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+    transition: border-color 0.3s ease;
+}
+
+.reportModal-content input[type="number"]:focus {
+    outline: none;
+    border-color: #4CAF50;
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+}
+
+/* Disabled button styling */
+.reportModal-content button:disabled {
+    background-color: #ccc !important;
+    color: #666;
+    cursor: not-allowed !important;
+    opacity: 0.6;
+    border: 1px solid #999;
+}
+
+.reportModal-content button:disabled:hover {
+    background-color: #ccc !important;
+    transform: none;
+}

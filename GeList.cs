@@ -161,8 +161,16 @@ sb.AppendLine($"<div class=\"button mastoimportlink\" onclick=\"importItems('Mas
 sb.AppendLine($"<div class=\"button stickynoteslink\" onclick=\"importItems('Microsoft:StickyNotes',{Id})\" style=\"display: none;\">++Microsoft Sticky Notes</div>");
 sb.AppendLine($"<div class=\"button googletaskslink\" onclick=\"importItems('Google:Tasks',{Id})\" style=\"display: none;\">++Google Tasks</div>");
 sb.AppendLine($"<div class=\"button regenlink\" onclick=\"window.location.href='/lists/{Id}/regen'\" style=\"display: none;\">Regen</div>");
-sb.AppendLine($"<div class=\"button rsslink\" onclick=\"window.location.href='rss-{Name}.xml'\">RSS Feed</div>");
-sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"window.location.href='{Name}.json'\">JSON</div>");
+if (items.Count > 0)
+{
+    sb.AppendLine($"<div class=\"button rsslink\" onclick=\"window.location.href='rss-{Name}.xml'\">RSS Feed</div>");
+    sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"window.location.href='{Name}.json'\">JSON</div>");
+}
+else
+{
+    sb.AppendLine($"<div class=\"button rsslink\">no RSS (no items)</div>");
+    sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\">no JSON (no items)</div>");
+}
 sb.AppendLine($"<div class=\"button suggestlink\" onclick=\"window.location.href='_edit.item.html?listid={Id}&suggestion=true'\">SUGGEST</div>");
 
         // display a form with a text box for the text and tags search parameters
@@ -200,7 +208,11 @@ sb.AppendLine($"<div class=\"button suggestlink\" onclick=\"window.location.href
             // wrap each tag in a span with a class of tag
             foreach (var tag in item.Tags)
             {
-                sb.AppendLine($"<span class=\"tag\">{tag}</span>");
+                // Only render non-empty, non-whitespace tags
+                if (!string.IsNullOrWhiteSpace(tag))
+                {
+                    sb.AppendLine($"<span class=\"tag\">{tag.Trim()}</span>");
+                }
             }
             sb.AppendLine("</div>");
             sb.AppendLine("<div class=\"utilitybox\">");
@@ -378,5 +390,21 @@ sb.AppendLine($"<div class=\"button suggestlink\" onclick=\"window.location.href
         DBg.d(LogLevel.Debug, $"{user.UserName} allowed: {allowed} - {ynot}");
         return (allowed, ynot);
 
+    }
+
+    // Method to regenerate all files for this list (HTML, RSS, JSON) and update the index
+    public async Task RegenerateAllFiles(GeFeSLEDb db)
+    {
+        DBg.d(LogLevel.Trace, $"RegenerateAllFiles: {Id} - {Name}");
+        
+        // Generate all list files
+        await GenerateHTMLListPage(db);
+        await GenerateRSSFeed(db);
+        await GenerateJSON(db);
+        
+        // Regenerate the index since list content has changed
+        await GlobalStatic.GenerateHTMLListIndex(db);
+        
+        DBg.d(LogLevel.Trace, $"RegenerateAllFiles completed for: {Id} - {Name}");
     }
 }

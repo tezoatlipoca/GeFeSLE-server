@@ -1315,10 +1315,7 @@ app.MapPost("/lists", async (GeList newlist,
     db.Lists.Add(newlist);
     ProtectedFiles.AddList(newlist);
     await db.SaveChangesAsync();
-    await newlist.GenerateHTMLListPage(db);
-    await newlist.GenerateRSSFeed(db);
-    await newlist.GenerateJSON(db);
-    _ = GlobalStatic.GenerateHTMLListIndex(db);
+    await newlist.RegenerateAllFiles(db);
     string msg = $"/lists/{newlist.Id}";
     return Results.Created(msg, newlist);
 }).RequireAuthorization(new AuthorizeAttribute
@@ -1413,9 +1410,7 @@ app.MapPost("/additem/{listid:int}", async (int listid,
         geListFileController.UnProtectFiles(itemfiles, list.Name); // TODO: handle situation when a file is in two lists of differing vis levels
     }
 
-    await list.GenerateHTMLListPage(db);
-    await list.GenerateRSSFeed(db);
-    await list.GenerateJSON(db);
+    await list.RegenerateAllFiles(db);
     return Results.Created($"/showitems/{newitem.ListId}/{newitem.Id}", newitem);
 }).RequireAuthorization(new AuthorizeAttribute
 {
@@ -1471,9 +1466,7 @@ app.MapPut("/modifyitem", async (GeListItem inputItem,
     }
 
 
-    await list.GenerateHTMLListPage(db);
-    await list.GenerateRSSFeed(db);
-    await list.GenerateJSON(db);
+    await list.RegenerateAllFiles(db);
     return Results.Ok();
 }).RequireAuthorization(new AuthorizeAttribute
 {
@@ -1498,9 +1491,7 @@ app.MapDelete("/deleteitem/{listid:int}/{id:int}", async (int listid,
     await db.SaveChangesAsync();
     var list = await db.Lists.FindAsync(listid);
     if (list is null) return Results.NotFound();
-    await list.GenerateHTMLListPage(db);
-    await list.GenerateRSSFeed(db);
-    await list.GenerateJSON(db);
+    await list.RegenerateAllFiles(db);
     return Results.Ok();
 }).RequireAuthorization(new AuthorizeAttribute
 {
@@ -1547,12 +1538,8 @@ app.MapPost("/moveitem", async (
     await db.SaveChangesAsync();
 
     // regenerate both old AND new lists
-    _ = newlist.GenerateHTMLListPage(db);
-    _ = newlist.GenerateRSSFeed(db);
-    _ = newlist.GenerateJSON(db);
-    _ = oldlist.GenerateHTMLListPage(db);
-    _ = oldlist.GenerateRSSFeed(db);
-    _ = oldlist.GenerateJSON(db);
+    await newlist.RegenerateAllFiles(db);
+    await oldlist.RegenerateAllFiles(db);
     var msg = $"Item {itemid} moved from list {oldlistid} to list {newlistid}";
     return Results.Ok(msg);
 }).RequireAuthorization(new AuthorizeAttribute
@@ -1629,6 +1616,15 @@ app.MapPost("/addtag", async (
 
     // now the tricky part - does the user have right listowner or contributor-ship or role to modify 
     // TODO: implement permissions check; for now rely on SU/listowner roles via middleware 
+
+    // Validate that the tag is not null, empty, or whitespace-only
+    if (string.IsNullOrWhiteSpace(newtag))
+    {
+        return Results.BadRequest("Tag cannot be empty or whitespace-only");
+    }
+
+    // Trim whitespace from the tag
+    newtag = newtag.Trim();
 
     string? msg = null;
     // if newtag is NOT the item's tags add it. List<T> doesn't prevent duplicates
@@ -1713,10 +1709,7 @@ app.MapGet("/lists/{listid}/regen", async (int listid,
     if (list is null) return Results.NotFound();
     else
     {
-        await list.GenerateHTMLListPage(db);
-        await list.GenerateRSSFeed(db);
-        await list.GenerateJSON(db);
-        await GlobalStatic.GenerateHTMLListIndex(db);
+        await list.RegenerateAllFiles(db);
         return Results.Redirect(referer);
     }
 }).RequireAuthorization(new AuthorizeAttribute
@@ -2793,6 +2786,41 @@ app.MapGet("/items/orphan", async (GeFeSLEDb db, bool delete = false) =>
     Roles = "SuperUser"
 });
 
+app.MapPost("/cleanup/empty-tags", async (GeFeSLEDb db) =>
+{
+    var fn = "/cleanup/empty-tags"; DBg.d(LogLevel.Trace, fn);
+    
+    var allItems = await db.Items.ToListAsync();
+    int cleanedCount = 0;
+    
+    foreach (var item in allItems)
+    {
+        var originalCount = item.Tags.Count;
+        // Remove null, empty, or whitespace-only tags
+        item.Tags = item.Tags.Where(tag => !string.IsNullOrWhiteSpace(tag)).Select(tag => tag.Trim()).ToList();
+        
+        if (item.Tags.Count != originalCount)
+        {
+            cleanedCount++;
+        }
+    }
+    
+    await db.SaveChangesAsync();
+    
+    // Regenerate all list pages to reflect the cleanup
+    var lists = await db.Lists.ToListAsync();
+    foreach (var list in lists)
+    {
+        await list.GenerateHTMLListPage(db);
+    }
+    
+    return Results.Ok($"Cleaned up empty tags from {cleanedCount} items");
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser"
+});
+
 
 app.MapPost("/items/{itemid:int}/report", async (int itemid,
     GeFeSLEDb db,
@@ -2808,6 +2836,7 @@ app.MapPost("/items/{itemid:int}/report", async (int itemid,
     // there's going to be a "reason" parameter, and if user == null, a user contact 
     // parameter in a form submission. get those two
     var reason = context.Request.Form["reason"];
+    var userName = context.Request.Form["userName"];
 
     var item = await db.Items.FindAsync(itemid);
     if (item is null) return Results.NotFound($"Item {itemid} not found.");
@@ -2815,7 +2844,19 @@ app.MapPost("/items/{itemid:int}/report", async (int itemid,
     var itemList = await db.Lists.FindAsync(item.ListId);
     if (itemList is null) return Results.NotFound($"Item LIST {item.ListId} not found.");
 
-    DBg.d(LogLevel.Trace, $"{fn} -- reporting item {itemid} in list {itemList.Name} for: {reason}");
+    // Determine the reporter identity - if user is logged in, use their username
+    // Otherwise, use the userName from the form (or "anonymous" if none provided)
+    string reporterIdentity;
+    if (user != null)
+    {
+        reporterIdentity = user.UserName ?? "logged-in-user-no-name";
+    }
+    else
+    {
+        reporterIdentity = string.IsNullOrEmpty(userName) ? "anonymous" : userName.ToString();
+    }
+
+    DBg.d(LogLevel.Trace, $"{fn} -- reporting item {itemid} in list {itemList.Name} for: {reason} by: {reporterIdentity}");
     // a reported item creates a reference item in a special MODERATOR list
     // that only SuperUsers and listowners can see. 
     // first, create the MODERATION list if it doesn't exist
@@ -2837,11 +2878,11 @@ app.MapPost("/items/{itemid:int}/report", async (int itemid,
     // now create a new GeListItem IN the MODERATION list
     var moditem = new GeListItem
     {
-        Name = $"{itemList.Name}#{itemid} <= by {user?.UserName ?? "anonymous"}",
+        Name = $"{itemList.Name}#{itemid} <= by {reporterIdentity}",
         ListId = modlist.Id,
         Tags = { "REPORTED", itemList.Name }
     };
-    moditem.Comment += $"Reported by {user?.UserName ?? "anonymous"}  ";
+    moditem.Comment += $"Reported by {reporterIdentity}  ";
     moditem.Comment += $"Item has been preemptively marked as invisible pending moderation  ";
     moditem.Comment += $"Rationale for report:  ";
     moditem.Comment += $"{reason}  ";

@@ -336,15 +336,28 @@ function buildTagsMenu() {
             if (e.target === this) {
                 // Show the context menu
 
-                let tag = prompt("Add tags (seperated by space):");
-                if (tag) {
-                    //alert("You entered: " + tag);
-                    // add the tag to the cell
-                    let span = document.createElement('span');
-                    span.innerText = tag;
-                    span.className = 'tag';
-                    this.appendChild(span);
-                    addTag(this.closest('.itemrow').id, tag);
+                let tagsInput = prompt("Add tags (separated by space):");
+                if (tagsInput) {
+                    // Split the input by spaces and filter out empty strings
+                    let tags = tagsInput.split(' ').filter(tag => tag.trim() !== '');
+                    
+                    if (tags.length === 0) {
+                        alert("No valid tags entered.");
+                        return;
+                    }
+                    
+                    // Add each tag
+                    tags.forEach(tag => {
+                        tag = tag.trim(); // Remove whitespace
+                        if (tag) { // Only add non-empty tags
+                            // add the tag to the cell
+                            let span = document.createElement('span');
+                            span.innerText = tag;
+                            span.className = 'tag';
+                            this.appendChild(span);
+                            addTag(this.closest('.itemrow').id, tag);
+                        }
+                    });
                 }
 
             }
@@ -609,15 +622,15 @@ async function importItems(sourceService, destLIst) {
     }
     else if (sourceService == 'Google:Tasks') {
         // this populates the list of task lists the user has
-        await populateGoogleTaskLists(sourceService);
-        // this shows the modal
+        const hasLists = await populateGoogleTaskLists(sourceService);
+        // this shows the modal (even if there are no lists, to show the error message)
         await showModalGoogleTaskLists().then(value => {
             if (value) {
                 alert(`You chose list: ${value}`);
                 importService = { Service: sourceService, Data: value };
             }
             else {
-                console.log("Modal was dismissed");
+                console.log("Modal was dismissed or no valid lists available");
                 return;
             }
         })
@@ -732,20 +745,21 @@ async function reportItem(listId, itemid) {
     let fn = "reportItem"; console.log(fn);
     if (islocal()) return;
     let areUsure = false;
-    let reportreason = await showModalReportForm();
-    if (reportreason == null) {
+    let reportData = await showModalReportForm();
+    if (reportData == null) {
         return;
     }
     else {
-        areUsure = confirm('Are you sure you want to report this item? (for reason: ' + reportreason + ')')
+        areUsure = confirm('Are you sure you want to report this item? (for reason: ' + reportData.reason + ')')
     }
 
 
     if (areUsure) {
         let apiUrl = 'items/' + itemid + '/report';
         let data = new URLSearchParams();
-        data.append('reason', reportreason);
-        console.debug(`${fn} --> ${apiUrl} <== {reason: ${reportreason}} `);
+        data.append('reason', reportData.reason);
+        data.append('userName', reportData.userName);
+        console.debug(`${fn} --> ${apiUrl} <== {reason: ${reportData.reason}, userName: ${reportData.userName}} `);
         fetch(apiUrl, {
             method: 'POST',
             headers: {
@@ -760,9 +774,11 @@ async function reportItem(listId, itemid) {
                 // if the response is ok, redirect to the list page
                 if (response.ok) {
                     // save ourselves a result message in localstorage
-                    localStorage.setItem('result', 'Item ' + itemid + ' in list ' + listId + ' deleted successfully');
+                    localStorage.setItem('result', 'Item ' + itemid + ' reported successfully');
 
-                    // just refresh the page
+                    // just refresh the page - ideally we'd block and wait for the server to 
+                    // regenerate the list html (with the reported item now hidden) 
+                    // but we have no idea how long that is, lets see how this works, improve later.
                     location.reload();
                 }
 
