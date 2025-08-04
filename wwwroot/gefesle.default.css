@@ -757,3 +757,168 @@ select:disabled {
     background-color: #ccc !important;
     transform: none;
 }
+
+/* Edit List Form Styles */
+.edit-list-container {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+/* Make all labels in the edit list form bold */
+.edit-list-container label {
+    font-weight: bold;
+}
+
+.list-info-panel {
+    background-color: lightgray;
+    position: relative;
+    width: 45vw;
+    min-width: 300px;
+    max-width: 100%;
+    padding: 15px;
+    border-radius: 5px;
+    flex: 1;
+    box-sizing: border-box;
+}
+
+.list-roles-panel {
+    background-color: lightsalmon;
+    position: relative;
+    width: 45vw;
+    min-width: 300px;
+    max-width: 100%;
+    padding: 15px;
+    border-radius: 5px;
+    flex: 1;
+    box-sizing: border-box;
+}
+
+/* Make the role labels bold */
+.list-roles-panel {
+    font-weight: bold;
+}
+
+/* Make the role values (spans) normal weight */
+.list-roles-panel span {
+    font-weight: normal;
+}
+
+.full-width-input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.role-management-section {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: rgba(255, 255, 255, 0.3);
+    border-radius: 5px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.role-management-section h4 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #333;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.role-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.form-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.form-row label {
+    font-weight: bold;
+    min-width: 50px;
+    flex-shrink: 0;
+}
+
+.form-row select {
+    flex: 1;
+    padding: 5px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+}
+
+.form-row input {
+    flex: 1;
+    padding: 5px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+}
+
+.role-controls label {
+    font-weight: bold;
+    margin-bottom: 3px;
+}
+
+.role-controls select {
+    margin-bottom: 10px;
+    padding: 5px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+}
+
+.role-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.role-buttons button {
+    flex: 1;
+    min-width: 120px;
+    padding: 8px 12px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+    background-color: #f0f0f0;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.role-buttons button:hover {
+    background-color: #e0e0e0;
+}
+
+/* Responsive design for narrow windows */
+@media (max-width: 768px) {
+    .edit-list-container {
+        flex-direction: column;
+    }
+    
+    .list-info-panel,
+    .list-roles-panel {
+        width: 100% !important;
+        min-width: unset !important;
+        max-width: 100% !important;
+        box-sizing: border-box;
+    }
+    
+    .role-buttons {
+        flex-direction: column;
+    }
+    
+    .role-buttons button {
+        min-width: unset;
+    }
+}
+
+/* Additional fix for general responsiveness */
+@media (max-width: 1024px) {
+    .list-info-panel,
+    .list-roles-panel {
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+}

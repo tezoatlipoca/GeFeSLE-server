@@ -1,5 +1,38 @@
 
 
+// Function to show temporary feedback popup messages
+function showFeedbackMessage(message, isSuccess = true, targetElement = null) {
+    // Create feedback element
+    let feedback = document.createElement('div');
+    feedback.textContent = message;
+    feedback.style.cssText = `
+        position: fixed;
+        z-index: 1000;
+        padding: 8px 16px;
+        border-radius: 5px;
+        font-size: 14px;
+        font-weight: bold;
+        color: white;
+        background-color: ${isSuccess ? '#4CAF50' : '#f44336'};
+        box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        pointer-events: none;
+        animation: fadeInOut 3s ease-in-out forwards;
+        top: 20px;
+        right: 20px;
+        max-width: 300px;
+        word-wrap: break-word;
+    `;
+    
+    document.body.appendChild(feedback);
+    
+    // Remove after animation
+    setTimeout(() => {
+        if (feedback.parentNode) {
+            feedback.parentNode.removeChild(feedback);
+        }
+    }, 3000);
+}
+
 // function that is called when _edit.list.html is called that
 // gets the listid from the url querystring and then 
 // populates the form in _edit.list.html with the list data
@@ -136,6 +169,9 @@ async function updateList(e) {
                     console.debug('displayResults IS:', displayResults);
                     d(displayResults);
                     c(RC.OK);
+                    
+                    // Show success popup
+                    showFeedbackMessage("List '" + json.name + "' created successfully!", true);
 
                     // now that we have newID, populdate the id field in the form
                     document.getElementById('list.id').value = newID;
@@ -154,6 +190,10 @@ async function updateList(e) {
                     console.debug('displayResults IS:', displayResults);
                     d(displayResults);
                     c(RC.OK);
+                    
+                    // Show success popup
+                    showFeedbackMessage("List '" + name + "' updated successfully!", true);
+                    
                     // if the name has changed, then we need to update back2list
                     if (document.getElementById('list.name.original').value != name) {
                         document.getElementById('back2list').href = name + '.html';
@@ -167,6 +207,9 @@ async function updateList(e) {
             console.error('Error:', error);
             d(error);
             c(RC.ERROR);
+            
+            // Show error popup
+            showFeedbackMessage("Failed to save list: " + (error.message || error), false);
         });
 }
 
@@ -347,6 +390,10 @@ async function assignUser2List(e) {
             // text is a message from the API
             d(text);
             c(RC.OK);
+            
+            // Show success popup
+            showFeedbackMessage("User '" + assignee + "' assigned as " + assignee_role + " successfully!", true);
+            
             // call getListUsers to update the list of users
             getListUsers(e);
         })
@@ -354,6 +401,9 @@ async function assignUser2List(e) {
             console.error('Error:', error);
             d(error);
             c(RC.ERROR);
+            
+            // Show error popup
+            showFeedbackMessage("Failed to assign user '" + assignee + "': " + (error.message || error), false);
         });
 
 }
@@ -412,6 +462,10 @@ async function removeUserFromList(e) {
             // text is a message from the API
             d(text);
             c(RC.OK);
+            
+            // Show success popup
+            showFeedbackMessage("User '" + assignee + "' removed from " + assignee_role + " role successfully!", true);
+            
             // call getListUsers to update the list of users
             getListUsers(e);
         })
@@ -419,6 +473,9 @@ async function removeUserFromList(e) {
             console.error('Error:', error);
             d(error);
             c(RC.ERROR);
+            
+            // Show error popup
+            showFeedbackMessage("Failed to remove user '" + assignee + "': " + (error.message || error), false);
         });
 
 }

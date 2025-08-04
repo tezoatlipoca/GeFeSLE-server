@@ -18,42 +18,52 @@
   <h1>EDIT LIST:</h1>
   <a href="../index.html" id="back2list">Back to list view</a>
   <form id="editlistform">
-    <div style="display: flex;">
-    <div id="leftcell" style="background-color: lightgray;
-      position: relative;
-      
-      width: 45vw;">
+    <div class="edit-list-container">
+    <div id="leftcell" class="list-info-panel">
       
           <label for="list.id">ID:</label>
-          <input type="text" id="list.id" name="list.id" readonly><br>
-          <label for="list.name">Name:</label>
-          <input type="text" id="list.name" name="list.name"><br>
+          <input type="text" id="list.id" name="list.id" readonly disabled><br>
+          
+          <div class="form-row">
+            <label for="list.name">Name:</label>
+            <input type="text" id="list.name" name="list.name" class="full-width-input">
+          </div>
 
           <label for="list.visibility">Visibility. </label>
           <select id="list.visibility" name="list.visibility">
-            <option value="Public">Public - anyone can see</option>
-            <option value="Contributors">Contributors - and ListOwners and creator can see</option>
-            <option value="ListOwners">ListOwners - and creator can see</option>
-            <option value="Private">Private - only creator can see</option>
+            <option value="Public">Public (anyone)</option>
+            <option value="Contributors">Contributors (listowners, creator)</option>
+            <option value="ListOwners">Listowners (and creator)</option>
+            <option value="Private">Private (only creator)</option>
           </select>
         </div>
-        <div id="rightcell" style="background-color: lightsalmon;
-        position: relative;
-        width: 45vw;">
-   List roles:<br>
+        <div id="rightcell" class="list-roles-panel">
           List creator: <span id="listcreator"></span><br>
           List owners: <span id="listowners"></span><br>
           List contributors: <span id="listcontributors"></span><br>
-          User add: <select id="list.allusers" name="list.allusers">
-
-          </select>
-          <select id="list.userrole" name="list.userrole">
-            <option value="contributor">contributor</option>
-            <option value="listowner">listowner</option>
-
-          </select>
-          <button type="button" id="assignuser" onClick="assignUser2List(event)">Assign To List Role</button>
-          <button type="button" id="removeuser" onClick="removeUserFromList(event)">Remove From List Role</button>
+          
+          <div class="role-management-section">
+            <div class="role-controls">
+              <div class="form-row">
+                <label for="list.allusers">User:</label>
+                <select id="list.allusers" name="list.allusers">
+                </select>
+              </div>
+              
+              <div class="form-row">
+                <label for="list.userrole">Role:</label>
+                <select id="list.userrole" name="list.userrole">
+                  <option value="contributor">contributor</option>
+                  <option value="listowner">listowner</option>
+                </select>
+              </div>
+              
+              <div class="role-buttons">
+                <button type="button" id="assignuser" onClick="assignUser2List(event)">Assign To List Role</button>
+                <button type="button" id="removeuser" onClick="removeUserFromList(event)">Remove From List Role</button>
+              </div>
+            </div>
+          </div>
         </div></div>
     <label for="list.comment">comment</label>
     <input type="textarea" id="list.comment" name="list.comment"><br>
