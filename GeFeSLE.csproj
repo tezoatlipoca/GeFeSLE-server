@@ -12,10 +12,10 @@
     
 
     <!-- Specify the version prefix (major.minor.patch) -->
-    <VersionPrefix>0.0.9</VersionPrefix>
+    <VersionPrefix>v0.1.0</VersionPrefix>
 
     <!-- Specify the version suffix (pre-release label) -->
-    <VersionSuffix>beta</VersionSuffix>
+    <VersionSuffix></VersionSuffix>
     <PublishSingleFile>true</PublishSingleFile>
     <PublishTrimmed>false</PublishTrimmed>
      <IncludeAllContentForSelfExtract>false</IncludeAllContentForSelfExtract>
