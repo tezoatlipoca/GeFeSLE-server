@@ -12,32 +12,76 @@
 <body>
   <h1>EDIT USERS:</h1>
   <a href="index.html" id="back2list">Back to list index</a>
-  <span id="userlistgrid"></span>
-  <hr>
-  <form id="edituserform" action="/adduser" method="POST">
-    <button type="button" id="newUser" onClick="clearForm(event);">New User</button><br>
-    <label for="userid">UserID:</label>
-    <input type="text" id="userid" name="userid" readonly><br>
-    <label for="username">Username:</label>
-    <input type="text" id="username" name="username"><br>
-    <label for="newPassword">New Password:</label>
-    <input type="text" id="newPassword" name="newPassword">
-    <button type="button" id="setPassword" onClick="sendHARDReset(event);">Set Change Password</button><br>    
-    <label for="email">Email:</label>
-    <input type="text" id="email" name="email"><br>
-    <label for="role">Role:</label>
-    <select id="role" name="role">
-      <option value="SuperUser">SuperUser</option>
-      <option value="listowner">listowner</option>
-      <option value="contributor">contributor</option>
-    </select>
-    <button type="button" id="addRole">Add This Role</button>
-    <button type="button" id="deleteRole">Remove This Role</button>
-    <br>User Roles:
-    <span id="userroles">No user / roles not retreived / none assigned..</span><br>
-    <input type="submit" id="submitbutton" value="Update User"><br>
-    <span id="result"></span>
-  </form>
+  
+  <div class="edit-user-container">
+    <div class="user-list-panel">
+      <h3>Users</h3>
+      <div class="user-list-scroll">
+        <span id="userlistgrid"></span>
+      </div>
+    </div>
+    
+    <div class="user-form-panel">
+      <form id="edituserform" action="/adduser" method="POST">
+        <div class="form-actions-top">
+          <button type="button" id="newUser" onClick="clearForm(event);">New User</button>
+        </div>
+        
+        <div class="form-section">
+          <h4>User Information</h4>
+          <div class="form-row">
+            <label for="userid">UserID:</label>
+            <input type="text" id="userid" name="userid" readonly>
+          </div>
+          
+          <div class="form-row">
+            <label for="username">Username:</label>
+            <input type="text" id="username" name="username">
+          </div>
+          
+          <div class="form-row">
+            <label for="email">Email:</label>
+            <input type="text" id="email" name="email">
+          </div>
+        </div>
+        
+        <div class="form-section">
+          <h4>Password Management</h4>
+          <div class="form-row">
+            <label for="newPassword">New Password:</label>
+            <input type="text" id="newPassword" name="newPassword">
+            <button type="button" id="setPassword" onClick="sendHARDReset(event);">Set Change Password</button>
+          </div>
+        </div>
+        
+        <div class="form-section">
+          <h4>Role Management</h4>
+          <div class="form-row">
+            <label for="role">Role:</label>
+            <select id="role" name="role">
+              <option value="SuperUser">SuperUser</option>
+              <option value="listowner">listowner</option>
+              <option value="contributor">contributor</option>
+            </select>
+            <button type="button" id="addRole">Add This Role</button>
+            <button type="button" id="deleteRole">Remove This Role</button>
+          </div>
+          
+          <div class="form-row">
+            <label>User Roles:</label>
+            <span id="userroles">No user / roles not retreived / none assigned..</span>
+          </div>
+        </div>
+        
+        <div class="form-actions">
+          <input type="submit" id="submitbutton" value="Update User">
+          <span id="result"></span>
+          <button type="button" id="deleteUserButton" class="delete-user-btn" style="display: none;">Delete Selected User</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  
   <script src="/_utils.js"></script>
   <script src="_edituser.js"></script>
   <script src="_password.change.js"></script>

@@ -1,3 +1,39 @@
+// Show feedback message with popup animation
+function showFeedbackMessage(message, isError = false) {
+    const resultSpan = document.getElementById('result');
+    resultSpan.textContent = message;
+    resultSpan.className = isError ? 'error-message' : 'success-message';
+    resultSpan.classList.add('fadeInOut');
+    
+    // Remove the animation class after it completes
+    setTimeout(() => {
+        resultSpan.classList.remove('fadeInOut');
+    }, 3000);
+}
+
+// Handle clicking on a user row to select/edit that user
+function selectUser(username) {
+    // Remove previous selection highlighting
+    document.querySelectorAll('.user-row').forEach(row => {
+        row.classList.remove('selected');
+    });
+    
+    // Add selection highlighting to clicked row
+    const selectedRow = document.querySelector(`[data-username="${username}"]`);
+    if (selectedRow) {
+        selectedRow.classList.add('selected');
+        
+        // Show delete button and store selected user info
+        const deleteButton = document.getElementById('deleteUserButton');
+        deleteButton.style.display = 'inline-block';
+        deleteButton.setAttribute('data-userid', selectedRow.getAttribute('data-userid'));
+        deleteButton.setAttribute('data-username', username);
+    }
+    
+    // Navigate to edit the user (existing functionality)
+    window.location.href = `_edituser.html?username=${username}`;
+}
+
 function setRoles() {
     let fn = "setRoles"; console.debug(fn);
     if (islocal()) return;
@@ -30,6 +66,7 @@ function setRoles() {
         })
         .then(handleResponse)
         .then(response => {
+            showFeedbackMessage(`Role ${role} for ${username} SET!`);
             d('Role ' + role + 'for ' + username + ' SET!');
             c(RC.OK);
             // wait 1 seconds then call getRoles to refresh the roles list
@@ -39,6 +76,7 @@ function setRoles() {
         })
         .catch((error) => {
             console.error('Error:', error);
+            showFeedbackMessage(`Error setting role: ${error}`, true);
             d(error);
             c(RC.ERROR);
         });
@@ -119,12 +157,21 @@ function getUser() {
             document.getElementById('userid').value = json.id;
             document.getElementById('username').value = json.userName;
             document.getElementById('email').value = json.email;
+            showFeedbackMessage(`User ${json.userName} retrieved!`);
             d("User " + json.userName + " retreived!");
             c(RC.OK);
+            
+            // Show delete button and set up for the current user
+            const deleteButton = document.getElementById('deleteUserButton');
+            deleteButton.style.display = 'inline-block';
+            deleteButton.setAttribute('data-userid', json.id);
+            deleteButton.setAttribute('data-username', json.userName);
+            
             getRoles();
         })
         .catch((error) => {
             console.error(error);
+            showFeedbackMessage(`Error retrieving user: ${error}`, true);
             d(error);
             c(RC.ERROR);
         });
@@ -323,6 +370,20 @@ document.getElementById('edituserform').addEventListener('submit', updateoraddUs
 document.getElementById('addRole').addEventListener('click', setRoles);
 document.getElementById('deleteRole').addEventListener('click', deleteRole);
 
+// Add event listener for the delete user button
+document.getElementById('deleteUserButton').addEventListener('click', function() {
+    const userid = this.getAttribute('data-userid');
+    const username = this.getAttribute('data-username');
+    
+    if (userid && username) {
+        if (confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) {
+            deleteUser(userid);
+        }
+    } else {
+        showFeedbackMessage('No user selected for deletion', true);
+    }
+});
+
 
 
 function getUsers() {
@@ -351,14 +412,31 @@ function getUsers() {
                 c(RC.NOTFOUND);
                 return;
             }
-            // populate the users list
-            let userlist = '<ol>';
-            data.forEach((user) => {
-                userlist += '<li><a href=\"_edituser.html?username=' + user.userName + '\">' + user.userName + '</a>';
-                userlist += ' - email: ' + user.email + ' <-- <a href=\"#\" onclick=\"deleteUser(\'' + user.id + '\')\">DELETE</a></li>';
+            
+            // populate the users list as a table
+            let userlist = '<table class="user-table">';
+            userlist += '<thead><tr><th>#</th><th>Username</th><th>Email</th></tr></thead>';
+            userlist += '<tbody>';
+            
+            data.forEach((user, index) => {
+                userlist += `<tr class="user-row" onclick="selectUser('${user.userName}')" data-username="${user.userName}" data-userid="${user.id}">`;
+                userlist += `<td>${index + 1}</td>`;
+                userlist += `<td><a href="_edituser.html?username=${user.userName}" class="username-link">${user.userName}</a></td>`;
+                userlist += `<td>${user.email || 'No email'}</td>`;
+                userlist += '</tr>';
             });
-            userlist += '</ol>';
+            
+            userlist += '</tbody></table>';
             users.innerHTML = userlist;
+            
+            // Highlight the currently selected user if one is loaded
+            const currentUserId = document.getElementById('userid').value;
+            if (currentUserId) {
+                const selectedRow = document.querySelector(`[data-userid="${currentUserId}"]`);
+                if (selectedRow) {
+                    selectedRow.classList.add('selected');
+                }
+            }
         })
         .catch((error) => {
             console.error(error);
@@ -432,22 +510,27 @@ function deleteUser(userid) {
     })
         .then(handleResponse)
         .then(response => {
+            showFeedbackMessage(`User ${userid} deleted successfully!`);
             d('User ' + userid + ' deleted!');
             c(RC.OK);
+            
+            // Hide delete button
+            document.getElementById('deleteUserButton').style.display = 'none';
+            
             // clear the form
             document.getElementById('username').value = '';
             document.getElementById('newPassword').value = '';
             document.getElementById('email').value = '';
             document.getElementById('userid').value = '';
-            // redirect the URL of the page to just the list (in case we deleted the user we were looking at)
-            window.location.href = '/_edituser.html';
-
-            // wait 1 seconds then call getUsers to refresh the users list
+            document.getElementById('userroles').textContent = 'No user / roles not retreived / none assigned..';
+            
+            // Refresh the users list
             setTimeout(getUsers, 1000);
             return;
         })
         .catch((error) => {
             console.error(error);
+            showFeedbackMessage(`Error deleting user: ${error}`, true);
             d(error);
             c(RC.ERROR);
         });
