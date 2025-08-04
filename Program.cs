@@ -1581,7 +1581,13 @@ app.MapPost("/removetag", async (
     item.Tags.Remove(gonetag);
 
     await db.SaveChangesAsync();
-    // TODO: regenerate item's list
+    
+    // Regenerate the item's list to update HTML/RSS/JSON files and index
+    var list = await db.Lists.FindAsync(item.ListId);
+    if (list is not null)
+    {
+        await list.RegenerateAllFiles(db);
+    }
 
     var msg = $"Tag {gonetag} removed from item {itemid}";
     return Results.Ok(msg);
@@ -1623,23 +1629,134 @@ app.MapPost("/addtag", async (
         return Results.BadRequest("Tag cannot be empty or whitespace-only");
     }
 
-    // Trim whitespace from the tag
-    newtag = newtag.Trim();
+    // Helper function to parse quoted tags
+    static List<string> ParseQuotedTags(string input)
+    {
+        var tags = new List<string>();
+        var currentTag = new StringBuilder();
+        bool inQuotes = false;
+        bool escaped = false;
+
+        for (int i = 0; i < input.Length; i++)
+        {
+            char c = input[i];
+
+            if (escaped)
+            {
+                currentTag.Append(c);
+                escaped = false;
+                continue;
+            }
+
+            if (c == '\\')
+            {
+                escaped = true;
+                continue;
+            }
+
+            if (c == '"')
+            {
+                if (inQuotes)
+                {
+                    // End of quoted section
+                    var tag = currentTag.ToString().Trim();
+                    if (!string.IsNullOrEmpty(tag))
+                    {
+                        tags.Add(tag);
+                    }
+                    currentTag.Clear();
+                    inQuotes = false;
+                }
+                else
+                {
+                    // Start of quoted section - save any accumulated unquoted tag first
+                    var tag = currentTag.ToString().Trim();
+                    if (!string.IsNullOrEmpty(tag))
+                    {
+                        tags.Add(tag);
+                    }
+                    currentTag.Clear();
+                    inQuotes = true;
+                }
+            }
+            else if (char.IsWhiteSpace(c) && !inQuotes)
+            {
+                // Space outside quotes - end current tag
+                var tag = currentTag.ToString().Trim();
+                if (!string.IsNullOrEmpty(tag))
+                {
+                    tags.Add(tag);
+                }
+                currentTag.Clear();
+            }
+            else
+            {
+                currentTag.Append(c);
+            }
+        }
+
+        // Add any remaining tag
+        var finalTag = currentTag.ToString().Trim();
+        if (!string.IsNullOrEmpty(finalTag))
+        {
+            tags.Add(finalTag);
+        }
+
+        return tags;
+    }
+
+    // Parse the input tag(s) - might contain multiple space-separated or quoted tags
+    var tagsToAdd = ParseQuotedTags(newtag);
+    
+    if (tagsToAdd.Count == 0)
+    {
+        return Results.BadRequest("No valid tags found");
+    }
+
+    var addedTags = new List<string>();
+    var existingTags = new List<string>();
+
+    foreach (var tagToAdd in tagsToAdd)
+    {
+        // Skip empty or whitespace-only tags
+        if (string.IsNullOrWhiteSpace(tagToAdd))
+            continue;
+
+        var trimmedTag = tagToAdd.Trim();
+        
+        // Check if tag already exists
+        if (!item.Tags.Contains(trimmedTag))
+        {
+            item.Tags.Add(trimmedTag);
+            addedTags.Add(trimmedTag);
+        }
+        else
+        {
+            existingTags.Add(trimmedTag);
+        }
+    }
 
     string? msg = null;
-    // if newtag is NOT the item's tags add it. List<T> doesn't prevent duplicates
-    if (!item.Tags.Contains(newtag))
+    if (addedTags.Count > 0 && existingTags.Count > 0)
     {
-        item.Tags.Add(newtag);
-        msg = $"Tag {newtag} added to item {itemid}";
+        msg = $"Added tags: {string.Join(", ", addedTags)}. Already existed: {string.Join(", ", existingTags)}";
+    }
+    else if (addedTags.Count > 0)
+    {
+        msg = $"Added tags: {string.Join(", ", addedTags)}";
     }
     else
     {
-        msg = $"Tag {newtag} already exists in item {itemid}";
-
+        msg = $"All tags already exist: {string.Join(", ", existingTags)}";
     }
     await db.SaveChangesAsync();
-    // TODO: regenerate item's list
+    
+    // Regenerate the item's list to update HTML/RSS/JSON files and index
+    var list = await db.Lists.FindAsync(item.ListId);
+    if (list is not null)
+    {
+        await list.RegenerateAllFiles(db);
+    }
 
     return Results.Ok(msg);
 }).RequireAuthorization(new AuthorizeAttribute

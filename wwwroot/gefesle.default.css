@@ -178,25 +178,98 @@ td {
     display: block;
 }
 
+/* Base button styling for all button-like elements */
 .itemeditlink, .itemreportlink {
-    border: 1px solid grey;
+    display: inline-block;
+    padding: 4px 8px;
+    margin: 2px;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    outline: none;
+    color: #fff;
+    background-color: #2196F3;
+    border: none;
     border-radius: 3px;
-    display: block;
-    text-align: right;
+    box-shadow: 0 2px #999;
+    transition: all 0.2s ease;
+}
+
+.itemeditlink:hover, .itemreportlink:hover {
+    background-color: #1976D2;
+}
+
+.itemeditlink:active, .itemreportlink:active {
+    background-color: #1565C0;
+    box-shadow: 0 2px #666;
+    transform: translateY(2px);
+}
+
+.itemeditlink a, .itemreportlink a {
+    color: #fff;
+    text-decoration: none;
 }
 
 .itemdeletelink {
-    border: 1px solid grey;
+    display: inline-block;
+    padding: 4px 8px;
+    margin: 2px;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    outline: none;
+    color: #fff;
+    background-color: #f44336;
+    border: none;
     border-radius: 3px;
-    display: block;
-    text-align: right;
+    box-shadow: 0 2px #999;
+    transition: all 0.2s ease;
+}
+
+.itemdeletelink:hover {
+    background-color: #d32f2f;
+}
+
+.itemdeletelink:active {
+    background-color: #b71c1c;
+    box-shadow: 0 2px #666;
+    transform: translateY(2px);
+}
+
+.itemdeletelink a {
+    color: #fff;
+    text-decoration: none;
 }
 
 .moveitemlink {
-    border: 1px solid grey;
+    display: inline-block;
+    padding: 4px 8px;
+    margin: 2px;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    outline: none;
+    color: #fff;
+    background-color: #FF9800;
+    border: none;
     border-radius: 3px;
-    display: block;
-    text-align: right;
+    box-shadow: 0 2px #999;
+    transition: all 0.2s ease;
+}
+
+.moveitemlink:hover {
+    background-color: #F57C00;
+}
+
+.moveitemlink:active {
+    background-color: #E65100;
+    box-shadow: 0 2px #666;
+    transform: translateY(2px);
+}
+
+.moveitemlink a {
+    color: #fff;
+    text-decoration: none;
 }
 
 .context-menu {
@@ -205,20 +278,42 @@ td {
     z-index: 1000;
     background-color: #fff;
     border: 1px solid #ccc;
+    border-radius: 3px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
 }
 
 .context-menu-link-regular {
     display: block;
-    padding: 10px;
+    padding: 8px 12px;
+    margin: 2px;
     text-decoration: none;
-    color: #000;
+    color: #fff;
+    background-color: #607D8B;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.context-menu-link-regular:hover {
+    background-color: #455A64;
+    transform: translateY(1px);
 }
 
 .context-menu-link-recent {
     display: block;
-    padding: 10px;
+    padding: 8px 12px;
+    margin: 2px;
     text-decoration: none;
-    color: #ffcc99;
+    color: #fff;
+    background-color: #FF9800;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.context-menu-link-recent:hover {
+    background-color: #F57C00;
+    transform: translateY(1px);
 }
 
 .searchbox {
@@ -262,10 +357,37 @@ td {
 
 .indexeditlink,
 .indexregenlik {
-    border: 1px solid grey;
-    border-radius: 3px;
     display: inline-block;
-    padding: 5px;
+    padding: 4px 8px;
+    margin: 2px;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    outline: none;
+    color: #fff;
+    background-color: #9C27B0;
+    border: none;
+    border-radius: 3px;
+    box-shadow: 0 2px #999;
+    transition: all 0.2s ease;
+}
+
+.indexeditlink:hover,
+.indexregenlik:hover {
+    background-color: #7B1FA2;
+}
+
+.indexeditlink:active,
+.indexregenlik:active {
+    background-color: #6A1B9A;
+    box-shadow: 0 2px #666;
+    transform: translateY(2px);
+}
+
+.indexeditlink a,
+.indexregenlik a {
+    color: #fff;
+    text-decoration: none;
 }
 
 /* oposter and opavatar for Mastodon OP poster */
@@ -326,6 +448,13 @@ select:disabled {
     to {top: 0; opacity: 1}
 }
 
+@keyframes fadeInOut {
+    0% { opacity: 0; transform: translateY(-10px); }
+    20% { opacity: 1; transform: translateY(0); }
+    80% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-10px); }
+}
+
 
 
 
@@ -343,6 +472,7 @@ select:disabled {
     border: none;
     border-radius: 3px;
     box-shadow: 0 2px #999;
+    transition: all 0.2s ease;
 }
 
 .button:hover {background-color: #3e8e41}
@@ -366,6 +496,7 @@ select:disabled {
     border: none;
     border-radius: 3px;
     box-shadow: 0 2px #999;
+    transition: all 0.2s ease;
 }
 
 .button.admin:hover {background-color: lightblue}
@@ -389,6 +520,7 @@ select:disabled {
     border: none;
     border-radius: 3px;
     box-shadow: 0 2px #999;
+    transition: all 0.2s ease;
 }
 
 .button.debug:hover {background-color: pink}
@@ -459,17 +591,22 @@ select:disabled {
 }
 
 .reportModal-content button {
-    background-color: #4CAF50;
-    color: white;
-    padding: 12px 24px;
-    border: none;
-    border-radius: 4px;
+    display: inline-block;
+    padding: 10px 20px;
+    margin: 5px 0;
     cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    outline: none;
+    color: #fff;
+    background-color: #4CAF50;
+    border: none;
+    border-radius: 3px;
+    box-shadow: 0 2px #999;
     font-size: 16px;
     font-weight: bold;
     width: 100%;
-    margin-top: 10px;
-    transition: background-color 0.3s ease;
+    transition: all 0.2s ease;
 }
 
 .reportModal-content button:hover {
@@ -478,7 +615,8 @@ select:disabled {
 
 .reportModal-content button:active {
     background-color: #3e8e41;
-    transform: translateY(1px);
+    box-shadow: 0 2px #666;
+    transform: translateY(2px);
 }
 
 /* Modal animations */

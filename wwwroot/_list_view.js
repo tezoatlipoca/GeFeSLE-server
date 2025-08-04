@@ -54,6 +54,66 @@ function deleteItem(listId, itemid) {
 function filterUpdate() {
     console.info('filterUpdate');
 
+    // Function to parse quoted search terms
+    function parseQuotedSearchTerms(input) {
+        const terms = [];
+        let currentTerm = '';
+        let inQuotes = false;
+        let escaped = false;
+
+        for (let i = 0; i < input.length; i++) {
+            const c = input[i];
+
+            if (escaped) {
+                currentTerm += c;
+                escaped = false;
+                continue;
+            }
+
+            if (c === '\\') {
+                escaped = true;
+                continue;
+            }
+
+            if (c === '"') {
+                if (inQuotes) {
+                    // End of quoted section
+                    const term = currentTerm.trim();
+                    if (term) {
+                        terms.push(term);
+                    }
+                    currentTerm = '';
+                    inQuotes = false;
+                } else {
+                    // Start of quoted section - save any accumulated unquoted term first
+                    const term = currentTerm.trim();
+                    if (term) {
+                        terms.push(term);
+                    }
+                    currentTerm = '';
+                    inQuotes = true;
+                }
+            } else if (/\s/.test(c) && !inQuotes) {
+                // Space outside quotes - end current term
+                const term = currentTerm.trim();
+                if (term) {
+                    terms.push(term);
+                }
+                currentTerm = '';
+            } else {
+                currentTerm += c;
+            }
+        }
+
+        // Add any remaining term
+        const finalTerm = currentTerm.trim();
+        if (finalTerm) {
+            terms.push(finalTerm);
+        }
+
+        return terms;
+    }
+
     // get the rows of the table
     let rows = document.getElementsByClassName('itemrow');
     // get the total number of rows; save for later
@@ -61,25 +121,13 @@ function filterUpdate() {
 
     // get the value of the textsearchbox field
     let textsearch = document.getElementById('textsearchbox').value;
-    // convert it to array of texttags called texttags
-    const texttags = textsearch.split(' ');
-    // annoyingly if the user enters a space at the end of the search string,
-    // it will create an empty tag at the end of the array
-    // so if the last element of the array is empty, remove it
-    if (texttags[texttags.length - 1] == '') {
-        texttags.pop();
-    }
+    // Parse search terms using quoted search parser
+    const texttags = parseQuotedSearchTerms(textsearch);
 
     // get the value of the tagssearchbox field
     let tagssearch = document.getElementById('tagsearchbox').value;
-    // convert it to an array of tags called tagstags
-    const tagstags = tagssearch.split(' ');
-    // annoyingly if the user enters a space at the end of the search string, 
-    // it will create an empty tag at the end of the array
-    // so if the last element of the array is empty, remove it
-    if (tagstags[tagstags.length - 1] == '') {
-        tagstags.pop();
-    }
+    // Parse tag search terms using quoted search parser
+    const tagstags = parseQuotedSearchTerms(tagssearch);
 
     let numVisibleTags = 0;
     //rows.length
@@ -105,20 +153,28 @@ function filterUpdate() {
                 console.debug('rowtext:', rowtext, 'texttags:', texttags, 'foundtext: TRUE because no search text');
             }
             else {
-                foundtext = texttags.some(tag => rowtext.includes(tag));
+                // For quoted terms, we want exact substring matches
+                foundtext = texttags.some(tag => {
+                    // Case-insensitive search
+                    return rowtext.toLowerCase().includes(tag.toLowerCase());
+                });
                 console.debug('rowtext:', rowtext, 'texttags:', texttags, 'foundtext:', foundtext);
             }
 
             let rowtagstext = tagsCell ? tagsCell.innerText : '';
 
             let foundtags = false;
-            // if there are no texttags then foundtages is true (searching for nothing returns everything)
+            // if there are no tagstags then foundtags is true (searching for nothing returns everything)
             if (tagstags.length == 0) {
                 foundtags = true;
                 console.debug('rowtagstext:', rowtagstext, 'tagstags:', tagstags, 'foundtags: TRUE because no search tags');
             }
             else {
-                foundtags = tagstags.some(tag => rowtagstext.includes(tag));
+                // For quoted terms, we want exact substring matches in tags
+                foundtags = tagstags.some(tag => {
+                    // Case-insensitive search
+                    return rowtagstext.toLowerCase().includes(tag.toLowerCase());
+                });
                 console.debug('rowtagstext:', rowtagstext, 'tagstags:', tagstags, 'foundtags:', foundtags);
             }
 
@@ -338,26 +394,77 @@ function buildTagsMenu() {
 
                 let tagsInput = prompt("Add tags (separated by space):");
                 if (tagsInput) {
-                    // Split the input by spaces and filter out empty strings
-                    let tags = tagsInput.split(' ').filter(tag => tag.trim() !== '');
+                    // Function to parse quoted tags
+                    function parseQuotedTags(input) {
+                        const tags = [];
+                        let currentTag = '';
+                        let inQuotes = false;
+                        let escaped = false;
+
+                        for (let i = 0; i < input.length; i++) {
+                            const c = input[i];
+
+                            if (escaped) {
+                                currentTag += c;
+                                escaped = false;
+                                continue;
+                            }
+
+                            if (c === '\\') {
+                                escaped = true;
+                                continue;
+                            }
+
+                            if (c === '"') {
+                                if (inQuotes) {
+                                    // End of quoted section
+                                    const tag = currentTag.trim();
+                                    if (tag) {
+                                        tags.push(tag);
+                                    }
+                                    currentTag = '';
+                                    inQuotes = false;
+                                } else {
+                                    // Start of quoted section - save any accumulated unquoted tag first
+                                    const tag = currentTag.trim();
+                                    if (tag) {
+                                        tags.push(tag);
+                                    }
+                                    currentTag = '';
+                                    inQuotes = true;
+                                }
+                            } else if (/\s/.test(c) && !inQuotes) {
+                                // Space outside quotes - end current tag
+                                const tag = currentTag.trim();
+                                if (tag) {
+                                    tags.push(tag);
+                                }
+                                currentTag = '';
+                            } else {
+                                currentTag += c;
+                            }
+                        }
+
+                        // Add any remaining tag
+                        const finalTag = currentTag.trim();
+                        if (finalTag) {
+                            tags.push(finalTag);
+                        }
+
+                        return tags;
+                    }
+
+                    // Parse the input using quoted tag parser
+                    let tags = parseQuotedTags(tagsInput);
                     
                     if (tags.length === 0) {
                         alert("No valid tags entered.");
                         return;
                     }
                     
-                    // Add each tag
-                    tags.forEach(tag => {
-                        tag = tag.trim(); // Remove whitespace
-                        if (tag) { // Only add non-empty tags
-                            // add the tag to the cell
-                            let span = document.createElement('span');
-                            span.innerText = tag;
-                            span.className = 'tag';
-                            this.appendChild(span);
-                            addTag(this.closest('.itemrow').id, tag);
-                        }
-                    });
+                    // Send all tags as a single string to the server for processing
+                    // The server will parse them and add each individually
+                    addTag(this.closest('.itemrow').id, tagsInput, null);
                 }
 
             }
@@ -365,10 +472,17 @@ function buildTagsMenu() {
                 // Otherwise, the right-clicked element is a child of the cell
                 // get the value of the span
                 let tag = e.target.innerText;
+                let tagElement = e.target;
                 //alert("You clicked on the tag: " + tag);
+                // Store position for feedback before removing element
+                let rect = tagElement.getBoundingClientRect();
+                let feedbackPosition = {
+                    left: rect.left + window.scrollX,
+                    top: rect.bottom + window.scrollY + 2
+                };
                 // delete the span entirely
                 e.target.remove();
-                removeTag(this.closest('.itemrow').id, tag);
+                removeTag(this.closest('.itemrow').id, tag, feedbackPosition);
 
             }
         });
@@ -380,7 +494,7 @@ function buildTagsMenu() {
 
 
 
-async function addTag(itemid, tag) {
+async function addTag(itemid, tag, tagSpan = null) {
     let fn = 'addTag'; console.debug(fn);
     let apiUrl = "/addtag";
 
@@ -398,7 +512,41 @@ async function addTag(itemid, tag) {
         return;
     }
 
-
+    // Function to show temporary feedback near the tag
+    function showTagFeedback(element, message, isSuccess = true) {
+        if (!element) return;
+        
+        // Create feedback element
+        let feedback = document.createElement('div');
+        feedback.textContent = message;
+        feedback.style.cssText = `
+            position: absolute;
+            z-index: 1000;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            background-color: ${isSuccess ? '#4CAF50' : '#f44336'};
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            pointer-events: none;
+            animation: fadeInOut 2s ease-in-out forwards;
+        `;
+        
+        // Position relative to the tag element
+        let rect = element.getBoundingClientRect();
+        feedback.style.left = (rect.left + window.scrollX) + 'px';
+        feedback.style.top = (rect.bottom + window.scrollY + 2) + 'px';
+        
+        document.body.appendChild(feedback);
+        
+        // Remove after animation
+        setTimeout(() => {
+            if (feedback.parentNode) {
+                feedback.parentNode.removeChild(feedback);
+            }
+        }, 2000);
+    }
 
     try {
         console.debug(' | API URL: ' + apiUrl);
@@ -439,26 +587,33 @@ async function addTag(itemid, tag) {
             .then(text => {
                 d(text);
                 c(RC.OK);
-                // asyncronously wait 1 second before reloading the page
-                // setTimeout(function () {
-                //     location.reload();
-                // }, 1000);
+                // Show local feedback near the tag
+                showTagFeedback(tagSpan, '✓ Tags added successfully', true);
+                
+                // Refresh the page to show updated tags since we might have added multiple
+                setTimeout(function () {
+                    location.reload();
+                }, 1000);
             })
             .catch((error) => {
                 d(error);
                 c(RC.ERROR);
+                // Show error feedback near the tag
+                showTagFeedback(tagSpan, '✗ Failed to add tag', false);
 
             });
     }
     catch (error) {
         d(error);
         c(RC.ERROR);
+        // Show error feedback near the tag
+        showTagFeedback(tagSpan, '✗ Error adding tag', false);
         console.error('try/catch Error:',);
     }
 
 }
 
-async function removeTag(itemid, tag) {
+async function removeTag(itemid, tag, feedbackPosition = null) {
     let fn = 'removeTag'; console.debug(fn);
     let apiUrl = "/removetag";
 
@@ -476,7 +631,40 @@ async function removeTag(itemid, tag) {
         return;
     }
 
-
+    // Function to show temporary feedback at a specific position
+    function showTagFeedbackAtPosition(position, message, isSuccess = true) {
+        if (!position) return;
+        
+        // Create feedback element
+        let feedback = document.createElement('div');
+        feedback.textContent = message;
+        feedback.style.cssText = `
+            position: absolute;
+            z-index: 1000;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            background-color: ${isSuccess ? '#4CAF50' : '#f44336'};
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            pointer-events: none;
+            animation: fadeInOut 2s ease-in-out forwards;
+        `;
+        
+        // Position at the specified location
+        feedback.style.left = position.left + 'px';
+        feedback.style.top = position.top + 'px';
+        
+        document.body.appendChild(feedback);
+        
+        // Remove after animation
+        setTimeout(() => {
+            if (feedback.parentNode) {
+                feedback.parentNode.removeChild(feedback);
+            }
+        }, 2000);
+    }
 
     try {
         console.debug(' | API URL: ' + apiUrl);
@@ -517,6 +705,8 @@ async function removeTag(itemid, tag) {
             .then(text => {
                 d(text);
                 c(RC.OK);
+                // Show local feedback at the tag's previous position
+                showTagFeedbackAtPosition(feedbackPosition, '✓ Tag removed successfully', true);
                 // asyncronously wait 1 second before reloading the page
                 // setTimeout(function () {
                 //     location.reload();
@@ -525,12 +715,16 @@ async function removeTag(itemid, tag) {
             .catch((error) => {
                 d(error);
                 c(RC.ERROR);
+                // Show error feedback at the tag's previous position
+                showTagFeedbackAtPosition(feedbackPosition, '✗ Failed to remove tag', false);
 
             });
     }
     catch (error) {
         d(error);
         c(RC.ERROR);
+        // Show error feedback at the tag's previous position
+        showTagFeedbackAtPosition(feedbackPosition, '✗ Error removing tag', false);
         console.error('Error:', error);
     }
 
