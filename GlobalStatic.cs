@@ -48,9 +48,9 @@ public static class GlobalStatic
 
         }
         sb.AppendLine($"<h1 class=\"indextitle\">{GlobalConfig.sitetitle}</h1>");
-        sb.AppendLine($"<div class=\"button admin indexeditlink\" onclick=\"window.location.href='/_edit.list.html'\" style=\"display: none;\">Add new list</div> ");
+        sb.AppendLine($"<div class=\"button admin indexeditlink\" onclick=\"window.location.href='/_edit.list.html'\" style=\"display: none;\">Add New List</div> ");
         // write a line that calls the regenerate endpoint and refreshes this page
-        sb.AppendLine($"<div class=\"button admin indexeditlink\" onclick=\"window.location.href='/lists/regen'\" style=\"display: none;\">REGEN</div>");
+        sb.AppendLine($"<div class=\"button admin indexeditlink\" onclick=\"window.location.href='/lists/regen'\" style=\"display: none;\">Regenerate</div>");
         sb.AppendLine("<ul class=\"indexuloflists\">");
         if (lists.Count == 0)
         {
@@ -65,7 +65,7 @@ public static class GlobalStatic
 
 
                 sb.AppendLine($"<li class=\"indexliitem\" style=\"display: none;\"><a href=\"{list.Name}.html\">{list.Name}</a> ({itemCount})");
-                sb.AppendLine($"<span class=\"indexeditlink\" style=\"display: none;\"><a href=\"_edit.list.html?listid={list.Id}\">edit</a></span>");
+                sb.AppendLine($"<span class=\"indexeditlink\" style=\"display: none;\"><a href=\"_edit.list.html?listid={list.Id}\">Edit</a></span>");
                 sb.AppendLine($"<span class=\"indexeditlink\" style=\"display: none;\"><a href=\"#\" onclick=\"deleteList({list.Id}); return;\">Delete</a></span>");
 
 
@@ -73,8 +73,8 @@ public static class GlobalStatic
             }
         }
         sb.AppendLine("</ul>");
-        sb.AppendLine("<script src=\"_utils.js\"></script>");
-        sb.AppendLine("<script src=\"_index.js\"></script>");
+        sb.AppendLine("<script src=\"/_utils.js\"></script>");
+        sb.AppendLine("<script src=\"/_index.js\"></script>");
         sb.AppendLine("<div id=\"result\"></div>");
 
         await GeneratePageFooter(sb);
@@ -149,19 +149,20 @@ public static class GlobalStatic
         {
             sb.AppendLine($"<div class=\"debugging\" style=\"display: none;\">");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/session'\">Session</div>");
-            sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/me/delete'\">KILL Session</div>");
-            sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/lists/regen'\">REGEN</div>");
+            sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/me/delete'\">Kill Session</div>");
+            sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/lists/regen'\">Regenerate</div>");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/files/orphan'\">File Orphans</div>");
-            sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/files/clean'\">CLEAN HTML</div>");
+            sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/files/clean'\">Clean HTML</div>");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/items/orphan'\">Item Orphans</div>");
-            sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/lists/export'\">EXPORT</div>");
-            sb.AppendLine($"<div class=\"button debug\" onclick=\"triggerImport()\">IMPORT</div>");
+            sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/lists/export'\">Export</div>");
+            sb.AppendLine($"<div class=\"button debug\" onclick=\"triggerImport()\">Import</div>");
             sb.AppendLine("</div>");
         }
         sb.AppendLine($"<div class=\"admin\">");
-        sb.AppendLine($"<div class=\"button loginlink admin\" style=\"display: none;\" onclick=\"window.location.href='/_login.html'\">login</div>");
-        sb.AppendLine($"<div class=\"button pwdchangelink admin\" style=\"display: none;\" onclick=\"window.location.href='_password.change.html'\">change password</div>");
-        sb.AppendLine($"<div class=\"button edituserslink admin\" style=\"display: none;\" onclick=\"window.location.href='/_edituser.html'\">edit users</div>");
+        sb.AppendLine($"<div class=\"button loginlink admin\" style=\"display: none;\" onclick=\"window.location.href='/_login.html'\">Login</div>");
+        sb.AppendLine($"<div class=\"button pwdchangelink admin\" style=\"display: none;\" onclick=\"window.location.href='_password.change.html'\">Change Password</div>");
+        sb.AppendLine($"<div class=\"button edituserslink admin\" style=\"display: none;\" onclick=\"window.location.href='/_edituser.html'\">Edit Users</div>");
+        sb.AppendLine($"<div class=\"button admin\" onclick=\"window.location.href='/index.html'\">Back To Main</div>");
         sb.AppendLine("</div>");
     }
 

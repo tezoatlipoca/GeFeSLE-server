@@ -256,7 +256,7 @@ public static class GoogleController
         sb.AppendLine("  window.location.href = '/googletasklistimport/' + sourceList + '/' + destinationList;");
         sb.AppendLine("}");
         sb.AppendLine("</script>");
-        sb.AppendLine("<button onclick='redirectToImport()'>Import</button>");
+        sb.AppendLine("<button onclick='redirectToImport()'>Import Tasks</button>");
 
 
         await GlobalStatic.GeneratePageFooter(sb);

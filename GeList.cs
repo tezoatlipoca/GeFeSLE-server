@@ -155,23 +155,23 @@ public class GeList
             sb.AppendLine($"<p class=\"listcomment\">{md}</p>");
         }
 
-sb.AppendLine($"<div class=\"button editlink\" onclick=\"window.location.href='_edit.list.html?listid={Id}'\" style=\"display: none;\">Edit this list</div>");
-sb.AppendLine($"<div class=\"button edititemlink\" onclick=\"window.location.href='_edit.item.html?listid={Id}'\" style=\"display: none;\">Add new item</div>");
-sb.AppendLine($"<div class=\"button mastoimportlink\" onclick=\"importItems('Mastodon:Bookmarks',{Id})\" style=\"display: none;\">++Masto Bookmarks</div>");
-sb.AppendLine($"<div class=\"button stickynoteslink\" onclick=\"importItems('Microsoft:StickyNotes',{Id})\" style=\"display: none;\">++Microsoft Sticky Notes</div>");
-sb.AppendLine($"<div class=\"button googletaskslink\" onclick=\"importItems('Google:Tasks',{Id})\" style=\"display: none;\">++Google Tasks</div>");
-sb.AppendLine($"<div class=\"button regenlink\" onclick=\"window.location.href='/lists/{Id}/regen'\" style=\"display: none;\">Regen</div>");
+sb.AppendLine($"<div class=\"button editlink\" onclick=\"window.location.href='_edit.list.html?listid={Id}'\" style=\"display: none;\">Edit This List</div>");
+sb.AppendLine($"<div class=\"button edititemlink\" onclick=\"window.location.href='_edit.item.html?listid={Id}'\" style=\"display: none;\">Add New Item</div>");
+sb.AppendLine($"<div class=\"button mastoimportlink\" onclick=\"importItems('Mastodon:Bookmarks',{Id})\" style=\"display: none;\">Mastodon Bookmarks</div>");
+sb.AppendLine($"<div class=\"button stickynoteslink\" onclick=\"importItems('Microsoft:StickyNotes',{Id})\" style=\"display: none;\">Microsoft Sticky Notes</div>");
+sb.AppendLine($"<div class=\"button googletaskslink\" onclick=\"importItems('Google:Tasks',{Id})\" style=\"display: none;\">Google Tasks</div>");
+sb.AppendLine($"<div class=\"button regenlink\" onclick=\"window.location.href='/lists/{Id}/regen'\" style=\"display: none;\">Regenerate</div>");
 if (items.Count > 0)
 {
     sb.AppendLine($"<div class=\"button rsslink\" onclick=\"window.location.href='rss-{Name}.xml'\">RSS Feed</div>");
-    sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"window.location.href='{Name}.json'\">JSON</div>");
+    sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\" onclick=\"window.location.href='{Name}.json'\">JSON Export</div>");
 }
 else
 {
-    sb.AppendLine($"<div class=\"button rsslink\">no RSS (no items)</div>");
-    sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\">no JSON (no items)</div>");
+    sb.AppendLine($"<div class=\"button rsslink\">No RSS (No Items)</div>");
+    sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\">No JSON (No Items)</div>");
 }
-sb.AppendLine($"<div class=\"button suggestlink\" onclick=\"window.location.href='_edit.item.html?listid={Id}&suggestion=true'\">SUGGEST</div>");
+sb.AppendLine($"<div class=\"button suggestlink\" onclick=\"window.location.href='_edit.item.html?listid={Id}&suggestion=true'\">Suggest Item</div>");
 
         // display a form with a text box for the text and tags search parameters
         sb.AppendLine($"<span class=\"result\" id=\"result\"></span>");

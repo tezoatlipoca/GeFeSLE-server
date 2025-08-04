@@ -143,12 +143,11 @@ namespace GeFeSLE.Controllers
 
             string[] files = Directory.GetFiles(GlobalConfig.wwwroot, "*.*", SearchOption.AllDirectories);
             StringBuilder sb = new StringBuilder();
-            GlobalStatic.GenerateHTMLHead(sb, "All Files in wwwroot");
+            await GlobalStatic.GenerateHTMLHead(sb, "File Orphan Report");
 
-            // Add CSS
-            sb.AppendLine("<style>");
-            sb.AppendLine(".red-row { color: red; }");
-            sb.AppendLine("</style>");
+            sb.AppendLine("<h1>File Orphan Report</h1>");
+            sb.AppendLine("<p>This report shows all files in the wwwroot directory and categorizes them by their usage.</p>");
+            sb.AppendLine("<p><strong>Red entries</strong> indicate files that may be orphaned (not referenced by any list, not protected, and not uploaded to any item).</p>");
             // we'll want to remove the wwwroot from file pathnames
             // the GlobalConfig.wwwroot could be a relative path. Convert that to an absolute path to match what
             // the test functions are expecting (paths relative TO the wwwroot)
@@ -183,7 +182,17 @@ namespace GeFeSLE.Controllers
 
             }
             sb.AppendLine("</table>");
-            GlobalStatic.GeneratePageFooter(sb);
+            
+            // Add JavaScript to show admin and debug elements
+            sb.AppendLine("<script src=\"/_utils.js\"></script>");
+            sb.AppendLine("<script>");
+            sb.AppendLine("document.addEventListener('DOMContentLoaded', function() {");
+            sb.AppendLine("    showDebuggingElements();");
+            sb.AppendLine("    showAdminSecrets();");
+            sb.AppendLine("});");
+            sb.AppendLine("</script>");
+            
+            await GlobalStatic.GeneratePageFooter(sb);
             return sb;
         }
 

@@ -8,6 +8,46 @@ body {
     font-family: sans-serif;
 }
 
+/* Apply small caps to all button-like elements */
+button, 
+input[type="button"], 
+input[type="submit"], 
+input[type="reset"] {
+    font-variant: small-caps;
+}
+
+/* Debug page table styling */
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 20px 0;
+}
+
+table th, table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+table th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+}
+
+table tbody tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+table tbody tr:hover {
+    background-color: #f5f5f5;
+}
+
+/* Special styling for red rows (like orphan file indicators) */
+.red-row {
+    color: red;
+    font-weight: bold;
+}
+
 .debugging {
     font-size: 50%;
     color: red;
@@ -193,6 +233,7 @@ td {
     border-radius: 3px;
     box-shadow: 0 2px #999;
     transition: all 0.2s ease;
+    font-variant: small-caps;
 }
 
 .itemeditlink:hover, .itemreportlink:hover {
@@ -224,6 +265,7 @@ td {
     border-radius: 3px;
     box-shadow: 0 2px #999;
     transition: all 0.2s ease;
+    font-variant: small-caps;
 }
 
 .itemdeletelink:hover {
@@ -255,6 +297,7 @@ td {
     border-radius: 3px;
     box-shadow: 0 2px #999;
     transition: all 0.2s ease;
+    font-variant: small-caps;
 }
 
 .moveitemlink:hover {
@@ -292,6 +335,7 @@ td {
     border-radius: 3px;
     transition: all 0.2s ease;
     cursor: pointer;
+    font-variant: small-caps;
 }
 
 .context-menu-link-regular:hover {
@@ -309,6 +353,7 @@ td {
     border-radius: 3px;
     transition: all 0.2s ease;
     cursor: pointer;
+    font-variant: small-caps;
 }
 
 .context-menu-link-recent:hover {
@@ -370,6 +415,7 @@ td {
     border-radius: 3px;
     box-shadow: 0 2px #999;
     transition: all 0.2s ease;
+    font-variant: small-caps;
 }
 
 .indexeditlink:hover,
@@ -473,6 +519,7 @@ select:disabled {
     border-radius: 3px;
     box-shadow: 0 2px #999;
     transition: all 0.2s ease;
+    font-variant: small-caps;
 }
 
 .button:hover {background-color: #3e8e41}
@@ -497,6 +544,7 @@ select:disabled {
     border-radius: 3px;
     box-shadow: 0 2px #999;
     transition: all 0.2s ease;
+    font-variant: small-caps;
 }
 
 .button.admin:hover {background-color: lightblue}
@@ -521,6 +569,7 @@ select:disabled {
     border-radius: 3px;
     box-shadow: 0 2px #999;
     transition: all 0.2s ease;
+    font-variant: small-caps;
 }
 
 .button.debug:hover {background-color: pink}
@@ -607,6 +656,7 @@ select:disabled {
     font-weight: bold;
     width: 100%;
     transition: all 0.2s ease;
+    font-variant: small-caps;
 }
 
 .reportModal-content button:hover {
