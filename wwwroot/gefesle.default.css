@@ -770,6 +770,132 @@ select:disabled {
     font-weight: bold;
 }
 
+/* Edit Item Form Styles */
+.edit-item-container {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+/* Make all labels in the edit item form bold */
+.edit-item-container label {
+    font-weight: bold;
+}
+
+.item-info-panel {
+    background-color: lightgray;
+    position: relative;
+    width: 45vw;
+    min-width: 300px;
+    max-width: 100%;
+    padding: 15px;
+    border-radius: 5px;
+    flex: 1;
+    box-sizing: border-box;
+}
+
+.item-content-panel {
+    background-color: lightblue;
+    position: relative;
+    width: 45vw;
+    min-width: 300px;
+    max-width: 100%;
+    padding: 15px;
+    border-radius: 5px;
+    flex: 1;
+    box-sizing: border-box;
+}
+
+.item-mode-selection {
+    margin-bottom: 15px;
+    padding: 10px;
+    background-color: rgba(255, 255, 255, 0.3);
+    border-radius: 5px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.item-mode-selection label {
+    margin-left: 5px;
+    margin-right: 15px;
+}
+
+.content-section {
+    margin-bottom: 20px;
+}
+
+.content-section label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+.file-upload-section {
+    padding: 15px;
+    background-color: rgba(255, 255, 255, 0.3);
+    border-radius: 5px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.file-upload-section h4 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: #333;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.upload-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.upload-controls input[type="file"] {
+    padding: 5px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+}
+
+.upload-controls button {
+    padding: 8px 12px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+    background-color: #f0f0f0;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    align-self: flex-start;
+}
+
+.upload-controls button:hover {
+    background-color: #e0e0e0;
+}
+
+.form-actions {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #f9f9f9;
+    border-radius: 5px;
+    border: 1px solid #ddd;
+    text-align: center;
+}
+
+.form-actions input[type="submit"] {
+    padding: 10px 20px;
+    font-size: 16px;
+    border-radius: 5px;
+    border: 1px solid #007cba;
+    background-color: #007cba;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    margin-right: 10px;
+}
+
+.form-actions input[type="submit"]:hover {
+    background-color: #005a87;
+}
+
 .list-info-panel {
     background-color: lightgray;
     position: relative;
@@ -905,6 +1031,18 @@ select:disabled {
         box-sizing: border-box;
     }
     
+    .edit-item-container {
+        flex-direction: column;
+    }
+    
+    .item-info-panel,
+    .item-content-panel {
+        width: 100% !important;
+        min-width: unset !important;
+        max-width: 100% !important;
+        box-sizing: border-box;
+    }
+    
     .role-buttons {
         flex-direction: column;
     }
@@ -912,13 +1050,50 @@ select:disabled {
     .role-buttons button {
         min-width: unset;
     }
+    
+    .upload-controls {
+        align-items: stretch;
+    }
+    
+    .upload-controls button {
+        align-self: stretch;
+    }
 }
 
 /* Additional fix for general responsiveness */
 @media (max-width: 1024px) {
     .list-info-panel,
-    .list-roles-panel {
+    .list-roles-panel,
+    .item-info-panel,
+    .item-content-panel {
         max-width: 100%;
         box-sizing: border-box;
     }
+}
+
+/* Help tooltip styling */
+.help-tooltip {
+    cursor: help;
+    color: #666;
+    font-weight: bold;
+    margin-left: 5px;
+    position: relative;
+    display: inline-block;
+}
+
+.help-tooltip:hover {
+    color: #333;
+}
+
+/* EasyMDE editor height restrictions */
+.EasyMDEContainer .CodeMirror {
+    min-height: 150px;
+    max-height: 25vh;
+    overflow-y: auto;
+}
+
+.EasyMDEContainer .editor-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }

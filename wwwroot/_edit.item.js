@@ -1,4 +1,52 @@
 
+// Helper function to format tags for display - wraps tags with spaces in quotes
+function formatTagsForDisplay(tags) {
+    return tags.map(tag => {
+        // If tag contains spaces, wrap it in quotes
+        if (tag.includes(' ')) {
+            return `"${tag}"`;
+        }
+        return tag;
+    }).join(' ');
+}
+
+// Helper function to parse tags from input - handles quoted tags properly
+function parseTagsFromInput(input) {
+    const tags = [];
+    const regex = /"([^"]+)"|(\S+)/g;
+    let match;
+    
+    while ((match = regex.exec(input)) !== null) {
+        // match[1] is for quoted strings, match[2] is for unquoted words
+        tags.push(match[1] || match[2]);
+    }
+    
+    return tags;
+}
+
+// Setup mode toggle functionality
+function setupModeToggle(listid) {
+    const newRadio = document.getElementById('new');
+    const updateRadio = document.getElementById('update');
+    
+    // Add event listeners to both radio buttons
+    newRadio.addEventListener('change', function() {
+        if (this.checked) {
+            // Switch to new mode - reload page with just listid
+            const newUrl = `${window.location.pathname}?listid=${listid}`;
+            window.location.href = newUrl;
+        }
+    });
+    
+    updateRadio.addEventListener('change', function() {
+        if (this.checked) {
+            // Keep current mode (update mode should already be loaded)
+            // No action needed since we're already in update mode
+            console.log('Staying in update mode');
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', getItem);
 
 
@@ -133,7 +181,7 @@ async function getItem() {
                 document.getElementById('item.visible').checked = data.visible;
                 //document.getElementById('item.comment').value = data.comment;
                 easymde.value(data.comment);
-                document.getElementById('item.tags').value = data.tags.join(' ');
+                document.getElementById('item.tags').value = formatTagsForDisplay(data.tags);
             })
             .catch((error) => {
                 // write any error to the span with id="result"
@@ -161,7 +209,8 @@ async function getItem() {
             console.error('Error:', error);
         });
 
-
+    // Add event listeners for radio button mode selection
+    setupModeToggle(listid);
 }
 
 // When the form is submitted, send it to the REST API
@@ -221,7 +270,7 @@ async function updateItem(e) {
             } else {
                 apiUrl = apiUrl + '/additem/' + listid;
             }
-            data = { listid, name, comment, tags: tags.split(' '), visible };
+            data = { listid, name, comment, tags: parseTagsFromInput(tags), visible };
             apiMethod = 'POST';
         }
         else {
@@ -233,7 +282,7 @@ async function updateItem(e) {
                 // if id is not null or empty, then this is an existing item
                 // and we need to call the API to update the list
                 apiUrl = apiUrl + '/modifyitem';
-                data = { id, listid, name, comment, tags: tags.split(' '), visible };
+                data = { id, listid, name, comment, tags: parseTagsFromInput(tags), visible };
                 apiMethod = 'PUT';
             }
         }
