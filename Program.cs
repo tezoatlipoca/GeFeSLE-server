@@ -2676,7 +2676,7 @@ app.MapGet("/session", async (HttpContext httpContext) =>
     string fn = "/session"; DBg.d(LogLevel.Trace, fn);
 
     StringBuilder sb = new StringBuilder();
-    sb.AppendLine("<!DOCTYPE html><html><body>");
+    await GlobalStatic.GenerateHTMLHead(sb, "Session Debug Information");
 
     var sessionUser = UserSessionService.amILoggedIn(httpContext);
     string? niceSession = null;
@@ -2693,23 +2693,36 @@ app.MapGet("/session", async (HttpContext httpContext) =>
     {
         msg = $"{fn} --> Anonymous guest session.";
     }
-    sb.AppendLine($"SuperUser?: {httpContext.User.IsInRole("SuperUser")}");
-    sb.AppendLine("<br>");
-    sb.AppendLine($"<p>{msg}</p><pre>{niceSession}</pre>");
+    
+    sb.AppendLine("<h1>Session Debug Information</h1>");
+    sb.AppendLine($"<p><strong>SuperUser?:</strong> {httpContext.User.IsInRole("SuperUser")}</p>");
+    sb.AppendLine($"<p><strong>Status:</strong> {msg}</p>");
+    sb.AppendLine("<h2>Session Details</h2>");
+    sb.AppendLine($"<pre>{niceSession}</pre>");
+    
+    // Add JavaScript to show admin and debug elements
+    sb.AppendLine("<script src=\"/_utils.js\"></script>");
+    sb.AppendLine("<script>");
+    sb.AppendLine("document.addEventListener('DOMContentLoaded', function() {");
+    sb.AppendLine("    showDebuggingElements();");
+    sb.AppendLine("    showAdminSecrets();");
+    sb.AppendLine("});");
+    sb.AppendLine("</script>");
+    
     DBg.d(LogLevel.Information, msg);
 
-    sb.AppendLine("</body></html>");
+    await GlobalStatic.GeneratePageFooter(sb);
     return Results.Content(sb.ToString(), "text/html");
 }).AllowAnonymous()
 .RequireAuthorization(new AuthorizeAttribute
 { AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme });
 
 
-app.MapGet("/me/delete", (HttpContext httpContext) =>
+app.MapGet("/me/delete", async (HttpContext httpContext) =>
 {
     string fn = "/me"; DBg.d(LogLevel.Trace, fn);
 
-    httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     // delete every Cookie
     foreach (var cookie in httpContext.Request.Cookies)
     {
@@ -2721,15 +2734,26 @@ app.MapGet("/me/delete", (HttpContext httpContext) =>
     // }
     // kill all Session storage
     httpContext.Session.Clear();
+    
     // create an html page with javascript that clears localStorage and sessionStorage
     StringBuilder sb = new StringBuilder();
-    sb.AppendLine("<!DOCTYPE html><html><body>");
+    await GlobalStatic.GenerateHTMLHead(sb, "Session Cleanup");
+    
+    sb.AppendLine("<h1>Session Cleanup</h1>");
+    sb.AppendLine("<p>Clearing session data and redirecting...</p>");
+    sb.AppendLine("<script src=\"/_utils.js\"></script>");
     sb.AppendLine("<script>");
-    sb.AppendLine("localStorage.clear();");
-    sb.AppendLine("sessionStorage.clear();");
-    sb.AppendLine("window.location.href = '/';");
+    sb.AppendLine("document.addEventListener('DOMContentLoaded', function() {");
+    sb.AppendLine("    // Show admin elements before clearing and redirecting");
+    sb.AppendLine("    showDebuggingElements();");
+    sb.AppendLine("    showAdminSecrets();");
+    sb.AppendLine("    localStorage.clear();");
+    sb.AppendLine("    sessionStorage.clear();");
+    sb.AppendLine("    setTimeout(function() { window.location.href = '/'; }, 1000);");
+    sb.AppendLine("});");
     sb.AppendLine("</script>");
-    sb.AppendLine("</body></html>");
+    
+    await GlobalStatic.GeneratePageFooter(sb);
     return Results.Content(sb.ToString(), "text/html");
 }).AllowAnonymous()
 .RequireAuthorization(new AuthorizeAttribute
@@ -2878,24 +2902,45 @@ app.MapGet("/items/orphan", async (GeFeSLEDb db, bool delete = false) =>
         return Results.Redirect("/items/orphan");
     }
 
-
     StringBuilder sb = new StringBuilder();
-    sb.AppendLine("<!DOCTYPE html><html><body>");
-    sb.AppendLine("<h1>Orphaned Items</h1>");
+    await GlobalStatic.GenerateHTMLHead(sb, "Orphaned Items Report");
+    
+    sb.AppendLine("<h1>Orphaned Items Report</h1>");
     if(geItemOrphans.Count == 0)
     {
-        sb.AppendLine("<p>No orphaned items found</p>");
+        sb.AppendLine("<p><strong>Status:</strong> No orphaned items found - all items are properly associated with existing lists.</p>");
     }
     else
     {
-        sb.AppendLine("<p>Orphaned items found:</p>");
-        sb.AppendLine("<p>Would you like to delete them? <a href=\"/items/orphan?delete=true\">Yes</a></p>");
+        sb.AppendLine($"<p><strong>Status:</strong> Found {geItemOrphans.Count} orphaned item(s) that reference non-existent lists.</p>");
+        sb.AppendLine("<div class=\"button admin\" onclick=\"window.location.href='/items/orphan?delete=true'\">Delete All Orphaned Items</div>");
+        sb.AppendLine("<br><br>");
+        sb.AppendLine("<h2>Orphaned Items List</h2>");
+        sb.AppendLine("<table>");
+        sb.AppendLine("<thead><tr><th>Item Name</th><th>Referenced List ID</th><th>Action</th></tr></thead>");
+        sb.AppendLine("<tbody>");
         foreach (var item in geItemOrphans)
         {
-            sb.AppendLine($"<p><a href=\"/_edit.item.html?listid={item.ListId}&itemid={item.Id}\">{item.Name}</a></p>");
+            sb.AppendLine($"<tr>");
+            sb.AppendLine($"<td>{item.Name ?? "Unnamed Item"}</td>");
+            sb.AppendLine($"<td>{item.ListId}</td>");
+            sb.AppendLine($"<td><a href=\"/_edit.item.html?listid={item.ListId}&itemid={item.Id}\" class=\"itemeditlink\">Edit Item</a></td>");
+            sb.AppendLine($"</tr>");
         }
+        sb.AppendLine("</tbody>");
+        sb.AppendLine("</table>");
     }
-    sb.AppendLine("</body></html>");
+    
+    // Add JavaScript to show admin and debug elements
+    sb.AppendLine("<script src=\"/_utils.js\"></script>");
+    sb.AppendLine("<script>");
+    sb.AppendLine("document.addEventListener('DOMContentLoaded', function() {");
+    sb.AppendLine("    showDebuggingElements();");
+    sb.AppendLine("    showAdminSecrets();");
+    sb.AppendLine("});");
+    sb.AppendLine("</script>");
+    
+    await GlobalStatic.GeneratePageFooter(sb);
     return Results.Content(sb.ToString(), "text/html");
 }).RequireAuthorization(new AuthorizeAttribute
 {
