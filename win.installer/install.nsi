@@ -3,7 +3,7 @@
 !include "VersionCompare.nsh"
 
 ; Update ALL version references (change these for each version)
-!define VERSION "0.1.0"
+!define VERSION "0.1.1"
 
 ; General Settings  
 Name "GeFeSLE Server"
