@@ -23,6 +23,9 @@ using Microsoft.Extensions.FileProviders;
 using GeFeSLE.Controllers;
 using Microsoft.AspNetCore.HttpOverrides;
 using System.IdentityModel.Tokens.Jwt;
+using Microsoft.OpenApi.Models;
+using Swashbuckle.AspNetCore.SwaggerGen;
+using GeFeSLE.DTOs;
 
 
 // check a bunch of stuff; we MUST have a configuration file AND
@@ -337,6 +340,45 @@ builder.Services.Configure<KestrelServerOptions>(options =>
 builder.Services.AddScoped<GeListController>();
 builder.Services.AddScoped<GeListFileController>();
 
+// Add Swagger/OpenAPI documentation services
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new() 
+    { 
+        Title = "GeFeSLE API", 
+        Version = "v0.1.1",
+        Description = "Generic, Federated, Subscribable List Engine - Server API",
+        Contact = new() { Email = "tezoatlipoca@gmail.com" }
+    });
+    
+    // Include XML comments if you want to add them later
+    // var xmlFilename = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    // c.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFilename));
+    
+    // Add JWT Bearer authentication support in Swagger UI
+    c.AddSecurityDefinition("Bearer", new() 
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Enter 'Bearer' [space] and then your token in the text input below.\n\nExample: \"Bearer 12345abcdef\""
+    });
+    
+    c.AddSecurityRequirement(new()
+    {
+        {
+            new()
+            {
+                Reference = new() { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "Bearer" }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
 // Add Windows Service support
 builder.Services.AddWindowsService();
 
@@ -438,6 +480,13 @@ using (var scope = app.Services.CreateScope())
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
+    // Enable Swagger middleware for API documentation
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "GeFeSLE API v1");
+        c.RoutePrefix = "swagger"; // Swagger UI available at /swagger
+    });
 }
 else
 {
@@ -2528,144 +2577,202 @@ app.MapPost("/setlistuser", async ([FromBody] JsonElement data,
     Roles = "SuperUser,listowner"
 });
 
-app.MapPost("/deletelistuser", async ([FromBody] JsonElement data,
+app.MapPost("/deletelistuser", async (DeleteListUserDto requestData,
         GeFeSLEDb db,
-
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
     DBg.d(LogLevel.Trace, "deletelistuser");
-    // dump the form data in human readable form
-    // for each key in form data print key and value
-    foreach (var property in data.EnumerateObject())
-    {
-        DBg.d(LogLevel.Trace, $"{property.Name}: {property.Value}");
-    }
-
-
-
+    
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
-    // the FORM post will have a:
-    // listid
-    // username
-    // role (one of listowner or contributor // can't be anything but)
-    // try
-    // {
-    string? listid = data.GetProperty("listid").GetString();
-    string? username = data.GetProperty("username").GetString();
-    string? role = data.GetProperty("role").GetString();
+    // Validate input
+    if (string.IsNullOrEmpty(requestData.ListId) || string.IsNullOrEmpty(requestData.Username) || string.IsNullOrEmpty(requestData.Role))
+    {
+        return Results.BadRequest(new ListUserOperationResponse 
+        { 
+            Success = false, 
+            Message = "listid, username and role must be specified" 
+        });
+    }
+    
+    if (requestData.Role != "listowner" && requestData.Role != "contributor")
+    {
+        return Results.BadRequest(new ListUserOperationResponse 
+        { 
+            Success = false, 
+            Message = "role must be listowner or contributor" 
+        });
+    }
 
-    // if we don't get valid strings named as above, the exception will be caught. 
-    // however they can still be null i.e. { "listname":null }
-    if (string.IsNullOrEmpty(listid) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(role))
+    // Find the list
+    GeList? list = await db.Lists
+        .Include(l => l.ListOwners)
+        .Include(l => l.Contributors)
+        .FirstOrDefaultAsync(l => l.Id == int.Parse(requestData.ListId));
+        
+    if (list == null)
     {
-        return Results.BadRequest("listid, username and role must be specified");
+        return Results.NotFound(new ListUserOperationResponse 
+        { 
+            Success = false, 
+            Message = $"List {requestData.ListId} does not exist",
+            ListId = int.Parse(requestData.ListId)
+        });
     }
-    else if (role != "listowner" && role != "contributor")
+
+    // Get caller information
+    string? callerUserName = httpContext.User.Identity?.Name;
+    if (string.IsNullOrEmpty(callerUserName)) 
     {
-        return Results.BadRequest("role must be listowner or contributor");
+        return Results.BadRequest(new ListUserOperationResponse 
+        { 
+            Success = false, 
+            Message = "Caller is not logged in" 
+        });
     }
-    else
+
+    GeFeSLEUser? caller = await userManager.FindByNameAsync(callerUserName!.ToUpper());
+    if (caller == null) 
     {
-        // find the list. don't use findAsync cause that lazy loads the member collections boo
-        GeList? list = await db.Lists
-            .Include(l => l.ListOwners)
-            .Include(l => l.Contributors)
-            .FirstOrDefaultAsync(l => l.Id == int.Parse(listid));
-        if (list == null)
+        return Results.BadRequest(new ListUserOperationResponse 
+        { 
+            Success = false, 
+            Message = "Caller is not in the database" 
+        });
+    }
+
+    // Find the target user
+    GeFeSLEUser? user = await userManager.FindByNameAsync(requestData.Username!.ToUpper());
+    if (user == null) 
+    {
+        return Results.NotFound(new ListUserOperationResponse 
+        { 
+            Success = false, 
+            Message = $"User {requestData.Username} does not exist",
+            Username = requestData.Username
+        });
+    }
+
+    // Check permissions
+    var roles = await userManager.GetRolesAsync(caller);
+    var realizedRole = GlobalStatic.FindHighestRole(roles);
+
+    if (requestData.Role == "listowner")
+    {
+        if ((list.Creator == caller) || (realizedRole == "SuperUser"))
         {
-            return Results.BadRequest($"List {listid} does not exist");
+            if (!list.ListOwners.Contains(user))
+            {
+                return Results.Ok(new ListUserOperationResponse 
+                { 
+                    Success = true, 
+                    Message = $"{user.UserName} isn't a listowner of {list.Name}",
+                    Username = requestData.Username,
+                    ListId = int.Parse(requestData.ListId),
+                    Role = requestData.Role
+                });
+            }
+            else
+            {
+                list.ListOwners.Remove(user);
+                await db.SaveChangesAsync();
+                var msg = $"{caller.UserName} REMOVED {user.UserName} FROM {list.Name} as a listowner";
+                DBg.d(LogLevel.Information, msg);
+                return Results.Ok(new ListUserOperationResponse 
+                { 
+                    Success = true, 
+                    Message = msg,
+                    Username = requestData.Username,
+                    ListId = int.Parse(requestData.ListId),
+                    Role = requestData.Role
+                });
+            }
         }
         else
         {
-            // find the user who is calling this endpoint. 
-            string? callerUserName = httpContext.User.Identity?.Name;
-            if (string.IsNullOrEmpty(callerUserName)) return Results.BadRequest("Caller is not logged in");
-            // not sure how we get here with .Authentication working, but whatever
-            else
-            {
-                GeFeSLEUser? caller = await userManager.FindByNameAsync(callerUserName!.ToUpper());
-                if (caller == null) return Results.BadRequest("Caller is not in the database");
-                else
-                {
-                    // find the user we want to add to the list
-
-                    GeFeSLEUser? user = await userManager.FindByNameAsync(username!.ToUpper());
-                    if (user == null) return Results.BadRequest($"User {username} does not exist");
-
-                    // only the list's creator or a SuperUser can add a listowner
-                    // a listowner, SuperUser or the list's creator can add a contributor
-                    var roles = await userManager.GetRolesAsync(caller);
-                    var realizedRole = GlobalStatic.FindHighestRole(roles);
-
-                    if (role == "listowner")
-                    {
-                        if ((list.Creator == caller) ||
-                            (realizedRole == "SuperUser"))
-                        {
-                            if (!list.ListOwners.Contains(user))
-                            {
-                                var msg = $"{user.UserName} isn't a listowner of {list.Name}";
-                                DBg.d(LogLevel.Information, msg);
-                                return Results.Ok(msg);
-                            }
-                            else
-                            {
-                                list.ListOwners.Remove(user);
-                                _ = db.SaveChangesAsync();
-                                var msg = $"{caller.UserName} REMOVED {user.UserName} FROM {list.Name} as a listowner";
-                                DBg.d(LogLevel.Information, msg);
-                                return Results.Ok(msg);
-                            }
-                        }
-                        else
-                        {
-                            return Results.BadRequest("Only the list's creator or a SuperUser can REMOVE a listowner");
-                        }
-                    }
-                    else if (role == "contributor")
-                    {
-                        if ((list.Creator == caller) ||
-                            (realizedRole == "SuperUser") ||
-                            list.ListOwners.Contains(caller))
-                        {
-                            if (!list.Contributors.Contains(user))
-                            {
-                                var msg = $"{user.UserName} isn't a contributor to {list.Name}";
-                                DBg.d(LogLevel.Information, msg);
-                                return Results.Ok(msg);
-                            }
-                            else
-                            {
-                                list.Contributors.Remove(user);
-                                _ = db.SaveChangesAsync();
-                                var msg = $"{caller.UserName} REMOVED {user.UserName} FROM {list.Name} as a contributor";
-                                DBg.d(LogLevel.Information, msg);
-                                return Results.Ok(msg);
-                            }
-                        }
-
-                        else
-                        {
-                            return Results.BadRequest("Only the list's creator, a SuperUser or a listowner can REMOVE a contributor");
-                        }
-                    }
-                    else
-                    {
-                        return Results.BadRequest("role must be listowner or contributor");
-                    }
-                }
-            }
+            return Results.Problem("Only the list's creator or a SuperUser can REMOVE a listowner", 
+                statusCode: 403);
         }
     }
-    // }
-    // catch (Exception e)
-    // {
-    //     return Results.BadRequest(e.Message);
-    // }
-}).RequireAuthorization(new AuthorizeAttribute
+    else if (requestData.Role == "contributor")
+    {
+        if ((list.Creator == caller) || (realizedRole == "SuperUser") || list.ListOwners.Contains(caller))
+        {
+            if (!list.Contributors.Contains(user))
+            {
+                return Results.Ok(new ListUserOperationResponse 
+                { 
+                    Success = true, 
+                    Message = $"{user.UserName} isn't a contributor to {list.Name}",
+                    Username = requestData.Username,
+                    ListId = int.Parse(requestData.ListId),
+                    Role = requestData.Role
+                });
+            }
+            else
+            {
+                list.Contributors.Remove(user);
+                await db.SaveChangesAsync();
+                var msg = $"{caller.UserName} REMOVED {user.UserName} FROM {list.Name} as a contributor";
+                DBg.d(LogLevel.Information, msg);
+                return Results.Ok(new ListUserOperationResponse 
+                { 
+                    Success = true, 
+                    Message = msg,
+                    Username = requestData.Username,
+                    ListId = int.Parse(requestData.ListId),
+                    Role = requestData.Role
+                });
+            }
+        }
+        else
+        {
+            return Results.Problem("Only the list's creator, a SuperUser or a listowner can REMOVE a contributor", 
+                statusCode: 403);
+        }
+    }
+    else
+    {
+        return Results.BadRequest(new ListUserOperationResponse 
+        { 
+            Success = false, 
+            Message = "role must be listowner or contributor" 
+        });
+    }
+})
+.WithName("DeleteListUser")
+.WithSummary("Remove a user from a list with a specific role")
+.WithDescription(@"Removes a user from a list in a specific role (listowner or contributor). 
+
+**Authorization Rules:**
+- Only the list creator or SuperUser can remove listowners
+- List creators, SuperUsers, or listowners can remove contributors
+- Users can only remove others from lists they have appropriate permissions for
+
+**Request Body:**
+The request body must contain a JSON object with:
+- `listId`: The ID of the list (string representation of integer)
+- `username`: The username of the user to remove
+- `role`: Either 'listowner' or 'contributor'
+
+**Example Request:**
+```json
+{
+  ""listId"": ""123"",
+  ""username"": ""john.doe"",
+  ""role"": ""contributor""
+}
+```")
+.WithTags("List Management")
+.Accepts<DeleteListUserDto>("application/json")
+.Produces<ListUserOperationResponse>(200, "application/json")
+.Produces<ListUserOperationResponse>(400, "application/json")
+.Produces(401)
+.Produces(403)
+.Produces<ListUserOperationResponse>(404, "application/json")
+.RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
     Roles = "SuperUser,listowner"
