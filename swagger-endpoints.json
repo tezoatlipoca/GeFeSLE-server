@@ -1,0 +1,69 @@
+{
+  "deletelistuser": {
+    "summary": "Remove a user from a list with a specific role",
+    "description": "Removes a user from a list in a specific role (listowner or contributor).\n\n**Authorization Rules:**\n- Only the list creator or SuperUser can remove listowners\n- List creators, SuperUsers, or listowners can remove contributors\n- Users can only remove others from lists they have appropriate permissions for\n\n**Request Body:**\nThe request body must contain a JSON object with:\n- `listId`: The ID of the list (string representation of integer)\n- `username`: The username of the user to remove\n- `role`: Either 'listowner' or 'contributor'\n\n**Example Request:**\n```json\n{\n  \"listId\": \"123\",\n  \"username\": \"john.doe\",\n  \"role\": \"contributor\"\n}\n```",
+    "withthags": [
+      "List Management"
+    ],
+    "accepts": {
+      "requestType": "DeleteListUserDto",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "ListUserOperationResponse",
+        "contentType": "application/json",
+        "description": "User removed, or user was not assigned to that list role."
+      },
+      "400": {
+        "responseType": "ListUserOperationResponse",
+        "contentType": "application/json",
+        "description": "Invalid request payload (missing/invalid listId, username, or role)."
+      },
+      "401": {
+        "noBody": true,
+        "description": "Caller is not authenticated."
+      },
+      "403": {
+        "noBody": true,
+        "description": "Caller is authenticated but not authorized for this action."
+      },
+      "404": {
+        "responseType": "ListUserOperationResponse",
+        "contentType": "application/json",
+        "description": "Target list or target user was not found."
+      }
+    }
+  },
+  "user.post": {
+    "summary": "Adds a user to the database.",
+    "description": "Adds a user to the database. .\n\nCan only be performed by `SuperUser` or `listowner` roles.\n\nIf ONLY an email (or Fediverse handle) is provided, IT will be used for the username as well.",
+    "withthags": [
+      "User Management"
+    ],
+    "accepts": {
+      "requestType": "JsonElement",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "contentType": "text/plain",
+        "description": "User addition succeeded."
+      },
+      "400": {
+        "responseType": "string",
+        "contentType": "text/plain",
+        "description": "Bad request - could be: username AND email are both null; user (by username) already exists; other exceptions (detailed in error message)"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Caller is not authenticated."
+      },
+      "403": {
+        "noBody": true,
+        "description": "Caller is authenticated but does not have the required `SuperUser` or `listowner` role policy."
+      }
+    }
+  }
+}

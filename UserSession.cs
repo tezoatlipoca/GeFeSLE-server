@@ -105,7 +105,7 @@ public static class UserSessionService
     }
 
 
-    public static void createSession(HttpContext httpContext, string userid, string username, string role)
+    public static async Task createSession(HttpContext httpContext, string userid, string username, string role)
     {
         DBg.d(LogLevel.Trace, null);
         // create a claims identity
@@ -127,7 +127,7 @@ public static class UserSessionService
         };
 
         // sign in the user
-        httpContext.SignInAsync(
+        await httpContext.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
             new ClaimsPrincipal(claimsIdentity),
             authProperties);

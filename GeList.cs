@@ -146,6 +146,8 @@ public class GeList
                 DBg.d(LogLevel.Error, "Double check your config file for \"SiteCustomize\" : { \"bodyheader\" : \"<filename>\""); 
             }
         }
+        sb.AppendLine("<div class=\"list-header-wrapper\">");
+        sb.AppendLine("<div class=\"list-header-content\">");
         sb.AppendLine($"<h1 class=\"listtitle\"><a class=\"indexlink\" href=\"index.html\">&lt;-</a> {Name}</h1>");
         sb.AppendLine($"<p class=\"listcreated\">Created: {CreatedDate.ToString("yyyy-MM-dd HH:mm:ss")}");
         sb.AppendLine($"Modified: {ModifiedDate.ToString("yyyy-MM-dd HH:mm:ss")}</p>");
@@ -154,7 +156,11 @@ public class GeList
             var md = Markdown.ToHtml(Comment);
             sb.AppendLine($"<p class=\"listcomment\">{md}</p>");
         }
-
+        sb.AppendLine("</div>");
+        sb.AppendLine("<div class=\"list-options-panel\">");
+        sb.AppendLine("<input type=\"checkbox\" id=\"list-options-toggle\" class=\"list-options-toggle\">");
+        sb.AppendLine("<label for=\"list-options-toggle\" class=\"list-options-tab\">List Options</label>");
+        sb.AppendLine("<div class=\"list-options-body\">");
 sb.AppendLine($"<div class=\"button editlink\" onclick=\"window.location.href='_edit.list.html?listid={Id}'\" style=\"display: none;\">Edit This List</div>");
 sb.AppendLine($"<div class=\"button edititemlink\" onclick=\"window.location.href='_edit.item.html?listid={Id}'\" style=\"display: none;\">Add New Item</div>");
 sb.AppendLine($"<div class=\"button mastoimportlink\" onclick=\"importItems('Mastodon:Bookmarks',{Id})\" style=\"display: none;\">Mastodon Bookmarks</div>");
@@ -172,6 +178,9 @@ else
     sb.AppendLine($"<div class=\"button exportlink\" id=\"exportlink\">No JSON (No Items)</div>");
 }
 sb.AppendLine($"<div class=\"button suggestlink\" onclick=\"window.location.href='_edit.item.html?listid={Id}&suggestion=true'\">Suggest Item</div>");
+sb.AppendLine("</div>");
+sb.AppendLine("</div>");
+sb.AppendLine("</div>");
 
         // display a form with a text box for the text and tags search parameters
         sb.AppendLine($"<span class=\"result\" id=\"result\"></span>");

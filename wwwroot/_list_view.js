@@ -287,9 +287,42 @@ function showContextMenu(e) {
 
 
     var contextMenu = document.getElementById('contextMenu');
+    const viewportPadding = 8;
+
     contextMenu.style.display = 'block';
-    contextMenu.style.left = (e.pageX - contextMenu.offsetWidth) + 'px';
-    contextMenu.style.top = e.pageY + 'px';
+
+    // Measure first while hidden, then clamp position into visible viewport.
+    contextMenu.style.visibility = 'hidden';
+    contextMenu.style.left = '0px';
+    contextMenu.style.top = '0px';
+
+    const menuWidth = contextMenu.offsetWidth;
+    const menuHeight = contextMenu.offsetHeight;
+
+    const viewportLeft = window.scrollX;
+    const viewportTop = window.scrollY;
+    const viewportRight = viewportLeft + window.innerWidth;
+    const viewportBottom = viewportTop + window.innerHeight;
+
+    let left = e.pageX - menuWidth;
+    let top = e.pageY;
+
+    if (left < viewportLeft + viewportPadding) {
+        left = viewportLeft + viewportPadding;
+    }
+    if (left + menuWidth > viewportRight - viewportPadding) {
+        left = Math.max(viewportLeft + viewportPadding, viewportRight - menuWidth - viewportPadding);
+    }
+    if (top + menuHeight > viewportBottom - viewportPadding) {
+        top = Math.max(viewportTop + viewportPadding, viewportBottom - menuHeight - viewportPadding);
+    }
+    if (top < viewportTop + viewportPadding) {
+        top = viewportTop + viewportPadding;
+    }
+
+    contextMenu.style.left = `${left}px`;
+    contextMenu.style.top = `${top}px`;
+    contextMenu.style.visibility = 'visible';
 
     return false; // prevents the browser's context menu from appearing
 };

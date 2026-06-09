@@ -67,6 +67,7 @@
 
   <ItemGroup>
   <Content Update="wwwroot\**\*" CopyToPublishDirectory="Never" />
+  <Content Update="swagger-endpoints.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Always" />
   </ItemGroup>
 <ItemGroup>
     <EmbeddedResource Include="wwwroot\lib\easymde\easymde.min.css" />  

@@ -800,7 +800,9 @@ app.MapPost("/users", async (GeFeSLEUser user, GeFeSLEDb db,
         }
     }
 
-}).RequireAuthorization(new AuthorizeAttribute
+})
+.WithEndpointDocs("user.post")
+.RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
     Roles = "SuperUser,listowner"
@@ -1952,7 +1954,7 @@ app.MapGet("/oauthcallback", async (HttpContext context,
         msg = $"Welcome {username}! You are logged in as {realizedRole}";
 
     }
-    UserSessionService.createSession(context, user.Id ?? "OAuth", username, realizedRole);
+    await UserSessionService.createSession(context, user?.Id ?? "OAuth", username ?? "OAuth", realizedRole ?? "anonymous");
     UserSessionService.storeProvider(context, provider!);
     UserSessionService.AddAccessToken(context, provider!, accessToken!);
     await GlobalStatic.GenerateLoginResult(sb, msg);
@@ -2060,10 +2062,10 @@ app.MapPost("/me", async (HttpContext context,
         {
             if (isJSApi)
             {
-                DBg.d(LogLevel.Trace, $"--1784: userid: {user.Id ?? "no userid"}, username: {user.UserName ?? "no username"}, role: {realizedRole ?? "no role"}");
-                var token = UserSessionService.createJWToken(user.Id, user.UserName, realizedRole);
+                DBg.d(LogLevel.Trace, $"--1784: userid: {user!.Id ?? "no userid"}, username: {user.UserName ?? "no username"}, role: {realizedRole ?? "no role"}");
+                var token = UserSessionService.createJWToken(user!.Id ?? "OAuth", user.UserName ?? "OAuth", realizedRole ?? "anonymous");
                 DBg.d(LogLevel.Trace, $"LOGIN: User {login.Username} logged in as {realizedRole} VIA API RETURNING 200 + TOKEN");
-                UserSessionService.createSession(context, user.Id, user.UserName, realizedRole);
+                await UserSessionService.createSession(context, user!.Id ?? "OAuth", user.UserName ?? "OAuth", realizedRole ?? "anonymous");
                 _ = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
                 return Results.Ok(new
                 {
@@ -2073,7 +2075,7 @@ app.MapPost("/me", async (HttpContext context,
             } // good login -API
             else
             {
-                UserSessionService.createSession(context, user.Id, user.UserName, realizedRole);
+                await UserSessionService.createSession(context, user!.Id ?? "OAuth", user.UserName ?? "OAuth", realizedRole ?? "anonymous");
                 _ = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
                 DBg.d(LogLevel.Trace, $"LOGIN: OK - RETURNING REDIRECT");
                 return Results.Redirect("/");
@@ -2241,7 +2243,7 @@ app.MapGet("/mastocallback", async (string code,
 
             if (localuser is null)
             {
-                UserSessionService.createSession(httpContext, username!, username!, "anonymous");
+                await UserSessionService.createSession(httpContext, username!, username!, "anonymous");
                 var msg = $"Hi {username} from the fediverse; You've been logged in with role: anonymous.";
                 await GlobalStatic.GenerateLoginResult(sb, msg);
                 return Results.Content(sb.ToString(), "text/html");
@@ -2251,7 +2253,7 @@ app.MapGet("/mastocallback", async (string code,
                 // they're in there, which means we've added them, probably to assign them a role
                 var roles = await userManager.GetRolesAsync(localuser);
                 var realizedRole = GlobalStatic.FindHighestRole(roles);
-                UserSessionService.createSession(httpContext, localuser.Id, localuser.UserName!, realizedRole);
+                await UserSessionService.createSession(httpContext, localuser.Id, localuser.UserName!, realizedRole);
                 var msg = $"Hi {username} from the fediverse; You've been logged in with role: {realizedRole}.";
                 await GlobalStatic.GenerateLoginResult(sb, msg);
                 return Results.Content(sb.ToString(), "text/html");
@@ -2742,36 +2744,7 @@ app.MapPost("/deletelistuser", async (DeleteListUserDto requestData,
         });
     }
 })
-.WithName("DeleteListUser")
-.WithSummary("Remove a user from a list with a specific role")
-.WithDescription(@"Removes a user from a list in a specific role (listowner or contributor). 
-
-**Authorization Rules:**
-- Only the list creator or SuperUser can remove listowners
-- List creators, SuperUsers, or listowners can remove contributors
-- Users can only remove others from lists they have appropriate permissions for
-
-**Request Body:**
-The request body must contain a JSON object with:
-- `listId`: The ID of the list (string representation of integer)
-- `username`: The username of the user to remove
-- `role`: Either 'listowner' or 'contributor'
-
-**Example Request:**
-```json
-{
-  ""listId"": ""123"",
-  ""username"": ""john.doe"",
-  ""role"": ""contributor""
-}
-```")
-.WithTags("List Management")
-.Accepts<DeleteListUserDto>("application/json")
-.Produces<ListUserOperationResponse>(200, "application/json")
-.Produces<ListUserOperationResponse>(400, "application/json")
-.Produces(401)
-.Produces(403)
-.Produces<ListUserOperationResponse>(404, "application/json")
+.WithEndpointDocs("DeleteListUser")
 .RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,

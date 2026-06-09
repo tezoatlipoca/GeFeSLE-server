@@ -1,3 +1,4 @@
+using System.Net;
 using System.Reflection;
 using GeFeSLE;
 
@@ -79,6 +80,14 @@ public static class GlobalConfig
         CookieDomain = Hostname.Replace("http://", "").Replace("https://", "");
         // the cookie domain should have any port number removed
         CookieDomain = CookieDomain.Split(':')[0];
+
+        // Browsers are picky about the Domain attribute: localhost and IP addresses
+        // are safer left as host-only cookies.
+        if (CookieDomain.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+            IPAddress.TryParse(CookieDomain, out _))
+        {
+            CookieDomain = null;
+        }
 
 
         wwwroot = config.GetValue<string>("ServerSettings:wwwroot");

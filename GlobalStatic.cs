@@ -118,6 +118,7 @@ public static class GlobalStatic
         sb.AppendLine("<html>");
         sb.AppendLine("<head>");
         sb.AppendLine("<meta charset=\"utf-8\">");
+        sb.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, viewport-fit=cover\">");
         sb.AppendLine("<link rel=\"icon\" href=\"/gefesleff.png\" type=\"image/x-icon\">");
         // sb.AppendLine("<link href=\"/lib/emoji_js/emoji.css\" rel=\"stylesheet\" type=\"text/css\" />");
         // sb.AppendLine("<script src=\"/lib/emoji_js/emoji.js\" type=\"text/javascript\"></script>");
@@ -145,9 +146,18 @@ public static class GlobalStatic
         sb.AppendLine("</head>");
         sb.AppendLine("<body >");
 
+        sb.AppendLine("<div class=\"header-control-panels\">");
         if (GlobalConfig.Debugging == true)
         {
-            sb.AppendLine($"<div class=\"debugging\" style=\"display: none;\">");
+            sb.AppendLine("<input type=\"checkbox\" id=\"header-control-debug\" class=\"control-panel-toggle\">");
+            sb.AppendLine("<label for=\"header-control-debug\" class=\"control-panel-tab debug-tab\">Debug</label>");
+        }
+        sb.AppendLine("<input type=\"checkbox\" id=\"header-control-user\" class=\"control-panel-toggle\">");
+        sb.AppendLine("<label for=\"header-control-user\" class=\"control-panel-tab user-tab\">User/admin</label>");
+        sb.AppendLine("<div class=\"control-panel-stage\">");
+        if (GlobalConfig.Debugging == true)
+        {
+            sb.AppendLine("<div class=\"control-panel-body debugging debug-panel-body\">");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/session'\">Session</div>");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/me/delete'\">Kill Session</div>");
             sb.AppendLine($"<div class=\"button debug\" onclick=\"window.location.href='/lists/regen'\">Regenerate</div>");
@@ -158,12 +168,30 @@ public static class GlobalStatic
             sb.AppendLine($"<div class=\"button debug\" onclick=\"triggerImport()\">Import</div>");
             sb.AppendLine("</div>");
         }
-        sb.AppendLine($"<div class=\"admin\">");
+        sb.AppendLine("<div class=\"control-panel-body admin user-panel-body\">");
         sb.AppendLine($"<div class=\"button loginlink admin\" style=\"display: none;\" onclick=\"window.location.href='/_login.html'\">Login</div>");
         sb.AppendLine($"<div class=\"button pwdchangelink admin\" style=\"display: none;\" onclick=\"window.location.href='_password.change.html'\">Change Password</div>");
         sb.AppendLine($"<div class=\"button edituserslink admin\" style=\"display: none;\" onclick=\"window.location.href='/_edituser.html'\">Edit Users</div>");
         sb.AppendLine($"<div class=\"button admin\" onclick=\"window.location.href='/index.html'\">Back To Main</div>");
         sb.AppendLine("</div>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("<script>");
+        sb.AppendLine("document.addEventListener('DOMContentLoaded', function() {");
+        sb.AppendLine("  const debugCheckbox = document.getElementById('header-control-debug');");
+        sb.AppendLine("  const userCheckbox = document.getElementById('header-control-user');");
+        sb.AppendLine("  if (debugCheckbox) {");
+        sb.AppendLine("    debugCheckbox.addEventListener('change', function() {");
+        sb.AppendLine("      if (this.checked && userCheckbox) userCheckbox.checked = false;");
+        sb.AppendLine("    });");
+        sb.AppendLine("  }");
+        sb.AppendLine("  if (userCheckbox) {");
+        sb.AppendLine("    userCheckbox.addEventListener('change', function() {");
+        sb.AppendLine("      if (this.checked && debugCheckbox) debugCheckbox.checked = false;");
+        sb.AppendLine("    });");
+        sb.AppendLine("  }");
+        sb.AppendLine("});");
+        sb.AppendLine("</script>");
     }
 
         public static async Task GenerateUnAuthPage(StringBuilder sb, string msg)
