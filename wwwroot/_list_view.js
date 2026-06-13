@@ -6,7 +6,7 @@ function deleteItem(listId, itemid) {
     let fn = "deleteItem"; console.log(fn);
     if (islocal()) return;
     if (confirm('Are you sure you want to delete this item?')) {
-        let apiUrl = 'deleteitem/' + listId + '/' + itemid;
+        let apiUrl = '/items/' + itemid;
         fetch(apiUrl, {
             method: 'DELETE',
             headers: {
@@ -335,7 +335,7 @@ window.addEventListener('click', function (e) {
 
 async function moveItem(itemid, listid) {
     let fn = 'moveItem'; console.debug(fn);
-    let apiUrl = "/moveitem";
+    let apiUrl = `/items/${itemid}/list`;
 
     if (islocal()) {
         d("Cannot call API from a local file!");
@@ -364,8 +364,8 @@ async function moveItem(itemid, listid) {
         itemid = parseInt(itemid);
         listid = parseInt(listid);
 
-        data = { itemid, listid };
-        apiMethod = 'POST';
+        data = { listid };
+        apiMethod = 'PATCH';
 
         let formPOST = JSON.stringify(data);
         console.info(`${fn} <- ${formPOST}`);
@@ -529,7 +529,7 @@ function buildTagsMenu() {
 
 async function addTag(itemid, tag, tagSpan = null) {
     let fn = 'addTag'; console.debug(fn);
-    let apiUrl = "/addtag";
+    let apiUrl = `/items/${encodeURIComponent(parseInt(itemid))}/tags`;
 
     if (islocal()) {
         d("Cannot call API from a local file!");
@@ -592,8 +592,8 @@ async function addTag(itemid, tag, tagSpan = null) {
         itemid = parseInt(itemid);
 
 
-        data = { itemid, tag };
-        apiMethod = 'POST';
+        data = { tag };
+        apiMethod = 'PUT';
 
         let formPOST = JSON.stringify(data);
         console.info(`${fn} <- ${formPOST}`);
@@ -648,7 +648,7 @@ async function addTag(itemid, tag, tagSpan = null) {
 
 async function removeTag(itemid, tag, feedbackPosition = null) {
     let fn = 'removeTag'; console.debug(fn);
-    let apiUrl = "/removetag";
+    let apiUrl = `/items/${encodeURIComponent(parseInt(itemid))}/tags/${encodeURIComponent(tag)}`;
 
     if (islocal()) {
         d("Cannot call API from a local file!");
@@ -710,17 +710,10 @@ async function removeTag(itemid, tag, feedbackPosition = null) {
         itemid = parseInt(itemid);
 
 
-        data = { itemid, tag };
-        apiMethod = 'POST';
-
-        let formPOST = JSON.stringify(data);
-        console.info(`${fn} <- ${formPOST}`);
+        apiMethod = 'DELETE';
+        console.info(`${fn} <- ${apiUrl}`);
         fetch(apiUrl, {
             method: apiMethod,
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: formPOST,
         })
             .then(handleResponse)
             .then(response => {
@@ -946,7 +939,7 @@ async function checkImportStatus(processToken) {
     console.debug('processToken:', processToken);
     // if processToken has any quotes around it, remove them
     processToken = processToken.replace(/['"]+/g, '');
-    let apiUrl = '/checkprogress/' + processToken;
+    let apiUrl = '/actions/' + processToken;
 
     console.info(`${fn} <- ${processToken}`);
     return fetch(apiUrl, {

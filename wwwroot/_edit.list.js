@@ -286,7 +286,7 @@ async function getListUsers() {
     // get the value of the listid out of the list.id field
     let listid = document.getElementById('list.id').value;
 
-    let apiUrl = "/getlistuser/" + listid; 
+    let apiUrl = "/lists/" + listid + "/users";
     await fetch(apiUrl, {
         method: 'GET',
         headers: {
@@ -364,13 +364,13 @@ async function assignUser2List(e) {
     // get the role of the user from the list.role select
     let assignee_role = document.getElementById('list.userrole').value;
 
-    let apiUrl = "/setlistuser";
-    
-    // create post form data with listid, assignee as "username" and role
+    let apiUrl = assignee_role === 'listowner'
+        ? "/lists/" + listid + "/owners"
+        : "/lists/" + listid + "/contributors";
+
+    // create post form data with username
     let data = {
-        'listid': listid,
-        'username': assignee,
-        'role': assignee_role
+        'username': assignee
     };
 
     console.debug(' | API URL: ' + apiUrl);
@@ -385,10 +385,10 @@ async function assignUser2List(e) {
         body: JSON.stringify(data),
     })
         .then(handleResponse)
-        .then(response => response.text())
-        .then(text => {
-            // text is a message from the API
-            d(text);
+        .then(response => response.json())
+        .then(json => {
+            // json is an operation response from the API
+            d(json.message || JSON.stringify(json));
             c(RC.OK);
             
             // Show success popup
@@ -436,20 +436,20 @@ async function removeUserFromList(e) {
     // get the role of the user from the list.role select
     let assignee_role = document.getElementById('list.userrole').value;
 
-    let apiUrl = "/deletelistuser";
-    
-    // create post form data with listid, assignee as "username" and role
+    let apiUrl = assignee_role === 'listowner'
+        ? "/lists/" + listid + "/owners"
+        : "/lists/" + listid + "/contributors";
+
+    // create delete body with username
     let data = {
-        'listid': listid,
-        'username': assignee,
-        'role': assignee_role
+        'username': assignee
     };
 
     console.debug(' | API URL: ' + apiUrl);
     console.debug(' | Data: ' + data);
     
     await fetch(apiUrl, {
-        method: 'POST',
+        method: 'DELETE',
         headers: {
             'Content-Type': 'application/json',
             "GeFeSLE-XMLHttpRequest": "true"
@@ -457,10 +457,10 @@ async function removeUserFromList(e) {
         body: JSON.stringify(data),
     })
         .then(handleResponse)
-        .then(response => response.text())
-        .then(text => {
-            // text is a message from the API
-            d(text);
+        .then(response => response.json())
+        .then(json => {
+            // json is an operation response from the API
+            d(json.message || JSON.stringify(json));
             c(RC.OK);
             
             // Show success popup

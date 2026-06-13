@@ -163,7 +163,7 @@ async function getItem() {
     console.debug(fn + ' -- apiUrl: ' + apiUrl);
     if (itemid != null) {
         console.debug(fn + ' -- Getting item ' + itemid + ' in list ' + listid + '.')
-        fetch(apiUrl + '/showitems/' + listid + '/' + itemid)
+        fetch(apiUrl + '/items/' + itemid)
             .then(response => {
                 if (response.ok) {
                     return response.json();
@@ -268,7 +268,7 @@ async function updateItem(e) {
             if(isSuggestion) {
                 apiUrl = '/lists/' + listid + '/suggest';
             } else {
-                apiUrl = apiUrl + '/additem/' + listid;
+                apiUrl = apiUrl + '/items';
             }
             data = { listid, name, comment, tags: parseTagsFromInput(tags), visible };
             apiMethod = 'POST';
@@ -281,7 +281,7 @@ async function updateItem(e) {
             } else {
                 // if id is not null or empty, then this is an existing item
                 // and we need to call the API to update the list
-                apiUrl = apiUrl + '/modifyitem';
+                apiUrl = apiUrl + '/items/' + id;
                 data = { id, listid, name, comment, tags: parseTagsFromInput(tags), visible };
                 apiMethod = 'PUT';
             }

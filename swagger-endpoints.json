@@ -1,46 +1,199 @@
 {
-  "deletelistuser": {
-    "summary": "Remove a user from a list with a specific role",
-    "description": "Removes a user from a list in a specific role (listowner or contributor).\n\n**Authorization Rules:**\n- Only the list creator or SuperUser can remove listowners\n- List creators, SuperUsers, or listowners can remove contributors\n- Users can only remove others from lists they have appropriate permissions for\n\n**Request Body:**\nThe request body must contain a JSON object with:\n- `listId`: The ID of the list (string representation of integer)\n- `username`: The username of the user to remove\n- `role`: Either 'listowner' or 'contributor'\n\n**Example Request:**\n```json\n{\n  \"listId\": \"123\",\n  \"username\": \"john.doe\",\n  \"role\": \"contributor\"\n}\n```",
-    "withthags": [
-      "List Management"
-    ],
+  "users.post": {
+    "summary": "Create a new user",
+    "description": "Adds a new user to the system. Can only be performed by SuperUser or listowner roles.",
+    "withthags": ["User Management"],
     "accepts": {
-      "requestType": "DeleteListUserDto",
+      "requestType": "GeFeSLEUser",
       "contentType": "application/json"
     },
     "produces": {
       "200": {
-        "responseType": "ListUserOperationResponse",
-        "contentType": "application/json",
-        "description": "User removed, or user was not assigned to that list role."
+        "responseType": "GeFeSLEUser",
+        "description": "User created successfully"
       },
       "400": {
-        "responseType": "ListUserOperationResponse",
-        "contentType": "application/json",
-        "description": "Invalid request payload (missing/invalid listId, username, or role)."
+        "noBody": true,
+        "description": "Invalid user data"
       },
       "401": {
         "noBody": true,
-        "description": "Caller is not authenticated."
+        "description": "Not authenticated"
       },
       "403": {
         "noBody": true,
-        "description": "Caller is authenticated but not authorized for this action."
-      },
-      "404": {
-        "responseType": "ListUserOperationResponse",
-        "contentType": "application/json",
-        "description": "Target list or target user was not found."
+        "description": "Not authorized - requires SuperUser or listowner role"
       }
     }
   },
-  "user.post": {
-    "summary": "Adds a user to the database.",
-    "description": "Adds a user to the database. .\n\nCan only be performed by `SuperUser` or `listowner` roles.\n\nIf ONLY an email (or Fediverse handle) is provided, IT will be used for the username as well.",
-    "withthags": [
-      "User Management"
-    ],
+  "users.userid.put": {
+    "summary": "Update an existing user",
+    "description": "Updates user information. Can only be performed by SuperUser or listowner roles.",
+    "withthags": ["User Management"],
+    "accepts": {
+      "requestType": "GeFeSLEUser",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "GeFeSLEUser",
+        "description": "User updated successfully"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid user data"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      },
+      "404": {
+        "noBody": true,
+        "description": "User not found"
+      }
+    }
+  },
+  "users.userid.delete": {
+    "summary": "Delete a user",
+    "description": "Removes a user from the system. Can only be performed by SuperUser or listowner roles.",
+    "withthags": ["User Management"],
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "User deleted successfully"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      },
+      "404": {
+        "noBody": true,
+        "description": "User not found"
+      }
+    }
+  },
+  "users.username.get": {
+    "summary": "Get user by username",
+    "description": "Retrieves user information by username.",
+    "withthags": ["User Management"],
+    "produces": {
+      "200": {
+        "responseType": "GeFeSLEUser",
+        "description": "User found"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "404": {
+        "noBody": true,
+        "description": "User not found"
+      }
+    }
+  },
+  "users.get": {
+    "summary": "List all users",
+    "description": "Retrieves a list of all users. Requires SuperUser role.",
+    "withthags": ["User Management"],
+    "produces": {
+      "200": {
+        "responseType": "List",
+        "description": "List of users"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized - requires SuperUser role"
+      }
+    }
+  },
+  "users.userid.password.get": {
+    "summary": "Check if user password is set",
+    "description": "Checks whether a user has a password set.",
+    "withthags": ["User Management"],
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "Password status"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "users.userid.password.delete": {
+    "summary": "Clear user password",
+    "description": "Clears/resets a user's password. Requires SuperUser role.",
+    "withthags": ["User Management"],
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "Password cleared successfully"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      }
+    }
+  },
+  "users.userid.password.post": {
+    "summary": "Set or change user password",
+    "description": "Sets or changes a user's password.",
+    "withthags": ["User Management"],
+    "accepts": {
+      "requestType": "PasswordChangeDto",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "Password changed successfully"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid password"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "users.userid.roles.get": {
+    "summary": "Get user roles",
+    "description": "Retrieves all roles assigned to a user.",
+    "withthags": ["User Management"],
+    "produces": {
+      "200": {
+        "responseType": "List",
+        "description": "List of user roles"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "users.userid.roles.post": {
+    "summary": "Assign role to user",
+    "description": "Assigns a role to a user. Requires SuperUser role.",
+    "withthags": ["User Management"],
     "accepts": {
       "requestType": "JsonElement",
       "contentType": "application/json"
@@ -48,21 +201,860 @@
     "produces": {
       "200": {
         "responseType": "string",
-        "contentType": "text/plain",
-        "description": "User addition succeeded."
+        "description": "Role assigned successfully"
       },
       "400": {
-        "responseType": "string",
-        "contentType": "text/plain",
-        "description": "Bad request - could be: username AND email are both null; user (by username) already exists; other exceptions (detailed in error message)"
+        "noBody": true,
+        "description": "Invalid role"
       },
       "401": {
         "noBody": true,
-        "description": "Caller is not authenticated."
+        "description": "Not authenticated"
       },
       "403": {
         "noBody": true,
-        "description": "Caller is authenticated but does not have the required `SuperUser` or `listowner` role policy."
+        "description": "Not authorized"
+      }
+    }
+  },
+  "users.userid.roles.role.delete": {
+    "summary": "Remove role from user",
+    "description": "Removes a role from a user. Requires SuperUser role.",
+    "withthags": ["User Management"],
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "Role removed successfully"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      }
+    }
+  },
+  "lists.get": {
+    "summary": "List all lists accessible to user",
+    "description": "Retrieves all lists the authenticated user has access to.",
+    "withthags": ["List Management"],
+    "produces": {
+      "200": {
+        "responseType": "List",
+        "description": "List of lists"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "lists.listid.get": {
+    "summary": "Get list by ID",
+    "description": "Retrieves details of a specific list.",
+    "withthags": ["List Management"],
+    "produces": {
+      "200": {
+        "responseType": "GeList",
+        "description": "List details"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "404": {
+        "noBody": true,
+        "description": "List not found"
+      }
+    }
+  },
+  "lists.post": {
+    "summary": "Create a new list",
+    "description": "Creates a new list. The authenticated user becomes the list creator.",
+    "withthags": ["List Management"],
+    "accepts": {
+      "requestType": "GeList",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "GeList",
+        "description": "List created successfully"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid list data"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "lists.put": {
+    "summary": "Update a list",
+    "description": "Updates list details. Only list owner or SuperUser can update.",
+    "withthags": ["List Management"],
+    "accepts": {
+      "requestType": "GeList",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "GeList",
+        "description": "List updated successfully"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid list data"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      }
+    }
+  },
+  "lists.listid.items.get": {
+    "summary": "Get items in a list",
+    "description": "Retrieves all items in a specific list.",
+    "withthags": ["Items"],
+    "produces": {
+      "200": {
+        "responseType": "GeListWithItems",
+        "description": "List with items"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "404": {
+        "noBody": true,
+        "description": "List not found"
+      }
+    }
+  },
+  "items.id.get": {
+    "summary": "Get item by ID",
+    "description": "Retrieves details of a specific item.",
+    "withthags": ["Items"],
+    "produces": {
+      "200": {
+        "responseType": "GeListItem",
+        "description": "Item details"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "404": {
+        "noBody": true,
+        "description": "Item not found"
+      }
+    }
+  },
+  "items.post": {
+    "summary": "Create a new item",
+    "description": "Creates a new item in a list.",
+    "withthags": ["Items"],
+    "accepts": {
+      "requestType": "GeListItem",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "GeListItem",
+        "description": "Item created successfully"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid item data"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      }
+    }
+  },
+  "items.itemid.put": {
+    "summary": "Update an item",
+    "description": "Updates item details. Only list contributors/owners can update.",
+    "withthags": ["Items"],
+    "accepts": {
+      "requestType": "GeListItem",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "GeListItem",
+        "description": "Item updated successfully"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid item data"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      },
+      "404": {
+        "noBody": true,
+        "description": "Item not found"
+      }
+    }
+  },
+  "items.id.delete": {
+    "summary": "Delete an item",
+    "description": "Removes an item from a list.",
+    "withthags": ["Items"],
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "Item deleted successfully"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      },
+      "404": {
+        "noBody": true,
+        "description": "Item not found"
+      }
+    }
+  },
+  "items.id.list.patch": {
+    "summary": "Move item to another list",
+    "description": "Moves an item from one list to another.",
+    "withthags": ["Items"],
+    "accepts": {
+      "requestType": "MoveItemDto",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "GeListItem",
+        "description": "Item moved successfully"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid request"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      },
+      "404": {
+        "noBody": true,
+        "description": "Item or destination list not found"
+      }
+    }
+  },
+  "items.itemid.tags.tag.delete": {
+    "summary": "Remove tag from item",
+    "description": "Removes a tag from an item.",
+    "withthags": ["Tags"],
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "Tag removed successfully"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      },
+      "404": {
+        "noBody": true,
+        "description": "Item not found"
+      }
+    }
+  },
+  "items.itemid.tags.put": {
+    "summary": "Add tag to item",
+    "description": "Adds a tag to an item.",
+    "withthags": ["Tags"],
+    "accepts": {
+      "requestType": "AddTagDto",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "Tag added successfully"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid tag data"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      },
+      "404": {
+        "noBody": true,
+        "description": "Item not found"
+      }
+    }
+  },
+  "lists.id.delete": {
+    "summary": "Delete a list",
+    "description": "Removes a list and all its items. Only list owner or SuperUser can delete.",
+    "withthags": ["List Management"],
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "List deleted successfully"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      },
+      "404": {
+        "noBody": true,
+        "description": "List not found"
+      }
+    }
+  },
+  "lists.regen.get": {
+    "summary": "Regenerate all list cache",
+    "description": "Regenerates the cache for all lists. Requires SuperUser role.",
+    "withthags": ["Administration"],
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "Cache regenerated"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      }
+    }
+  },
+  "lists.listid.regen.get": {
+    "summary": "Regenerate list cache",
+    "description": "Regenerates the cache for a specific list.",
+    "withthags": ["Administration"],
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "Cache regenerated"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "404": {
+        "noBody": true,
+        "description": "List not found"
+      }
+    }
+  },
+  "oauthcallback.get": {
+    "summary": "OAuth callback handler",
+    "description": "Handles OAuth provider callbacks for authentication.",
+    "withthags": ["Authentication"],
+    "produces": {
+      "302": {
+        "noBody": true,
+        "description": "Redirect to application"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid OAuth response"
+      }
+    }
+  },
+  "me.post": {
+    "summary": "Local login or current session info",
+    "description": "Authenticates a user with credentials or returns current session info if already authenticated. Returns antiforgery tokens.",
+    "withthags": ["Authentication"],
+    "accepts": {
+      "requestType": "FormData",
+      "contentType": "application/x-www-form-urlencoded"
+    },
+    "produces": {
+      "200": {
+        "responseType": "JsonElement",
+        "description": "Login successful or current user info with antiforgery tokens"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid credentials"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "mastocallback.get": {
+    "summary": "Mastodon OAuth callback",
+    "description": "Handles Mastodon OAuth provider callback.",
+    "withthags": ["Authentication"],
+    "produces": {
+      "302": {
+        "noBody": true,
+        "description": "Redirect to application"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid callback"
+      }
+    }
+  },
+  "lists.listid.post": {
+    "summary": "Import lists (legacy)",
+    "description": "Legacy endpoint for importing lists.",
+    "withthags": ["List Management"],
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "Import completed"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "lists.query.post": {
+    "summary": "Query lists",
+    "description": "Queries lists with filters.",
+    "withthags": ["List Management"],
+    "accepts": {
+      "requestType": "JsonElement",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "List",
+        "description": "Query results"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "me.get": {
+    "summary": "Get current user session",
+    "description": "Returns current authenticated user information and antiforgery tokens.",
+    "withthags": ["Authentication"],
+    "produces": {
+      "200": {
+        "responseType": "JsonElement",
+        "description": "Current user info with antiforgery tokens"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "lists.list.users.get": {
+    "summary": "Get list users",
+    "description": "Retrieves all users assigned to a list (owners and contributors).",
+    "withthags": ["List Management"],
+    "produces": {
+      "200": {
+        "responseType": "ListUserInfo",
+        "description": "List users"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "404": {
+        "noBody": true,
+        "description": "List not found"
+      }
+    }
+  },
+  "lists.list.owners.post": {
+    "summary": "Add list owner",
+    "description": "Assigns a user as a list owner. Only list creator or SuperUser can add owners.",
+    "withthags": ["List Management"],
+    "accepts": {
+      "requestType": "AddListUserDto",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "ListUserOperationResponse",
+        "description": "Owner added or already assigned"
+      },
+      "400": {
+        "responseType": "ListUserOperationResponse",
+        "description": "Invalid request"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      },
+      "404": {
+        "responseType": "ListUserOperationResponse",
+        "description": "List or user not found"
+      }
+    }
+  },
+  "lists.list.contributors.post": {
+    "summary": "Add list contributor",
+    "description": "Assigns a user as a list contributor.",
+    "withthags": ["List Management"],
+    "accepts": {
+      "requestType": "AddListUserDto",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "ListUserOperationResponse",
+        "description": "Contributor added or already assigned"
+      },
+      "400": {
+        "responseType": "ListUserOperationResponse",
+        "description": "Invalid request"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      },
+      "404": {
+        "responseType": "ListUserOperationResponse",
+        "description": "List or user not found"
+      }
+    }
+  },
+  "lists.list.owners.delete": {
+    "summary": "Remove list owner",
+    "description": "Removes a user from list owners.",
+    "withthags": ["List Management"],
+    "accepts": {
+      "requestType": "AddListUserDto",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "ListUserOperationResponse",
+        "description": "Owner removed or was not assigned"
+      },
+      "400": {
+        "responseType": "ListUserOperationResponse",
+        "description": "Invalid request"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      },
+      "404": {
+        "responseType": "ListUserOperationResponse",
+        "description": "List or user not found"
+      }
+    }
+  },
+  "lists.list.contributors.delete": {
+    "summary": "Remove list contributor",
+    "description": "Removes a user from list contributors.",
+    "withthags": ["List Management"],
+    "accepts": {
+      "requestType": "AddListUserDto",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "ListUserOperationResponse",
+        "description": "Contributor removed or was not assigned"
+      },
+      "400": {
+        "responseType": "ListUserOperationResponse",
+        "description": "Invalid request"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      },
+      "404": {
+        "responseType": "ListUserOperationResponse",
+        "description": "List or user not found"
+      }
+    }
+  },
+  "session.get": {
+    "summary": "Get session information",
+    "description": "Returns information about the current session.",
+    "withthags": ["Session"],
+    "produces": {
+      "200": {
+        "responseType": "JsonElement",
+        "description": "Session information"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "me.delete.get": {
+    "summary": "Delete current user account",
+    "description": "Permanently deletes the authenticated user account and all associated data.",
+    "withthags": ["User Management"],
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "Account deleted successfully"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "root.get": {
+    "summary": "Redirect to index",
+    "description": "Root path redirect to index.html",
+    "withthags": ["Static"],
+    "produces": {
+      "302": {
+        "noBody": true,
+        "description": "Redirect to index.html"
+      }
+    }
+  },
+  "files.post": {
+    "summary": "Upload file",
+    "description": "Uploads a file for use in items. Requires valid antiforgery token.",
+    "withthags": ["Files"],
+    "accepts": "multipart/form-data",
+    "produces": {
+      "200": {
+        "responseType": "JsonElement",
+        "description": "File uploaded successfully"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid file or antiforgery token missing"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "actions.processid.get": {
+    "summary": "Get action status",
+    "description": "Retrieves the status of a background action.",
+    "withthags": ["Administration"],
+    "produces": {
+      "200": {
+        "responseType": "JsonElement",
+        "description": "Action status"
+      }
+    }
+  },
+  "actions.get": {
+    "summary": "List all actions",
+    "description": "Returns list of all background processes.",
+    "withthags": ["Administration"],
+    "produces": {
+      "200": {
+        "responseType": "List",
+        "description": "List of background processes"
+      }
+    }
+  },
+  "files.orphan.get": {
+    "summary": "Find orphaned files",
+    "description": "Identifies files that are no longer referenced by any items. Requires SuperUser role.",
+    "withthags": ["Files"],
+    "produces": {
+      "200": {
+        "responseType": "List",
+        "description": "List of orphaned files"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      }
+    }
+  },
+  "files.clean.get": {
+    "summary": "Clean up orphaned files",
+    "description": "Removes orphaned files from storage. Requires SuperUser role.",
+    "withthags": ["Files"],
+    "produces": {
+      "200": {
+        "responseType": "JsonElement",
+        "description": "Cleanup status"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "403": {
+        "noBody": true,
+        "description": "Not authorized"
+      }
+    }
+  },
+  "items.orphan.get": {
+    "summary": "Find orphaned items",
+    "description": "Identifies items that are no longer part of any list.",
+    "withthags": ["Items"],
+    "produces": {
+      "200": {
+        "responseType": "List",
+        "description": "List of orphaned items"
+      }
+    }
+  },
+  "cleanup.emptytags.post": {
+    "summary": "Remove empty tags",
+    "description": "Removes tags that are no longer assigned to any items. Requires admin access.",
+    "withthags": ["Administration"],
+    "produces": {
+      "200": {
+        "responseType": "JsonElement",
+        "description": "Cleanup status"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "items.itemid.report.post": {
+    "summary": "Report item",
+    "description": "Reports an item for moderation.",
+    "withthags": ["Items"],
+    "accepts": {
+      "requestType": "JsonElement",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "string",
+        "description": "Report submitted"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid report data"
+      },
+      "404": {
+        "noBody": true,
+        "description": "Item not found"
+      }
+    }
+  },
+  "lists.listid.suggest.post": {
+    "summary": "Suggest items for list",
+    "description": "Suggests items to add to a list based on criteria.",
+    "withthags": ["List Management"],
+    "accepts": {
+      "requestType": "JsonElement",
+      "contentType": "application/json"
+    },
+    "produces": {
+      "200": {
+        "responseType": "List",
+        "description": "Suggested items"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      },
+      "404": {
+        "noBody": true,
+        "description": "List not found"
+      }
+    }
+  },
+  "lists.export.get": {
+    "summary": "Export all lists",
+    "description": "Exports user's lists as JSON.",
+    "withthags": ["List Management"],
+    "produces": {
+      "200": {
+        "responseType": "JsonElement",
+        "description": "Lists export data"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
+      }
+    }
+  },
+  "lists.import.post": {
+    "summary": "Import lists",
+    "description": "Imports lists from a JSON file.",
+    "withthags": ["List Management"],
+    "accepts": "multipart/form-data",
+    "produces": {
+      "200": {
+        "responseType": "JsonElement",
+        "description": "Import status"
+      },
+      "400": {
+        "noBody": true,
+        "description": "Invalid file or format"
+      },
+      "401": {
+        "noBody": true,
+        "description": "Not authenticated"
       }
     }
   }

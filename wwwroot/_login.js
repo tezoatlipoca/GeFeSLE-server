@@ -14,7 +14,7 @@ function LoginDto({OAuthProvider = null,
     };
 
 
-function Login(loginto) {
+async function Login(loginto) {
     let fn = "Login |"; console.debug(fn);
     let loginDto = null;
     if (loginto === undefined || loginto === "local") {
@@ -38,8 +38,41 @@ function Login(loginto) {
     else {
         console.debug(fn, "loginDto/sending: ", loginDto);
 
-        // submit the form
         let form = document.getElementById("loginForm");
-        form.submit();
+        if (loginto === undefined || loginto === "local") {
+            let formData = new FormData(form);
+
+            try {
+                let response = await fetch('/me', {
+                    method: 'POST',
+                    headers: {
+                        "GeFeSLE-XMLHttpRequest": "true"
+                    },
+                    credentials: 'include',
+                    body: formData
+                });
+
+                response = await handleResponse(response);
+                let json = await response.json();
+
+                if (json && json.antiForgeryToken) {
+                    localStorage.setItem('antiForgeryToken', json.antiForgeryToken);
+                }
+                if (json && json.antiForgeryHeaderName) {
+                    localStorage.setItem('antiForgeryHeaderName', json.antiForgeryHeaderName);
+                }
+
+                window.location.href = '/';
+            }
+            catch (error) {
+                console.error(fn, error);
+                d(error.message || error);
+                c(RC.ERROR);
+            }
+        }
+        else {
+            // OAuth remains form-submit/redirect based
+            form.submit();
+        }
     }
 }

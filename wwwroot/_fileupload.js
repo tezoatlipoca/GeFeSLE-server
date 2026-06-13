@@ -14,50 +14,62 @@ async function uploadFile(e) {
         return;
     }
 
-    let aftoken = null;
-    let bail = false;
-    apiUrl = '/antiforgerytoken';
-    console.debug(`${fn} --> ${apiUrl}`);
-    await fetch(apiUrl, {
-        headers: {
-            "GeFeSLE-XMLHttpRequest": "true"
-        },
-        credentials: 'include'
-    })
-        .then(handleResponse)
-        .then(response => response.json())
-        .then(json => {
-            aftoken = json;
-            console.debug(`${fn} -- aftoken: ${aftoken.requestToken}`)
-            return aftoken;
+    let aftoken = localStorage.getItem('antiForgeryToken');
+    let afHeaderName = localStorage.getItem('antiForgeryHeaderName') || 'RequestVerificationToken';
+
+    // If token isn't cached yet (e.g. OAuth login path), refresh it from /me
+    if (!aftoken) {
+        apiUrl = '/me/';
+        console.debug(`${fn} --> ${apiUrl} (refresh antiforgery token)`);
+        await fetch(apiUrl, {
+            headers: {
+                "GeFeSLE-XMLHttpRequest": "true"
+            },
+            credentials: 'include'
         })
-        .catch(error => {
-            console.error('Error:', error);
-            d('Error: ' + error);
-            c(RC.ERROR);
-            bail = true;
-        });
-    if(bail) {
+            .then(handleResponse)
+            .then(response => response.json())
+            .then(json => {
+                if (json && json.antiForgeryToken) {
+                    aftoken = json.antiForgeryToken;
+                    localStorage.setItem('antiForgeryToken', aftoken);
+                }
+                if (json && json.antiForgeryHeaderName) {
+                    afHeaderName = json.antiForgeryHeaderName;
+                    localStorage.setItem('antiForgeryHeaderName', afHeaderName);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                d('Error: ' + error);
+                c(RC.ERROR);
+            });
+    }
+
+    if (!aftoken) {
+        d('Missing antiforgery token. Please log in again.');
+        c(RC.UNAUTHORIZED);
         return;
     }
 
-    
-    console.info(`${fn} -- aftoken: >>${aftoken.requestToken}<<`);
+    console.info(`${fn} -- aftoken: >>${aftoken}<<`);
     // Call the REST API
     
 
     let file = fileSelect.files[0];
     let data = new FormData();
     data.append('file', file);
-    apiUrl = '/fileuploadxfer';
+    apiUrl = '/files';
     console.debug(`${fn} --> ${apiUrl}`);
     let apiMethod = 'POST';
+    const headers = {
+        "GeFeSLE-XMLHttpRequest": "true"
+    };
+    headers[afHeaderName] = aftoken;
+
     await fetch(apiUrl, {
         method: apiMethod,
-        headers: {
-            "GeFeSLE-XMLHttpRequest": "true",
-            'RequestVerificationToken': aftoken.requestToken
-        },
+        headers: headers,
         credentials: 'include',
         body: data
     })

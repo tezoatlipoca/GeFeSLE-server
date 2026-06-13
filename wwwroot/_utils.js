@@ -219,6 +219,12 @@ async function amloggedin() {
                 let id = json.id;
                 let userName = json.userName;
                 let role = json.role;
+                if (json.antiForgeryToken) {
+                    localStorage.setItem('antiForgeryToken', json.antiForgeryToken);
+                }
+                if (json.antiForgeryHeaderName) {
+                    localStorage.setItem('antiForgeryHeaderName', json.antiForgeryHeaderName);
+                }
                 console.debug(fn + ' | API Response: ' + JSON.stringify(json));
 
                 return [id, userName, role];

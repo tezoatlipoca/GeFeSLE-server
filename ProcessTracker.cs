@@ -35,7 +35,7 @@ public static class ProcessTracker
             return _processes.TryGetValue(token, out var status) ? status : null;
         }
     }
-    public static List<string> ShitsGoingOn() {
+    public static List<string> GetProcesses() {
         return _processes.Select(x => $"{x.Key} - {_descriptions[x.Key]} - {x.Value}").ToList();
     }
 }

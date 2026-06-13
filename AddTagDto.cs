@@ -1,5 +1,4 @@
-public class AddTagDto {
-    public int itemid { get; set; }
+public class AddTagDto
+{
     public string tag { get; set; }
-    
 }
