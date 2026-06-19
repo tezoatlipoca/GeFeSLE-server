@@ -819,7 +819,7 @@ app.MapDelete("/users/{userid}", async (string userid,
         var result = await userManager.DeleteAsync(deluser);
         if (result.Succeeded)
         {
-            DBg.d(LogLevel.Trace, $"{fn} user deleted");
+            DBg.d(LogLevel.Trace, $"{fn} user deleted successfully");
             return Results.Ok();
         }
         else
@@ -827,21 +827,21 @@ app.MapDelete("/users/{userid}", async (string userid,
             DBg.d(LogLevel.Trace, $"{fn} user not deleted: ");
             foreach (var error in result.Errors)
             {
-                DBg.d(LogLevel.Trace, $"Error: {error.Code}, Description: {error.Description}");
+                DBg.d(LogLevel.Trace, $"Error deleting user: {error.Code}, Description: {error.Description}");
             }
             return Results.BadRequest(result.Errors);
         }
     }
     catch (Exception e)
     {
-        return Results.BadRequest(e);
+        return Results.BadRequest($"Error occurred: {e.Message}");
     }
 
 })
 .WithEndpointDocs("users.userid.delete")
 .RequireAuthorization(new AuthorizeAttribute
 {
-    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme, // Authorization schemes
     Roles = "SuperUser,listowner"
 });
 
@@ -1073,7 +1073,7 @@ app.MapGet("/users/{userid}/roles", async (string userid,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    string fn = $"/users/{userid}/roles (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/users/{userid}/roles (GET)"; DBg.d(LogLevel.Trace, fn);
 
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
@@ -1273,7 +1273,7 @@ app.MapGet("/lists/{listid:int}", async (GeFeSLEDb db,
     int listid,
     HttpContext httpContext) =>
 {
-    string fn = "/lists/{listid} (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/lists/{listid:int} (GET)"; DBg.d(LogLevel.Trace, fn);
 
     var userManager = httpContext.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
@@ -1312,7 +1312,7 @@ app.MapPost("/lists", async (GeList newlist,
     UserManager<GeFeSLEUser> userManager,
     RoleManager<IdentityRole> roleManager) =>
 {
-    var fn = "/lists (POST)"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/lists (POST)"; DBg.d(LogLevel.Trace, fn);
 
     // if the newlist.Name is null, return bad request
     if (string.IsNullOrEmpty(newlist.Name))
@@ -1361,7 +1361,7 @@ app.MapPut("/lists", async (HttpContext context,
     RoleManager<IdentityRole> roleManager,
     GeListController geListController) =>
     {
-        DBg.d(LogLevel.Trace, $"lists");
+        string fn = "/lists (PUT)"; DBg.d(LogLevel.Trace, fn);
         await geListController.ListsPut(context, inputList);
     }).RequireAuthorization(new AuthorizeAttribute
     {
@@ -1375,20 +1375,28 @@ app.MapGet("/lists/{listId:int}/items", async (int listId,
         UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext) =>
 {
-    DBg.d(LogLevel.Trace, $"lists/{listId}/items");
+    string fn = "/lists/{listId:int}/items (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var items = await db.Items.Where(item => item.ListId == listId).ToListAsync();
     return Results.Ok(items);
 })
 .WithEndpointDocs("lists.listid.items.get");
 
-app.MapGet("/items/{id:int}", async (int listId,
-        int id,
+
+// retreives the specified item by id
+// 200 - item found (and returned)
+// 404 - item not found by id
+// TODO: if item belongs to a list, need to verify user has permission to view item 
+//     via list and user permissions. 
+// WHO: anyone currently.. bad.
+
+
+app.MapGet("/items/{id:int}", async (int id,
         GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext) =>
 {
-    DBg.d(LogLevel.Trace, $"items/{id}");
+    string fn = "/items/{id:int} (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var showitem = await db.Items.FindAsync(id);
     if (showitem is not null)
@@ -1409,8 +1417,8 @@ app.MapPost("/items", async (
     HttpContext httpContext,
     GeListFileController geListFileController) =>
 {
-    string fn = $"items(POST) <- {System.Text.Json.JsonSerializer.Serialize(newitem)}";
-    DBg.d(LogLevel.Trace, fn);
+    string fn = "/items (POST)"; DBg.d(LogLevel.Trace, fn);
+    DBg.d(LogLevel.Trace, $"{fn} <- {System.Text.Json.JsonSerializer.Serialize(newitem)}");
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // if the ListId of newitem is 0 (which is ok - no value in json int is 0), then set it to listid
     if (newitem.ListId == 0)
@@ -1454,7 +1462,8 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
         HttpContext httpContext,
         GeListFileController geListFileController) =>
 {
-    DBg.d(LogLevel.Trace, $"/items(PUT)/{itemId}: <- {System.Text.Json.JsonSerializer.Serialize(inputItem)}");
+    string fn = "/items/{itemId:int} (PUT)"; DBg.d(LogLevel.Trace, fn);
+    DBg.d(LogLevel.Trace, $"{fn} <- {System.Text.Json.JsonSerializer.Serialize(inputItem)}");
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // make sure the itemID in the URL matches the itemID in the body, if not return bad request
     if (itemId != inputItem.Id)    {
@@ -1580,7 +1589,7 @@ app.MapPatch("/items/{id:int}/list", async (
     UserManager<GeFeSLEUser> userManager,
     HttpContext httpContext) =>
 {
-    var fn = "/items/{id}/list (PATCH)"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/items/{id:int}/list (PATCH)"; DBg.d(LogLevel.Trace, fn);
 
     string dumpData = System.Text.Json.JsonSerializer.Serialize(data);
     DBg.d(LogLevel.Trace, $"{fn} -- dump data {dumpData}");
@@ -1691,7 +1700,7 @@ app.MapPut("/items/{itemid:int}/tags", async (
     UserManager<GeFeSLEUser> userManager,
     HttpContext httpContext) =>
 {
-    var fn = $"/items/{itemid}/tags (PUT)"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/items/{itemid:int}/tags (PUT)"; DBg.d(LogLevel.Trace, fn);
 
     // stringify the data
     string dumpData = System.Text.Json.JsonSerializer.Serialize(data);
@@ -1874,7 +1883,7 @@ app.MapGet("/lists/regen", async (GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext) =>
 {
-    DBg.d(LogLevel.Trace, "/lists/regen");
+    string fn = "/lists/regen (GET)"; DBg.d(LogLevel.Trace, fn);
     var referer = httpContext.Request.Headers["Referer"].ToString();
     if (string.IsNullOrEmpty(referer)) referer = "/index.html";
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
@@ -1904,7 +1913,7 @@ app.MapGet("/lists/{listid}/regen", async (int listid,
         UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext) =>
 {
-    DBg.d(LogLevel.Trace, $"/lists/{listid}/regen");
+    string fn = "/lists/{listid}/regen (GET)"; DBg.d(LogLevel.Trace, fn);
     var referer = httpContext.Request.Headers["Referer"].ToString();
     if (string.IsNullOrEmpty(referer)) referer = "/index.html";
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
@@ -1933,7 +1942,7 @@ app.MapGet("/oauthcallback", async (HttpContext context,
         RoleManager<IdentityRole> roleManager
         ) =>
 {
-    DBg.d(LogLevel.Trace, "oauthcallback");
+    string fn = "/oauthcallback (GET)"; DBg.d(LogLevel.Trace, fn);
     StringBuilder sb = new StringBuilder();
     var msg = "";
     var auth = await context.AuthenticateAsync(IdentityConstants.ExternalScheme);
@@ -2010,6 +2019,7 @@ app.MapPost("/me", async (HttpContext context,
     UserManager<GeFeSLEUser> userManager,
     RoleManager<IdentityRole> roleManager) =>
 {
+    string fn = "/me (POST)"; DBg.d(LogLevel.Trace, fn);
     if (!context.Request.HasFormContentType)
     {
         return Results.BadRequest("No POST form data.");
@@ -2192,7 +2202,7 @@ app.MapGet("/mastocallback", async (string code,
     UserManager<GeFeSLEUser> userManager,
     RoleManager<IdentityRole> roleManager) =>
 {
-    DBg.d(LogLevel.Trace, "mastocallback");
+    string fn = "/mastocallback (GET)"; DBg.d(LogLevel.Trace, fn);
     DBg.d(LogLevel.Trace, $"code: {code}");
 
     // now finally we have the code, we can use it to get the access token
@@ -2314,7 +2324,7 @@ app.MapPost("/lists/{listid:int}", async Task<IResult> (HttpContext httpContext)
     var userManager = httpContext.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
     var geListController = httpContext.RequestServices.GetRequiredService<GeListController>();
 
-    string fn = "/lists/{listid} (POST)"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/lists/{listid:int} (POST)"; DBg.d(LogLevel.Trace, fn);
 
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // get session user
@@ -2352,7 +2362,7 @@ app.MapPost("/lists/query", async (
     HttpContext httpContext,
     GeListController geListController) =>
 {
-    string fn = "/lists/ (POST)"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/lists/query (POST)"; DBg.d(LogLevel.Trace, fn);
     DBg.d(LogLevel.Trace, $"{fn} <-- importListDto: {System.Text.Json.JsonSerializer.Serialize(importListDto)}");
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     importListDto.Data = null;
@@ -2368,7 +2378,7 @@ app.MapPost("/lists/query", async (
 
 app.MapGet("/me", (HttpContext httpContext, IAntiforgery antiforgery) =>
 {
-    var fn = "/me"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/me (GET)"; DBg.d(LogLevel.Trace, fn);
     //GlobalStatic.DumpHTTPRequestHeaders(httpContext.Request);
     if (GlobalStatic.IsAPIRequest(httpContext.Request))
     {
@@ -2409,7 +2419,7 @@ app.MapGet("/lists/{list:int}/users", async (int list,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    DBg.d(LogLevel.Trace, "lists/{list}/users");
+    string fn = "/lists/{list:int}/users (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     // middleware rejects the request if there isn't a listid. see if the list given is a real one
@@ -2442,7 +2452,7 @@ app.MapPost("/lists/{list:int}/owners", async (int list,
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager) =>
 {
-    DBg.d(LogLevel.Trace, "lists/{list}/owners");
+    string fn = "/lists/{list:int}/owners (POST)"; DBg.d(LogLevel.Trace, fn);
 
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
@@ -2561,7 +2571,7 @@ app.MapPost("/lists/{list:int}/contributors", async (int list,
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager) =>
 {
-    DBg.d(LogLevel.Trace, "lists/{list}/contributors");
+    string fn = "/lists/{list:int}/contributors (POST)"; DBg.d(LogLevel.Trace, fn);
 
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
@@ -2912,7 +2922,7 @@ app.MapDelete("/lists/{list:int}/contributors", async (int list,
 
 app.MapGet("/session", async (HttpContext httpContext) =>
 {
-    string fn = "/session"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/session (GET)"; DBg.d(LogLevel.Trace, fn);
 
     StringBuilder sb = new StringBuilder();
     await GlobalStatic.GenerateHTMLHead(sb, "Session Debug Information");
@@ -2959,7 +2969,7 @@ app.MapGet("/session", async (HttpContext httpContext) =>
 
 app.MapGet("/me/delete", async (HttpContext httpContext) =>
 {
-    string fn = "/me"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/me/delete (GET)"; DBg.d(LogLevel.Trace, fn);
 
     await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     // delete every Cookie
@@ -2999,7 +3009,10 @@ app.MapGet("/me/delete", async (HttpContext httpContext) =>
 { AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme });
 
 
-app.MapGet("/", () => { return Results.Redirect("/index.html"); });
+app.MapGet("/", () => {
+    string fn = "/ (GET)"; DBg.d(LogLevel.Trace, fn);
+    return Results.Redirect("/index.html");
+});
 
 app.MapPost("/files", async (IFormFile file,
     IAntiforgery antiforgery,
@@ -3007,7 +3020,7 @@ app.MapPost("/files", async (IFormFile file,
     UserManager<GeFeSLEUser> userManager,
     HttpContext httpContext) =>
 {
-    string fn = "/files"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/files (POST)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     DBg.d(LogLevel.Trace, $"{fn} -- {UserSessionService.dumpClaims(httpContext)}");
@@ -3062,6 +3075,7 @@ app.MapPost("/files", async (IFormFile file,
 
 app.MapGet("/actions/{processid}", (string processid) =>
 {
+    string fn = "/actions/{processid} (GET)"; DBg.d(LogLevel.Trace, fn);
     var status = ProcessTracker.GetProcessStatus(processid);
     return Results.Ok(status);
 
@@ -3069,6 +3083,7 @@ app.MapGet("/actions/{processid}", (string processid) =>
 
 app.MapGet("/actions", () =>
 {
+    string fn = "/actions (GET)"; DBg.d(LogLevel.Trace, fn);
     var status = ProcessTracker.GetProcesses();
     return Results.Ok(status);
 
@@ -3076,6 +3091,7 @@ app.MapGet("/actions", () =>
 
 app.MapGet("/files/orphan", async (GeListFileController geListFileController) =>
 {
+    string fn = "/files/orphan (GET)"; DBg.d(LogLevel.Trace, fn);
     StringBuilder sb = await geListFileController.GetAllFilesInWWWRoot();
     return Results.Content(sb.ToString(), "text/html");
 }).RequireAuthorization(new AuthorizeAttribute
@@ -3089,7 +3105,7 @@ app.MapGet("/files/clean", async (GeListFileController geListFileController,
     GeFeSLEDb db,
     UserManager<GeFeSLEUser> userManager) =>
 {
-    string fn = "/files/clean"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/files/clean (GET)"; DBg.d(LogLevel.Trace, fn);
 
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
@@ -3117,6 +3133,7 @@ app.MapGet("/files/clean", async (GeListFileController geListFileController,
 
 app.MapGet("/items/orphan", async (GeFeSLEDb db, bool delete = false) =>
 {
+    string fn = "/items/orphan (GET)"; DBg.d(LogLevel.Trace, fn);
     var geListIds = await db.Lists.Select(g => g.Id).ToListAsync();
     var geItemOrphans = await db.Items.Where(i => !geListIds.Contains(i.ListId)).ToListAsync();
     
@@ -3175,7 +3192,7 @@ app.MapGet("/items/orphan", async (GeFeSLEDb db, bool delete = false) =>
 
 app.MapPost("/cleanup/empty-tags", async (GeFeSLEDb db) =>
 {
-    var fn = "/cleanup/empty-tags"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/cleanup/empty-tags (POST)"; DBg.d(LogLevel.Trace, fn);
     
     var allItems = await db.Items.ToListAsync();
     int cleanedCount = 0;
@@ -3217,7 +3234,7 @@ app.MapPost("/items/{itemid:int}/report", async (int itemid,
     HttpContext context,
     GeListFileController fileController) =>
 {
-    string fn = "/items/{itemid}/report"; DBg.d(LogLevel.Trace, fn);
+    string fn = "/items/{itemid:int}/report (POST)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
 
     // there's going to be a "reason" parameter, and if user == null, a user contact 
@@ -3305,8 +3322,8 @@ app.MapPost("/lists/{listid:int}/suggest", async (int listid,
     HttpContext httpContext,
     GeListFileController geListFileController) =>
 {
-    string fn = $"/lists/{listid}/suggest <- {System.Text.Json.JsonSerializer.Serialize(newitem)}";
-    DBg.d(LogLevel.Trace, fn);
+    string fn = "/lists/{listid:int}/suggest (POST)"; DBg.d(LogLevel.Trace, fn);
+    DBg.d(LogLevel.Trace, $"{fn} <- {System.Text.Json.JsonSerializer.Serialize(newitem)}");
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // if the ListId of newitem is 0 (which is ok - no value in json int is 0), then set it to listid
     if (newitem.ListId == 0)
@@ -3389,6 +3406,7 @@ app.MapPost("/lists/{listid:int}/suggest", async (int listid,
 
 app.MapGet("/lists/export", async (GeFeSLEDb db) =>
 {
+    string fn = "/lists/export (GET)"; DBg.d(LogLevel.Trace, fn);
     string zipFile = GlobalStatic.SiteExport(db);
     // the zipFileName will be in wwwroot
     zipFile = $"{GlobalConfig.Hostname}/{zipFile}";
@@ -3407,6 +3425,7 @@ app.MapPost("/lists/import", async (IFormFile file,
     UserManager<GeFeSLEUser> userManager,
     HttpContext httpContext) =>
 {
+    string fn = "/lists/import (POST)"; DBg.d(LogLevel.Trace, fn);
 
 
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
