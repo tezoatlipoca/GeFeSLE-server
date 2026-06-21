@@ -97,11 +97,10 @@ namespace GeFeSLE.Controllers
         }
 
 
-        public async Task<IActionResult> ListsPut(HttpContext httpContext,
+        public async Task<IResult> ListsPut(HttpContext httpContext,
             GeListDto inputList)
         {
-            string fn = "/lists (PUT)";
-            DBg.d(LogLevel.Trace, fn);
+            string fn = "/lists (PUT)"; DBg.d(LogLevel.Trace, fn);
 
 
             string dumpList = System.Text.Json.JsonSerializer.Serialize(inputList);
@@ -113,7 +112,7 @@ namespace GeFeSLE.Controllers
             var namechange = false;
             if (modlist is null)
             {
-                return NotFound();
+                return Results.NotFound();
             }
             // if check the role of the user; if they're superuser or creator of the list, they can modify it
             // if they're a listowner or contributor they can only modify the list if they're listed as
@@ -121,10 +120,7 @@ namespace GeFeSLE.Controllers
             (bool canMod, string? whyNot) = modlist.IsUserAllowedToModify(user);
             if (!canMod && sessionUser.Role != "SuperUser")
             {
-                ContentResult cr = new ContentResult();
-                cr.StatusCode = StatusCodes.Status403Forbidden;
-                cr.Content = whyNot;
-                return cr;
+                return Results.Text(whyNot ?? "Forbidden", statusCode: StatusCodes.Status403Forbidden);
 
                 //return new StatusCodeResult(StatusCodes.Status403Forbidden) { Value = whyNot }; // Nope, RequestDelegate error
 
@@ -138,9 +134,17 @@ namespace GeFeSLE.Controllers
             if (modlist.Name != inputList.Name)
             {
                 // if the new name is a reserved list name, say no
-                if(inputList.Name == GlobalConfig.modListName) {
-                    return BadRequest($"List name {GlobalConfig.modListName} is RESERVED.");
+                if (inputList.Name == GlobalConfig.modListName)
+                {
+                    return Results.BadRequest($"List name {GlobalConfig.modListName} is RESERVED.");
                 }
+                // if the new name contains characters that are not allowed in file names, say so and indicate which character and where.
+                var invalidIndex = inputList.Name.IndexOfAny(Path.GetInvalidFileNameChars());
+                if (invalidIndex >= 0)
+                {
+                    return Results.BadRequest($"List name contains invalid character '{inputList.Name[invalidIndex]}' at position {invalidIndex}.");
+                }
+
 
                 var filename = $"{modlist.Name}.html";
                 var dest = Path.Combine(GlobalConfig.wwwroot!, filename);
@@ -163,9 +167,21 @@ namespace GeFeSLE.Controllers
 
             modlist.Name = inputList.Name;
             modlist.Comment = inputList.Comment;
+            modlist.ActivityPubId = inputList.ActivityPubId;
             modlist.ModifiedDate = DateTime.Now;
             modlist.SetVisibility(inputList.Visibility);
             _ = ProtectAttachments(modlist);
+
+            // check the ActivityPubId for invalid characters - validate even if name didn't change
+            DBg.d(LogLevel.Trace, $"{fn} Checking ActivityPubId: {inputList.ActivityPubId}");
+            var invalidActivityPubIdChar = inputList.ActivityPubId?
+                .Select((c, index) => new { c, index })
+                .FirstOrDefault(item => !GlobalConfig.validAPListNameChars.Contains(item.c));
+            DBg.d(LogLevel.Trace, $"{fn} invalidActivityPubIdChar: {(invalidActivityPubIdChar is null ? "null" : $"char '{invalidActivityPubIdChar.c}' at position {invalidActivityPubIdChar.index}")}");
+            if (invalidActivityPubIdChar != null)
+            {
+                return Results.BadRequest($"ActivityPubId contains invalid character {invalidActivityPubIdChar.c} starting at position {invalidActivityPubIdChar.index}.");
+            }
             await _db.SaveChangesAsync();
             await modlist.RegenerateAllFiles(_db);
             if (namechange)
@@ -174,7 +190,7 @@ namespace GeFeSLE.Controllers
                 // but if the name didn't change, we still need to regenerate for other potential changes
                 // Actually, RegenerateAllFiles always regenerates the index, so we can remove this
             }
-            return Ok();
+            return Results.Ok();
         }
         // this method brokers calls to all import-to-lists-from-other-services methods
         // sent via the POST /lists/{list} or /ists/ endpoint
@@ -540,29 +556,39 @@ namespace GeFeSLE.Controllers
         {
             string fn = "ProtectAttachments"; DBg.d(LogLevel.Trace, fn);
             bool protect = true;
-            if(list.Visibility > GeListVisibility.Public) {
+            if (list.Visibility > GeListVisibility.Public)
+            {
                 protect = true;
-            } else {
+            }
+            else
+            {
                 protect = false;
             }
-             
+
             List<GeListItem> listItems = _db.Items.Where(item => item.ListId == list.Id).ToList();
-            if(listItems.Count > 0) {
-                foreach(GeListItem item in listItems) {
+            if (listItems.Count > 0)
+            {
+                foreach (GeListItem item in listItems)
+                {
                     List<string> files = item.LocalFiles();
-                    if(files.Count > 0) {
-                        if(protect) {
+                    if (files.Count > 0)
+                    {
+                        if (protect)
+                        {
                             _fileController.ProtectFiles(files, list.Name);
                         }
-                        else {
+                        else
+                        {
                             _fileController.UnProtectFiles(files, list.Name);
                         }
                     }
                 }
-            } else {
+            }
+            else
+            {
                 DBg.d(LogLevel.Trace, $"{fn} -- no items to process");
             }
-            
+
 
             return;
         }

@@ -20,7 +20,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Set version variable
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
@@ -34,17 +34,17 @@ jobs:
         id: winzip
         shell: pwsh
         run: |
-          cd bin/Release/net8.0/win-x64/publish
+          cd bin/Release/net10.0/win-x64/publish
           7z a -tzip GeFeSLE-Server_${env:VERSION}_win-x64.zip GeFeSLE.exe *.dll appsettings.json config.SAMPLE.json
           cd -
-          mv bin/Release/net8.0/win-x64/publish/GeFeSLE-Server_${env:VERSION}_win-x64.zip .
+          mv bin/Release/net10.0/win-x64/publish/GeFeSLE-Server_${env:VERSION}_win-x64.zip .
           echo "path=$(pwd)/GeFeSLE-Server_${env:VERSION}_win-x64.zip" >> $GITHUB_OUTPUT
 
       - name: Copy files to win.installer
         shell: pwsh
         run: |
-          cp bin/Release/net8.0/win-x64/publish/GeFeSLE.exe win.installer/
-          cp bin/Release/net8.0/win-x64/publish/*.dll win.installer/
+          cp bin/Release/net10.0/win-x64/publish/GeFeSLE.exe win.installer/
+          cp bin/Release/net10.0/win-x64/publish/*.dll win.installer/
           # PowerShell scripts are already in win.installer directory
 
       - name: Install NSIS
@@ -85,7 +85,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Set version variable
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
@@ -98,7 +98,7 @@ jobs:
       - name: Archive Linux Binary
         id: linuxtar
         run: |
-          tar czf GeFeSLE-Server_${VERSION}_linux_x64.tar.gz bin/Release/net8.0/linux-x64/publish/GeFeSLE
+          tar czf GeFeSLE-Server_${VERSION}_linux_x64.tar.gz bin/Release/net10.0/linux-x64/publish/GeFeSLE
           echo "path=$(pwd)/GeFeSLE-Server_${VERSION}_linux_x64.tar.gz" >> $GITHUB_OUTPUT
 
       - name: Upload Linux Artifact
@@ -117,7 +117,7 @@ jobs:
         shell: bash
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
       - name: Install dotnet-deb
         run: dotnet tool install -g dotnet-deb
       - name: Install Packaging.Targets
@@ -130,7 +130,7 @@ jobs:
         run: dotnet-deb -c Release -r linux-x64
       - name: Rename DEB Package
         run: |
-          debfile=$(ls bin/Release/net8.0/linux-x64/*.deb | head -n 1)
+          debfile=$(ls bin/Release/net10.0/linux-x64/*.deb | head -n 1)
           mv "$debfile" "GeFeSLE-Server_${VERSION}_linux_x64.deb"
       - name: Upload DEB Artifact
         uses: actions/upload-artifact@v4
@@ -153,7 +153,7 @@ jobs:
       - name: Copy executable for RPM
         run: |
           mkdir -p rpm-root/usr/local/bin
-          cp -r bin/Release/net8.0/linux-x64/publish/* rpm-root/usr/local/bin/
+          cp -r bin/Release/net10.0/linux-x64/publish/* rpm-root/usr/local/bin/
       - name: Create RPM Package
         run: |
           fpm -s dir -t rpm -n GeFeSLE-Server -v ${VERSION} -C rpm-root .

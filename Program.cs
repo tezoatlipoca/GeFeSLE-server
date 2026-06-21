@@ -1306,6 +1306,14 @@ app.MapGet("/lists/{listid:int}", async (GeFeSLEDb db,
 })
 .WithEndpointDocs("lists.listid.get");
 
+// creates a new list. 
+// 400 - if list name is null or empty
+// 400 - if list name is the same as an existing list
+// 201 - if created successfully (returns: the new list object)
+// 400 - could not determine who are you are (TODO: change this 401/403?)
+// 400 - if bad characters in list name (ones that won't play nice with ActivityPub actor names or webfinger acct: handles)
+
+
 app.MapPost("/lists", async (GeList newlist,
     GeFeSLEDb db,
     HttpContext httpContext,
@@ -1315,6 +1323,8 @@ app.MapPost("/lists", async (GeList newlist,
     string fn = "/lists (POST)"; DBg.d(LogLevel.Trace, fn);
 
     // if the newlist.Name is null, return bad request
+    // zTODO: extend with other checks - reserve dnames, bad characters that won't
+    // play nice with ActivityPub actor names or webfinger acct: handles
     if (string.IsNullOrEmpty(newlist.Name))
     {
         return Results.BadRequest("Cannot have a list with no name. A Horse maybe... but not a list.");
@@ -1322,6 +1332,15 @@ app.MapPost("/lists", async (GeList newlist,
     else if (newlist.Name == GlobalConfig.modListName)
     {
         return Results.BadRequest($"List name {GlobalConfig.modListName} is RESERVED.");
+    }
+    else
+    {
+        // check for characters that will cause filesystem problems. 
+        var invalidIndex = newlist.Name.IndexOfAny(Path.GetInvalidFileNameChars());
+        if (invalidIndex >= 0)
+        {
+            return Results.BadRequest($"List name contains invalid character '{newlist.Name[invalidIndex]}' at position {invalidIndex}.");
+        }
     }
     DBg.d(LogLevel.Trace, $"{fn} - new list name: {newlist.Name}");
 
@@ -1337,6 +1356,23 @@ app.MapPost("/lists", async (GeList newlist,
         return Results.BadRequest("Could not determine who you are");
     }
     // no need to check for roles, auth middleware already did it. 
+
+    // check for newlist.ActivityPubId against characters allowed in AP handles
+    // as specified in GlobalConfig.validAPListNameChars
+    DBg.d(LogLevel.Trace, $"{fn} - new list AP id: {newlist.ActivityPubId}");
+    if (!string.IsNullOrEmpty(newlist.ActivityPubId))
+    {
+        var invalidActivityPubIdChar = newlist.ActivityPubId
+            .Select((c, index) => new { c, index })
+            .FirstOrDefault(item => !GlobalConfig.validAPListNameChars.Contains(item.c));
+
+        if (invalidActivityPubIdChar != null)
+        {
+            DBg.d(LogLevel.Trace, $"{fn} - invalid AP id character: {invalidActivityPubIdChar.c} at position {invalidActivityPubIdChar.index}");
+            return Results.BadRequest($"ActivityPubId contains invalid character {invalidActivityPubIdChar.c} starting at position {invalidActivityPubIdChar.index}.");
+        }
+    }
+
 
 
     newlist.Creator = me;
@@ -1362,7 +1398,7 @@ app.MapPut("/lists", async (HttpContext context,
     GeListController geListController) =>
     {
         string fn = "/lists (PUT)"; DBg.d(LogLevel.Trace, fn);
-        await geListController.ListsPut(context, inputList);
+        return await geListController.ListsPut(context, inputList);
     }).RequireAuthorization(new AuthorizeAttribute
     {
         AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
@@ -3469,6 +3505,48 @@ app.MapPost("/lists/import", async (IFormFile file,
     Roles = "SuperUser"
 });
 
+//============================================================== ACTIVITY PUB IMPLEMENTATION
+
+// webfinger. /.well-known/webfinger?resource=acct:username@hostname
+app.MapGet("/.well-known/webfinger", async (string resource, GeFeSLEDb db) =>
+{
+    string fn = "/.well-known/webfinger (GET)"; DBg.d(LogLevel.Trace, fn);
+    if (!resource.StartsWith("acct:"))    {
+        return Results.BadRequest("Invalid resource format - must start with acct:");
+    }
+    string[] parts = resource.Substring(5).Split('@');
+    if (parts.Length != 2)    {
+        return Results.BadRequest("Invalid resource format - must be acct:username@hostname");
+    }
+    string listname = parts[0];
+    string hostname = parts[1];
+        
+    if (hostname != GlobalConfig.APDomain)    {
+        return Results.BadRequest($"Invalid hostname - must be {GlobalConfig.APDomain ?? "undefined"}");
+    }
+    // remember, Actors in our case are LIST names, not users. so we need to find the list with the name of listname
+    GeList? list = await db.Lists.FirstOrDefaultAsync(l => l.ActivityPubId == listname);
+    if (list == null)    {
+        return Results.NotFound($"No list found with AP handle/name {listname}");
+    }
+    // if we found the list, we can return a webfinger response with the list's URL and its ActivityPub actor URL (which will be /actors/{listname})
+    var response = new
+    {
+        subject = $"acct:{listname}@{GlobalConfig.APDomain}",
+        links = new[]        {
+            new {
+                rel = "self",
+                type = "application/activity+json",
+                href = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}"
+            }
+        }
+    };
+    return Results.Json(response);
+});
+
+
+
+//============================================================== STARTUP TASKS
 // lets always generate index.html once before we start
 // for a new setup, it won't exist. 
 // Mutex to ensure only one of us is running

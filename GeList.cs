@@ -23,6 +23,7 @@ public class GeListDto
 {
     public int Id { get; set; }
     public string? Name { get; set; }
+    public string? ActivityPubId { get; set; }
     public string? Comment { get; set; }
     public GeListVisibility Visibility { get; set; } = GeListVisibility.Public;
 }
@@ -95,6 +96,10 @@ public class GeList
 
     // set list visibility
     public GeListVisibility Visibility { get; set; } = GeListVisibility.Public;
+
+    // ACTIVITYPUB FIELDS
+    public string? ActivityPubId { get; set; } = null; 
+    // could be same as Name but with more compatible characters
 
     public void SetVisibility(GeListVisibility newvisibility)
     {

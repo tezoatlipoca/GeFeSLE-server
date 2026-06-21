@@ -80,6 +80,7 @@ async function getList() {
             // Populate the form with the data from the API
             document.getElementById('list.id').value = json.id;
             document.getElementById('list.name').value = json.name;
+            document.getElementById('list.ActivityPubId').value = json.activityPubId || '';
             document.getElementById('list.name.original').value = json.name;
             // set the visibility select to the visibility of the list
             document.getElementById('list.visibility').value = json.visibility;
@@ -124,6 +125,7 @@ async function updateList(e) {
     //let comment = document.getElementById('list.comment').value;
     let comment = easymde.value();
     let visibility = document.getElementById('list.visibility').value;
+    let activityPubId = document.getElementById('list.ActivityPubId').value;
 
     console.debug(' | id: ' + id);
     let data;
@@ -133,14 +135,14 @@ async function updateList(e) {
     // and we need to call the API to create a new list
     let apiUrl = '/lists';
     if (id == null || id == '') {
-        data = { name, comment, visibility };
+        data = { name, comment, visibility, activityPubId };
         apiMethod = 'POST';
         addNotModify = true;
     }
     else {
         // if id is not null or empty, then this is an existing list
         // and we need to call the API to update the list
-        data = { id, name, comment, visibility };
+        data = { id, name, comment, visibility, activityPubId };
         apiMethod = 'PUT';
     }
     let displayResults = "";

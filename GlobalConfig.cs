@@ -17,10 +17,16 @@ public static class GlobalConfig
     public static bool isSecure { get; set; } = false;
 
     public static string? CookieDomain { get; set; }
+    public static string? APDomain { get; set; } // this is the domain used for ActivityPub URLs and signatures, which should be the same as the cookie domain but without the port number.
     
     public static string? wwwroot { get; set; }
 
     public static string? modListName {get; set;} 
+
+    // Allowed characters for list names. The names are used in URLs and file names,
+    // so keep this set intentionally small and path-safe.
+    public static readonly char[] validAPListNameChars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.".ToCharArray();
 
     public static LogLevel CURRENT_LEVEL { get; set; }
 
@@ -80,7 +86,7 @@ public static class GlobalConfig
         CookieDomain = Hostname.Replace("http://", "").Replace("https://", "");
         // the cookie domain should have any port number removed
         CookieDomain = CookieDomain.Split(':')[0];
-
+        APDomain = CookieDomain; // this is used for the AP URLs and signatures, which require a domain but not a port.
         // Browsers are picky about the Domain attribute: localhost and IP addresses
         // are safer left as host-only cookies.
         if (CookieDomain.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
@@ -138,6 +144,8 @@ public static class GlobalConfig
         DBg.d(LogLevel.Debug, $"Port: {Port}");
         DBg.d(LogLevel.Debug, $"Bind: {Bind}");
         DBg.d(LogLevel.Debug, $"Hostname: {Hostname}");
+        DBg.d(LogLevel.Debug, $"CookieDomain: {CookieDomain}");
+        DBg.d(LogLevel.Debug, $"APDomain: {APDomain}");
         DBg.d(LogLevel.Debug, $"wwwroot: {wwwroot}");
 
         // get filenames for static html head, body header and body footer from the config file

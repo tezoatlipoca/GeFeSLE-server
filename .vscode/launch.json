@@ -10,7 +10,7 @@
             "request": "launch",
             "preLaunchTask": "build",
             // If you have changed target frameworks, make sure to update the program path.
-            "program": "${workspaceFolder}/bin/Debug/net8.0/GeFeSLE.dll",
+            "program": "${workspaceFolder}/bin/Debug/net10.0/GeFeSLE.dll",
             "args": ["--config=./config.json", "--level=trace"],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false,
@@ -19,6 +19,7 @@
             //    "action": "openExternally",
             //    "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
             //},
+            "stopCommand": "killall dotnet || true",
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development"
             },
