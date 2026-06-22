@@ -13,6 +13,10 @@ public class GeListItem
 
     public bool Visible { get; set; } = true;
 
+    // ActivityPub - we want a tombstone for a deleted item
+    // not sure yet if this is gonna be different from Visible or not. 
+    public bool IsDeleted { get; set; } = false;
+
     // add a member that is a collection of tags (which are strings)
     public List<string> Tags { get; set; } = new List<string>();
 

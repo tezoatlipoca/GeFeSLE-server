@@ -101,6 +101,13 @@ public class GeList
     public string? ActivityPubId { get; set; } = null; 
     // could be same as Name but with more compatible characters
 
+    // ActivityPub convenience - just so we know the items returned by GetItems are 
+    // OrderedCollection (isOrdered = true) or Collection (isOrdered = false).
+    public bool isOrdered { get; set; } = false; // for future use when we implement ordered lists. For now, all lists are unordered.
+
+
+
+
     public void SetVisibility(GeListVisibility newvisibility)
     {
         var oldVisibility = Visibility;
@@ -155,7 +162,14 @@ public class GeList
         sb.AppendLine("<div class=\"list-header-content\">");
         sb.AppendLine($"<h1 class=\"listtitle\"><a class=\"indexlink\" href=\"index.html\">&lt;-</a> {Name}</h1>");
         sb.AppendLine($"<p class=\"listcreated\">Created: {CreatedDate.ToString("yyyy-MM-dd HH:mm:ss")}");
-        sb.AppendLine($"Modified: {ModifiedDate.ToString("yyyy-MM-dd HH:mm:ss")}</p>");
+        if(ActivityPubId != null)
+        {
+            sb.AppendLine($"<p class=\"listActivityPubId\">Follow @ (ActivityPub ID): {ActivityPubId}@{GlobalConfig.APDomain}</p>");
+        }
+        else {
+            sb.AppendLine($"<p class=\"listActivityPubId\">ActivityPub ID: None</p>");
+        }
+        sb.AppendLine($"<p class=\"listmodified\">Modified: {ModifiedDate.ToString("yyyy-MM-dd HH:mm:ss")}</p>");
         if (Comment != null)
         {
             var md = Markdown.ToHtml(Comment);
@@ -421,4 +435,21 @@ sb.AppendLine("</div>");
         
         DBg.d(LogLevel.Trace, $"RegenerateAllFiles completed for: {Id} - {Name}");
     }
+
+    // in other end points where we query for items that beling in a list, we're essentially doing
+    // db.Items.Where(item => item.ListId == listId).ToListAsync();
+    // HOWEVER - this presumes we don't really care about the order in which items are returned. 
+    // since we're going to introduce different list types soon, lets abstract that through
+    // a GetItems function. 
+    public async Task<List<GeListItem>> GetItems(GeFeSLEDb db)
+    {
+        DBg.d(LogLevel.Trace, $"GetItems for list {Id} - {Name}");
+        // for now, we will just return items ordered by CreatedDate desc (newest first)
+        // in the future, we can modify this to return items in a different order based on the list type
+        var items = await db.Items.Where(item => item.ListId == Id && item.Visible).OrderByDescending(item => item.CreatedDate).ToListAsync();
+        DBg.d(LogLevel.Trace, $"Found {items.Count} items for list {Id} - {Name}");
+        return items;
+    }
+
+
 }

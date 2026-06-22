@@ -117,6 +117,8 @@ public static class GlobalConfig
         string normalizedAppDir = Path.GetFullPath(appDirectory);
         
         // Check if wwwroot is the same as or beneath the application directory
+        // why do we do this? if we get installed via package or framework we don't want
+        // to create a mess where the bin is like /usr/local/bin or wherevs. Force it to be somewhere else
         if (normalizedWwwroot.StartsWith(normalizedAppDir, StringComparison.OrdinalIgnoreCase))
         {
             DBg.d(LogLevel.Critical, $"wwwroot path '{wwwroot}' cannot be within or beneath the application directory '{appDirectory}'. Please specify a separate location. Exiting.");

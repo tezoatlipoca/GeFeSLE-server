@@ -215,15 +215,15 @@ builder.Services.AddAuthentication(options =>
 
             OnMessageReceived = context =>
             {
-                var fn = "_Middleware.JWT_";
+                //var fn = "_Middleware.JWT_";
                 context.Token = context.Request.Cookies[GlobalStatic.JWTCookieName]; // get token from cookie not rqst headers
-                //DBg.d(LogLevel.Trace, $"{fn} OnMessageReceived");
+                //DBg.d(LogLevel.Trace, $"{fn} OnMessageReceived"); // commented this out cause too noisy. 
                 return Task.CompletedTask;
             },
             OnChallenge = context =>
             {
-                var fn = "_Middleware.JWT_";
-                //DBg.d(LogLevel.Trace, $"{fn} OnChallenge");
+                //var fn = "_Middleware.JWT_";
+                //DBg.d(LogLevel.Trace, $"{fn} OnChallenge");   // same. Every. single. request. blegh.
                 return Task.CompletedTask;
             },
 
@@ -346,8 +346,9 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new() 
     { 
+        // TODO: replace with assembly/build/soln file params, especially the version. 
         Title = "GeFeSLE API", 
-        Version = "v0.1.1",
+        Version = "v0.1.2", 
         Description = "Generic, Federated, Subscribable List Engine - Server API",
         Contact = new() { Email = "tezoatlipoca@gmail.com" }
     });
@@ -555,6 +556,28 @@ app.Use(async (context, next) =>
                 DBg.d(LogLevel.Trace, $"{fn} _CORs Preflight");
                 context.Response.StatusCode = 200;
                 await context.Response.WriteAsync(string.Empty);
+                return;
+            }
+            // Handle HEAD requests by forwarding as GET but suppressing the body
+            if (context.Request.Method == "HEAD")
+            {
+                // dump out the requestor's IP and user agent so we can see who's asking. 
+                // added this for UpTimeRobot etc. 
+                DBg.d(LogLevel.Information, $"HEAD request from {remoteIpAddress} - {context.Request.Headers["User-Agent"].FirstOrDefault()} - for {context.Request.Path}");
+                context.Request.Method = "GET";
+                await next.Invoke();
+                context.Response.Body = Stream.Null;
+
+                // note that we fwd the handling to complete as normal and just suppress the body. 
+                // if whatever the handling below does is computationally expensive we 
+                // might want to just shortcut that and return a canned response here instead. 
+                // lets see how this goes. 
+                // the point of this was to squelch 405 error spam in the logs from UpTimeRobot asking
+                // on ~/index.html so maybe we should define a 405/HEAD handler URL that 
+                // can be given to services like UpTimeRObot but we just dish a canned response to. 
+                // TODO.
+
+
                 return;
             }
         }
@@ -1413,10 +1436,14 @@ app.MapGet("/lists/{listId:int}/items", async (int listId,
 {
     string fn = "/lists/{listId:int}/items (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-    var items = await db.Items.Where(item => item.ListId == listId).ToListAsync();
+    var list = await db.Lists.FindAsync(listId);
+    if (list is null) return Results.NotFound("List not found");
+    var items = await list.GetItems(db);
+    // TODO: restrict access to items based on list permissions.
     return Results.Ok(items);
 })
 .WithEndpointDocs("lists.listid.items.get");
+// TODO: restreict access toitems based on list permissions. 
 
 
 // retreives the specified item by id
@@ -3543,6 +3570,149 @@ app.MapGet("/.well-known/webfinger", async (string resource, GeFeSLEDb db) =>
     };
     return Results.Json(response);
 });
+
+// GET /apv1/lists/{listId}
+// returns ActivityStreams Actor with: 
+// id: https://{host}/apv1/lists/{listId}
+// inbox: https://{host}/apv1/lists/{listId}/inbox
+// outbox: https://{host}/apv1/lists/{listId}/outbox
+// followers: https://{host}/apv1/lists/{listId}/followers
+
+app.MapGet("/apv1/lists/{listId:int}", async (int listId, GeFeSLEDb db) =>
+{
+    string fn = "/apv1/lists/{listId} (GET)"; DBg.d(LogLevel.Trace, fn);
+    GeList? list = await db.Lists.FindAsync(listId);
+    if (list == null)
+    {
+        return Results.NotFound($"List with id {listId} not found");
+    }
+    var actor = new
+    {
+        @context = "https://www.w3.org/ns/activitystreams",
+        id = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}",
+        type = "Group",
+        name = list.Name,
+        inbox = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/inbox",
+        outbox = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/outbox",
+        followers = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/followers"
+    };
+    return Results.Json(actor);
+});
+
+// GET /apv1/lists/{listId}/outbox
+// basically this is the same as GET /lists/{listId} but
+// returns a Collection/OrderedCollection of items as ActivityPub Notes..
+// TODOL: support pagination. 
+app.MapGet("/apv1/lists/{listId:int}/outbox", async (int listId, GeFeSLEDb db) =>
+{
+    string fn = "/apv1/lists/{listId}/outbox (GET)"; DBg.d(LogLevel.Trace, fn);
+    GeList? list = await db.Lists
+        .FirstOrDefaultAsync(l => l.Id == listId);
+    if (list == null)
+    {
+        return Results.NotFound($"List with id {listId} not found");
+    }
+    var items = await list.GetItems(db);
+    
+    
+    var outbox = new
+    {
+        @context = "https://www.w3.org/ns/activitystreams",
+        id = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/outbox",
+        type = list.isOrdered ? "OrderedCollection" : "Collection",
+        totalItems = items.Count,
+        orderedItems = items.Select(i => new
+        {
+            id = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/items/{i.Id}",
+            type = "Note",
+            name = i.Name,
+            content = i.Comment,
+            // for simplicity, we'll just use the list's actor URL as the Note's attributedTo
+            attributedTo = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}"
+        })
+    };
+    return Results.Json(outbox);
+});
+
+// GET /apv1/lists/{listId}/items/{itemId}
+// returns an ActivityPub Note
+// if deleted: 410 Gone
+// BadRequest if item doesn't belong to that list. 
+
+app.MapGet("/apv1/lists/{listId:int}/items/{itemId:int}", async (int listId, int itemId, GeFeSLEDb db) =>
+{
+    string fn = "/apv1/lists/{listId}/items/{itemId} (GET)"; DBg.d(LogLevel.Trace, fn);
+    GeList? list = await db.Lists
+        .FirstOrDefaultAsync(l => l.Id == listId);
+    if (list == null)
+    {
+        return Results.NotFound($"List with id {listId} not found");
+    }
+    GeListItem? item = await db.Items
+        .FirstOrDefaultAsync(i => i.Id == itemId);
+    if (item == null)
+    {
+        return Results.NotFound($"Item with id {itemId} not found");
+    }
+    if (item.ListId != listId)
+    {
+        return Results.BadRequest($"Item with id {itemId} does not belong to list with id {listId}");
+    }
+    if (item.IsDeleted)
+    {
+        return Results.StatusCode(410); // Gone
+    }
+    
+    var note = new
+    {
+        @context = "https://www.w3.org/ns/activitystreams",
+        id = $"{GlobalConfig.Hostname}/apv1/items/{item.Id}",
+        type = "Note",
+        name = item.Name,
+        content = item.Comment,
+        attributedTo = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}"
+    };
+    return Results.Json(note);
+});
+
+// GET /apv1/lists/{listId}/items
+// exactly the same as the outbox above. 
+// TODO: support pagination. 
+// actually, just redirect. be sure to include the query string
+// in case its provided pagination gunk
+app.MapGet("/apv1/lists/{listId:int}/items", async (int listId, HttpContext httpContext) =>
+{
+    string fn = "/apv1/lists/{listId}/items (GET)"; DBg.d(LogLevel.Trace, fn);
+    return Results.Redirect($"/apv1/lists/{listId}/outbox{httpContext.Request.QueryString}");
+});
+
+
+// dynamic actor redirect: /{actorName} -> /apv1/lists/{listId}
+// THIS HAS TO BE THE VERY LAST ENDPOINT
+// because anything else that doesn't hit a more precise endpoint route/mapping will fall through
+// to here. 
+// Note that static files are handled way up at the beginning before any endpoint routing.
+// TODO: that isn't actually working properly IF the regex is removed from here. 
+// Fix the routing properly - static files have to served FIRST.
+// 
+app.MapGet("/{actorName:regex(^[A-Za-z0-9_-]+$)}", async (string actorName, GeFeSLEDb db, HttpContext httpContext) =>
+{
+    string fn = "/{actorName} (GET)"; DBg.d(LogLevel.Trace, fn);
+
+    if (string.IsNullOrWhiteSpace(actorName))
+    {
+        return Results.NotFound();
+    }
+
+    GeList? list = await db.Lists.FirstOrDefaultAsync(l => l.ActivityPubId == actorName);
+    if (list is null)
+    {
+        return Results.NotFound();
+    }
+
+    string target = $"https://{GlobalConfig.Hostname}/apv1/lists/{list.Id}";
+    return Results.Redirect(target);
+}).AllowAnonymous();
 
 
 
