@@ -23,6 +23,7 @@ using Microsoft.Extensions.FileProviders;
 using GeFeSLE.Controllers;
 using Microsoft.AspNetCore.HttpOverrides;
 using System.IdentityModel.Tokens.Jwt;
+using System.Net;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using GeFeSLE.DTOs;
@@ -386,10 +387,27 @@ builder.Services.AddWindowsService();
 var app = builder.Build();
 // this configures the middleware to respect the X-Forwarded-For and X-Forwarded-Proto headers
 // that are set by any reverse proxy server (nginx, apache, etc.)
-app.UseForwardedHeaders(new ForwardedHeadersOptions
+var forwardedHeadersOptions = new ForwardedHeadersOptions
 {
-    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-});
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost,
+    ForwardLimit = 1
+};
+
+forwardedHeadersOptions.KnownNetworks.Clear();
+forwardedHeadersOptions.KnownProxies.Clear();
+foreach (var knownProxy in GlobalConfig.KnownProxies)
+{
+    if (IPAddress.TryParse(knownProxy, out var proxyAddress))
+    {
+        forwardedHeadersOptions.KnownProxies.Add(proxyAddress);
+    }
+    else
+    {
+        DBg.d(LogLevel.Warning, $"Ignoring invalid ServerSettings:KnownProxies entry: {knownProxy}");
+    }
+}
+
+app.UseForwardedHeaders(forwardedHeadersOptions);
 
 // SeedRoles makes sure our roles in the IdentifyUser system are created
 // here's where we would add any default database stuffing as well
@@ -547,6 +565,23 @@ app.Use(async (context, next) =>
         var remoteIpAddress = context.Connection.RemoteIpAddress;
         //DBg.d(LogLevel.Trace, $"{fn} Request origin: {origin} - from {remoteIpAddress}");
         //GlobalStatic.dumpRequest(context);
+
+        // Handle HEAD requests by forwarding as GET but suppressing the body.
+        // This keeps uptime checks and crawlers from hitting 405 on GET-only routes.
+        if (context.Request.Method == "HEAD")
+        {
+            if (GlobalStatic.IsCorsRequest(context.Request))
+            {
+                GlobalStatic.AddCorsHeaders(context.Request, context.Response);
+            }
+
+            DBg.d(LogLevel.Information, $"HEAD request from {remoteIpAddress} - {context.Request.Headers["User-Agent"].FirstOrDefault()} - for {context.Request.Path}");
+            context.Request.Method = "GET";
+            await next.Invoke();
+            context.Response.Body = Stream.Null;
+            return;
+        }
+
         if (GlobalStatic.IsCorsRequest(context.Request))
         {
             GlobalStatic.AddCorsHeaders(context.Request, context.Response);
@@ -556,28 +591,6 @@ app.Use(async (context, next) =>
                 DBg.d(LogLevel.Trace, $"{fn} _CORs Preflight");
                 context.Response.StatusCode = 200;
                 await context.Response.WriteAsync(string.Empty);
-                return;
-            }
-            // Handle HEAD requests by forwarding as GET but suppressing the body
-            if (context.Request.Method == "HEAD")
-            {
-                // dump out the requestor's IP and user agent so we can see who's asking. 
-                // added this for UpTimeRobot etc. 
-                DBg.d(LogLevel.Information, $"HEAD request from {remoteIpAddress} - {context.Request.Headers["User-Agent"].FirstOrDefault()} - for {context.Request.Path}");
-                context.Request.Method = "GET";
-                await next.Invoke();
-                context.Response.Body = Stream.Null;
-
-                // note that we fwd the handling to complete as normal and just suppress the body. 
-                // if whatever the handling below does is computationally expensive we 
-                // might want to just shortcut that and return a canned response here instead. 
-                // lets see how this goes. 
-                // the point of this was to squelch 405 error spam in the logs from UpTimeRobot asking
-                // on ~/index.html so maybe we should define a 405/HEAD handler URL that 
-                // can be given to services like UpTimeRObot but we just dish a canned response to. 
-                // TODO.
-
-
                 return;
             }
         }
@@ -3580,7 +3593,7 @@ app.MapGet("/.well-known/webfinger", async (string resource, GeFeSLEDb db) =>
             }
         }
     };
-    return Results.Json(response);
+    return Results.Content(System.Text.Json.JsonSerializer.Serialize(response), "application/jrd+json");
 });
 
 // GET /apv1/lists/{listId}
@@ -3598,17 +3611,18 @@ app.MapGet("/apv1/lists/{listId:int}", async (int listId, GeFeSLEDb db) =>
     {
         return Results.NotFound($"List with id {listId} not found");
     }
-    var actor = new
+    var actor = new Dictionary<string, object?>
     {
-        @context = "https://www.w3.org/ns/activitystreams",
-        id = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}",
-        type = "Group",
-        name = list.Name,
-        inbox = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/inbox",
-        outbox = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/outbox",
-        followers = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/followers"
+        ["@context"] = "https://www.w3.org/ns/activitystreams",
+        ["id"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}",
+        ["type"] = "Group",
+        ["name"] = list.Name,
+        ["preferredUsername"] = list.ActivityPubId,
+        ["inbox"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/inbox",
+        ["outbox"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/outbox",
+        ["followers"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/followers"
     };
-    return Results.Json(actor);
+    return Results.Content(System.Text.Json.JsonSerializer.Serialize(actor), "application/activity+json");
 });
 
 // GET /apv1/lists/{listId}/outbox
@@ -3626,13 +3640,13 @@ app.MapGet("/apv1/lists/{listId:int}/outbox", async (int listId, GeFeSLEDb db) =
     }
     var items = await list.GetItems(db);
 
-    var outbox = new
+    var outbox = new Dictionary<string, object?>
     {
-        @context = "https://www.w3.org/ns/activitystreams",
-        id = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/outbox",
-        type = list.isOrdered ? "OrderedCollection" : "Collection",
-        totalItems = items.Count,
-        orderedItems = items.Select(i => new
+        ["@context"] = "https://www.w3.org/ns/activitystreams",
+        ["id"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/outbox",
+        ["type"] = list.isOrdered ? "OrderedCollection" : "Collection",
+        ["totalItems"] = items.Count,
+        ["orderedItems"] = items.Select(i => new
         {
             id = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/items/{i.Id}",
             type = "Note",
@@ -3642,7 +3656,7 @@ app.MapGet("/apv1/lists/{listId:int}/outbox", async (int listId, GeFeSLEDb db) =
             attributedTo = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}"
         })
     };
-    return Results.Json(outbox);
+    return Results.Content(System.Text.Json.JsonSerializer.Serialize(outbox), "application/activity+json");
 }).AllowAnonymous();
 
 // GET /apv1/lists/{listId}/items/{itemId}
@@ -3674,16 +3688,16 @@ app.MapGet("/apv1/lists/{listId:int}/items/{itemId:int}", async (int listId, int
         return Results.StatusCode(410); // Gone
     }
     
-    var note = new
+    var note = new Dictionary<string, object?>
     {
-        @context = "https://www.w3.org/ns/activitystreams",
-        id = $"{GlobalConfig.Hostname}/apv1/items/{item.Id}",
-        type = "Note",
-        name = item.Name,
-        content = item.Comment,
-        attributedTo = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}"
+        ["@context"] = "https://www.w3.org/ns/activitystreams",
+        ["id"] = $"{GlobalConfig.Hostname}/apv1/items/{item.Id}",
+        ["type"] = "Note",
+        ["name"] = item.Name,
+        ["content"] = item.Comment,
+        ["attributedTo"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}"
     };
-    return Results.Json(note);
+    return Results.Content(System.Text.Json.JsonSerializer.Serialize(note), "application/activity+json");
 });
 
 // GET /apv1/lists/{listId}/items
@@ -3722,13 +3736,15 @@ app.MapGet("/apv1/lists/{listId:int}/followers", async (int listId, GeFeSLEDb db
         .Select(f => f.ToApActorDto())
         .ToList();
 
-    var followerCollection = new ApCollectionDto(
-        id: $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/followers",
-        type: "Collection",
-        items: followerDtos
-    );
+    var followerCollection = new Dictionary<string, object?>
+    {
+        ["@context"] = "https://www.w3.org/ns/activitystreams",
+        ["id"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/followers",
+        ["type"] = "Collection",
+        ["items"] = followerDtos
+    };
 
-    return Results.Json(followerCollection);
+    return Results.Content(System.Text.Json.JsonSerializer.Serialize(followerCollection), "application/activity+json");
 });
 
 // POST /apv1/lists/{listId}/inbox

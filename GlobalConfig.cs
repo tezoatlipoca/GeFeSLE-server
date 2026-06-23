@@ -13,6 +13,7 @@ public static class GlobalConfig
     public static int Port { get; set; }
     public static string? Bind { get; set; }
     public static string? Hostname { get; set; }
+    public static List<string> KnownProxies { get; set; } = new List<string>();
 
     public static bool isSecure { get; set; } = false;
 
@@ -77,6 +78,19 @@ public static class GlobalConfig
         if (Bind == null) Bind = "*";
         Hostname = config.GetValue<string>("ServerSettings:Hostname");
         if (Hostname == null) Hostname = "http://localhost";
+
+        KnownProxies.Clear();
+        var configuredProxies = config.GetSection("ServerSettings:KnownProxies").Get<string[]>();
+        if (configuredProxies != null)
+        {
+            foreach (var proxy in configuredProxies)
+            {
+                if (!string.IsNullOrWhiteSpace(proxy))
+                {
+                    KnownProxies.Add(proxy.Trim());
+                }
+            }
+        }
         
         // parse hostname. if it starts with https://, then we're secure
         if (Hostname.StartsWith("https://"))
@@ -161,6 +175,7 @@ public static class GlobalConfig
         DBg.d(LogLevel.Debug, $"Port: {Port}");
         DBg.d(LogLevel.Debug, $"Bind: {Bind}");
         DBg.d(LogLevel.Debug, $"Hostname: {Hostname}");
+        DBg.d(LogLevel.Debug, $"KnownProxies: {(KnownProxies.Count == 0 ? "(none)" : string.Join(",", KnownProxies))}");
         DBg.d(LogLevel.Debug, $"CookieDomain: {CookieDomain}");
         DBg.d(LogLevel.Debug, $"APDomain: {APDomain}");
         DBg.d(LogLevel.Debug, $"wwwroot: {wwwroot}");

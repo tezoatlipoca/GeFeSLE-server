@@ -12,6 +12,9 @@
         "Bind": "*",
         "Port": 7036,
         "Hostname": "http://localhost:7036",
+        "KnownProxies": [
+            "10.0.0.14"
+        ],
         "wwwroot": "/must/be/absolute/path/to/wwwroot"
     },
     "SiteCustomize": {
