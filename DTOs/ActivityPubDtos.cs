@@ -38,7 +38,7 @@ namespace GeFeSLE.DTOs
     public sealed record ApCollectionDto(
         string id,
         string type,                        // "Collection" or "OrderedCollection"
-        IReadOnlyList<string> items       // for "Collection"
+      IReadOnlyList<ApActorDto> items       // for "Collection"
     );
 
     public sealed record ApOrderedCollectionDto(

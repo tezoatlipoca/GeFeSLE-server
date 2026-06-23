@@ -31,6 +31,12 @@ protected override void OnModelCreating(ModelBuilder builder)
     builder.Entity<JwtToken>()
         .HasKey(j => j.Id);
 
+    builder.Entity<GeAPActor>()
+        .OwnsOne(a => a.Icon);
+
+    builder.Entity<GeAPActor>()
+        .OwnsOne(a => a.Image);
+
     builder.Entity<GeList>()    // each list has zero or more listowners
         .HasMany(g => g.ListOwners)
         .WithMany();
@@ -47,6 +53,7 @@ protected override void OnModelCreating(ModelBuilder builder)
 
 public DbSet<GeListItem> Items => Set<GeListItem>();
 public DbSet<GeList> Lists => Set<GeList>();
+public DbSet<GeListFollower> ListFollowers => Set<GeListFollower>();
 
 }
 

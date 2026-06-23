@@ -691,15 +691,27 @@ app.UseStaticFiles(new StaticFileOptions
     RequestPath = ""
 });
 
-app.UseCors(builder =>
-        {
-            builder.AllowAnyHeader()
-                   .AllowAnyMethod()
-                   .AllowCredentials()
-                   .SetIsOriginAllowed(origin => GlobalStatic.IsOriginAllowed(origin));
+app.UseWhen(context => GlobalStatic.IsFederationRequest(context.Request), federationApp =>
+{
+    federationApp.UseCors(builder =>
+    {
+        builder.AllowAnyHeader()
+               .AllowAnyMethod()
+               .AllowCredentials()
+               .SetIsOriginAllowed(origin => GlobalStatic.IsOriginAllowed(origin, includePublicOrigins: true));
+    });
+});
 
-
-        });
+app.UseWhen(context => !GlobalStatic.IsFederationRequest(context.Request), appBranch =>
+{
+    appBranch.UseCors(builder =>
+    {
+        builder.AllowAnyHeader()
+               .AllowAnyMethod()
+               .AllowCredentials()
+               .SetIsOriginAllowed(origin => GlobalStatic.IsOriginAllowed(origin));
+    });
+});
 
 // adds a user to the system; 
 // we have to have at least a username or email; if username is missing we use the email AS the username
@@ -3613,8 +3625,7 @@ app.MapGet("/apv1/lists/{listId:int}/outbox", async (int listId, GeFeSLEDb db) =
         return Results.NotFound($"List with id {listId} not found");
     }
     var items = await list.GetItems(db);
-    
-    
+
     var outbox = new
     {
         @context = "https://www.w3.org/ns/activitystreams",
@@ -3632,7 +3643,7 @@ app.MapGet("/apv1/lists/{listId:int}/outbox", async (int listId, GeFeSLEDb db) =
         })
     };
     return Results.Json(outbox);
-});
+}).AllowAnonymous();
 
 // GET /apv1/lists/{listId}/items/{itemId}
 // returns an ActivityPub Note
@@ -3686,7 +3697,178 @@ app.MapGet("/apv1/lists/{listId:int}/items", async (int listId, HttpContext http
     return Results.Redirect($"/apv1/lists/{listId}/outbox{httpContext.Request.QueryString}");
 });
 
+// GET /apv1/lists/{listId}/followers
+// returns an ActivityPub Collection of followers
+app.MapGet("/apv1/lists/{listId:int}/followers", async (int listId, GeFeSLEDb db) =>
+{
+    string fn = "/apv1/lists/{listId}/followers (GET)"; DBg.d(LogLevel.Trace, fn);
+    GeList? list = await db.Lists
+        .FirstOrDefaultAsync(l => l.Id == listId);
+    if (list == null)
+    {
+        return Results.NotFound($"List with id {listId} not found");
+    }
 
+    // return all followers who follow listId
+    var followers = await db.ListFollowers
+        .Where(f => f.FollowingLists.Contains(listId)).ToListAsync();   
+   
+    // now cast these to ActivityPub Collection objects
+    // using the Dtos defined in ActivityPubDtos.cs
+    var followerDtos = followers
+        .Where(f => !string.IsNullOrWhiteSpace(f.Id))
+        .GroupBy(f => f.Id, StringComparer.OrdinalIgnoreCase)
+        .Select(g => g.First())
+        .Select(f => f.ToApActorDto())
+        .ToList();
+
+    var followerCollection = new ApCollectionDto(
+        id: $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/followers",
+        type: "Collection",
+        items: followerDtos
+    );
+
+    return Results.Json(followerCollection);
+});
+
+// POST /apv1/lists/{listId}/inbox
+// receives ActivityPub activities from other servers
+// via ApActivityDtos... actions like Create or Delete to Follow or unfollow.
+app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] ApActivityDto activity, GeFeSLEDb db) =>
+{
+    string fn = "/apv1/lists/{listId}/inbox (POST)"; DBg.d(LogLevel.Trace, fn);
+    GeList? list = await db.Lists
+        .FirstOrDefaultAsync(l => l.Id == listId);
+    if (list == null)
+    {
+        return Results.NotFound($"List with id {listId} not found"); 
+        // maybe this should be a 400 instead? dunno. 
+    }       
+    // list is ok
+
+    DBg.d(LogLevel.Trace, $"{fn} <-- {System.Text.Json.JsonSerializer.Serialize(activity)}");
+    
+    // now process the activity.
+    // from what I can tell in AP, follows/unfollow msgs can be direct or indirect:
+    // DIRECT (its just ): 
+    // {
+    // "type": "Follow",
+    // "id": "https://remote.example/activities/12346",
+    // "actor": "https://remote.example/users/alice",
+    // "object": "https://{hostname}/apv1/lists/{listId}",
+    // "to": ["https://{hostname}/apv1/lists/{listId}/followers"]
+    //}
+    // INDIRECT (where its buried within a Create or Delete activity object): 
+    // {                                                            <-- ApCreateFollowDto or ApActivityDto
+    // "type": "Create",
+    // "id": "https://remote.example/activities/12345",
+    // "actor": "https://remote.example/users/alice",
+    // "to": ["https://{hostname}/apv1/lists/{listId}/followers"],  
+    // "object": {                                                  <-- ApActivityFollowObjectDto
+    //   "type": "Follow",                
+    //  "id": "https://remote.example/activities/12345#follow",
+    //  "actor": "https://remote.example/users/alice",
+    //  "object": "https://{hostname}/apv1/lists/{listId}"
+    //  }
+    //}
+    //
+    // AN UNDO looks like:
+    //   {
+    // "@context": "https://www.w3.org/ns/activitystreams",
+    // "id": "https://mastodon.social/users/user123#follows/51971777/undo",
+    // "type": "Undo",
+    // "actor": "https://mastodon.social/users/user123",     
+    // "object": {
+    //   "id": "https://mastodon.social/f722c827-5a8a-4e94-b7c8-928cdcdf12a6",
+    //   "type": "Follow",
+    //   "actor": "https://mastodon.social/users/user123",
+    //   "object": "https://maho.dev/@blog"                         ,-- IRI
+    // }
+    //}
+
+    // if we get this far the deserialization to ApActivityDto worked. 
+    // 1. check that the activity.object is a valid URL that points to this list's actor URL
+    string expectedActorUrl = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}";
+    string? targetObject = activity.@object?.id ?? activity.@object?.iri;
+    if (string.IsNullOrWhiteSpace(targetObject) || !string.Equals(targetObject, expectedActorUrl, StringComparison.OrdinalIgnoreCase))
+    {
+        DBg.d(LogLevel.Warning, $"{fn} -- activity.object is null or does not match expected actor URL. Expected: {expectedActorUrl}, Actual: {targetObject ?? "(null)"}");
+        return Results.BadRequest($"activity.object is null or does not match expected actor URL. Expected: {expectedActorUrl}, Actual: {targetObject ?? "(null)"}");
+    }
+    // 2. check that the activity.actor is a valid URL that points to a valid actor on the remote server
+    if (string.IsNullOrWhiteSpace(activity.actor.id))
+    {
+        DBg.d(LogLevel.Warning, $"{fn} -- activity.actor is null or empty");
+        return Results.BadRequest($"activity.actor is null or empty");
+    }
+    else {
+        bool isUnfollow = string.Equals(activity.type, "Undo", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(activity.type, "Delete", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(activity.type, "Unfollow", StringComparison.OrdinalIgnoreCase);
+
+        // see if the follower is already in the table of followers (even if not a follower of THIS list)
+        // if not, create a new GeListFollower and add it to db. 
+        GeListFollower? follower = await db.ListFollowers.FirstOrDefaultAsync(f => f.Id == activity.actor.id);
+
+        if (isUnfollow)
+        {
+            if (follower == null)
+            {
+                DBg.d(LogLevel.Information, $"{fn} -- ignoring unfollow for unknown follower {activity.actor.id}");
+                return Results.Ok($"Unfollow ignored for unknown follower {activity.actor.id}");
+            }
+
+            follower.FollowingLists.RemoveAll(id => id == list.Id);
+            if (follower.FollowingLists.Count == 0)
+            {
+                db.ListFollowers.Remove(follower);
+            }
+
+            await db.SaveChangesAsync();
+            DBg.d(LogLevel.Information, $"{fn} -- unfollow processed for list {list.Name} (id: {list.Id}) by follower {follower.Id}");
+            return Results.Ok($"Unfollow processed for list {list.Name} (id: {list.Id})");
+        }
+
+        if (follower == null)
+        {
+            follower = new GeListFollower
+            {
+                Id = activity.actor.id,
+                Type = "Person"
+            };
+            db.ListFollowers.Add(follower);
+            DBg.d(LogLevel.Information, $"{fn} -- added new follower to DB {follower.Id}");
+        }
+        else
+        {
+            DBg.d(LogLevel.Information, $"{fn} -- found existing follower in DB {follower.Id}");
+        }
+
+        // actuall obtain the actor info from that IRI - should be castable to an ApActorDto
+        await follower.FetchActorInfoFromIriAsync();
+        // regardless of whether the fetch worked (and assuming the IRI is at least valid)
+        // add the new follower to the list's followers.
+        if (!follower.FollowingLists.Contains(list.Id))
+        {
+            follower.FollowingLists.Add(list.Id);
+            DBg.d(LogLevel.Information, $"{fn} -- added follower {follower.Id} to list {list.Name} (id: {list.Id})");
+        }
+        // save the db
+        await db.SaveChangesAsync();
+        
+    }       
+    
+    
+    // if we got this far everything worked great. 
+    return Results.Ok($"Activity received and processed for list {list.Name} (id: {list.Id})");
+    
+    
+    
+}).AllowAnonymous();
+
+
+
+//--------------------------------------------------------------------------- MUST BE LAST
 // dynamic actor redirect: /{actorName} -> /apv1/lists/{listId}
 // THIS HAS TO BE THE VERY LAST ENDPOINT
 // because anything else that doesn't hit a more precise endpoint route/mapping will fall through

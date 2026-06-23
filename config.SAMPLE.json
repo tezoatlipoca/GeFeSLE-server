@@ -5,7 +5,8 @@
         "DatabaseFile": "foo.db"
     },
     "CorsSettings": {
-        "AllowedOrigins": "*"
+        "AllowedOrigins": "*",
+        "PublicAllowedOrigins": ""
     },
     "ServerSettings": {
         "Bind": "*",

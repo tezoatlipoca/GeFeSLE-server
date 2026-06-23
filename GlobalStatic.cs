@@ -222,18 +222,55 @@ public static class GlobalStatic
 
         public static bool IsCorsRequest(HttpRequest request)
         {
-            return request.Headers.ContainsKey("Origin") &&
-                   (request.Headers["Origin"].ToString().Contains("localhost") ||
-                    request.Headers["Origin"].ToString().StartsWith("moz-extension://") ||
-                    request.Headers["Origin"].ToString().StartsWith("chrome-extension://"));
+            var origin = request.Headers["Origin"].ToString();
+            return request.Headers.ContainsKey("Origin") && IsOriginAllowed(origin, request, includePublicOrigins: IsFederationRequest(request));
         }
 
-        public static bool IsOriginAllowed(string origin)
+        public static bool IsFederationRequest(HttpRequest request)
         {
+            return request.Path.StartsWithSegments("/.well-known/webfinger") ||
+                   request.Path.StartsWithSegments("/apv1");
+        }
+
+        public static bool IsOriginAllowed(string origin, HttpRequest? request = null, bool includePublicOrigins = false)
+        {
+            if (IsConfiguredOriginAllowed(origin, GlobalConfig.CorsAllowedOrigins)) return true;
+            if (includePublicOrigins && IsConfiguredOriginAllowed(origin, GlobalConfig.CorsPublicAllowedOrigins))
+            {
+                return true;
+            }
+
             return origin.Contains("localhost") ||
                    origin.Contains(GlobalConfig.Hostname) ||
                    origin.StartsWith("moz-extension://") ||  // EXTEND THIS WITH ACTUAL IDS WHEN KNOWN
                    origin.StartsWith("chrome-extension://");
+        }
+
+        private static bool IsConfiguredOriginAllowed(string origin, string? configuredOrigins)
+        {
+            if (string.IsNullOrWhiteSpace(configuredOrigins))
+            {
+                return false;
+            }
+
+            var allowedOrigins = configuredOrigins.Split(
+                new[] { ',', ';', '\n', '\r', ' ' },
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            foreach (var allowedOrigin in allowedOrigins)
+            {
+                if (allowedOrigin == "*")
+                {
+                    return true;
+                }
+
+                if (string.Equals(allowedOrigin, origin, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public static void AddCorsHeaders(HttpRequest request, HttpResponse response)

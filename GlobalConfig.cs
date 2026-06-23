@@ -21,6 +21,9 @@ public static class GlobalConfig
     
     public static string? wwwroot { get; set; }
 
+    public static string? CorsAllowedOrigins { get; set; }
+    public static string? CorsPublicAllowedOrigins { get; set; }
+
     public static string? modListName {get; set;} 
 
     // Allowed characters for list names. The names are used in URLs and file names,
@@ -102,6 +105,18 @@ public static class GlobalConfig
             DBg.d(LogLevel.Critical, "No wwwroot directory specified in config file. This is required for packaged deployments. Exiting.");
             return null;
         }
+
+        CorsAllowedOrigins = config.GetValue<string>("CorsSettings:AllowedOrigins");
+        if (CorsAllowedOrigins == null)
+        {
+            CorsAllowedOrigins = "";
+        }
+
+        CorsPublicAllowedOrigins = config.GetValue<string>("CorsSettings:PublicAllowedOrigins");
+        if (CorsPublicAllowedOrigins == null)
+        {
+            CorsPublicAllowedOrigins = "";
+        }
         
         // Ensure wwwroot is an absolute path
         if (!Path.IsPathRooted(wwwroot))
@@ -149,6 +164,8 @@ public static class GlobalConfig
         DBg.d(LogLevel.Debug, $"CookieDomain: {CookieDomain}");
         DBg.d(LogLevel.Debug, $"APDomain: {APDomain}");
         DBg.d(LogLevel.Debug, $"wwwroot: {wwwroot}");
+        DBg.d(LogLevel.Debug, $"CorsAllowedOrigins: {CorsAllowedOrigins}");
+        DBg.d(LogLevel.Debug, $"CorsPublicAllowedOrigins: {CorsPublicAllowedOrigins}");
 
         // get filenames for static html head, body header and body footer from the config file
         // these can be absolute paths, relative paths (from wwwroot), or simple filenames (assumed to be in wwwroot)
