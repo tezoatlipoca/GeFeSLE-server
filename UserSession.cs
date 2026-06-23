@@ -31,6 +31,12 @@ public static class UserSessionService
         var sessionUser = amILoggedIn(context);
         if (sessionUser.IsAuthenticated)
         {
+            if (string.IsNullOrWhiteSpace(sessionUser.Id))
+            {
+                DBg.d(LogLevel.Warning, $"Authenticated session missing NameIdentifier claim for {sessionUser.UserName}");
+                return null;
+            }
+
             GeFeSLEUser? user = userManager.FindByIdAsync(sessionUser.Id).Result;
             if (user != null)
             {
@@ -62,13 +68,17 @@ public static class UserSessionService
 
     public static string createJWToken(string userid, string username, string role)
     {
-        DBg.d(LogLevel.Trace, $"{userid ?? "no userid"} // {username ?? "no username"} / {role ?? "no role"}");
+        var safeUserId = string.IsNullOrWhiteSpace(userid) ? "OAuth" : userid;
+        var safeUsername = string.IsNullOrWhiteSpace(username) ? "OAuth" : username;
+        var safeRole = string.IsNullOrWhiteSpace(role) ? "anonymous" : role;
+
+        DBg.d(LogLevel.Trace, $"{safeUserId} // {safeUsername} / {safeRole}");
         // create a claims identity
         var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.NameIdentifier, userid), //TODO: change to email (or add email as a claim
-            new Claim(ClaimTypes.Name, username),
-            new Claim(ClaimTypes.Role, role)
+            new Claim(ClaimTypes.NameIdentifier, safeUserId), //TODO: change to email (or add email as a claim
+            new Claim(ClaimTypes.Name, safeUsername),
+            new Claim(ClaimTypes.Role, safeRole)
         };
         var claimsIdentity = new ClaimsIdentity(claims, "jwt");
         var principal = new ClaimsPrincipal(claimsIdentity);
@@ -247,7 +257,7 @@ public static class UserSessionService
         context.Request.Headers["Cookie"] = "have been prettified - see below";
 
         // also get the session data:
-        var sessionData = new Dictionary<string, string>();
+        var sessionData = new Dictionary<string, string?>();
         foreach (var key in context.Session.Keys)
         {
             sessionData[key] = context.Session.GetString(key);

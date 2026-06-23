@@ -450,7 +450,7 @@ public static class GlobalConfig
                 returnLevel = LogLevel.Debug;
                 break;
             case "info":
-                returnLevel = LogLevel.Debug;
+                returnLevel = LogLevel.Information;
                 break;
             case "warn":
                 returnLevel = LogLevel.Warning;

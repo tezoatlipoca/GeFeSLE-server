@@ -24,6 +24,8 @@ using GeFeSLE.Controllers;
 using Microsoft.AspNetCore.HttpOverrides;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
+using System.Runtime.InteropServices;
+using System.Threading;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using GeFeSLE.DTOs;
@@ -385,6 +387,91 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddWindowsService();
 
 var app = builder.Build();
+
+// Graceful shutdown: trap termination signals, stop the host, and flush database state once.
+int shutdownRequested = 0;
+int shutdownFlushCompleted = 0;
+
+async Task FlushAndCloseDatabaseAsync(string reason)
+{
+    if (Interlocked.Exchange(ref shutdownFlushCompleted, 1) == 1)
+    {
+        return;
+    }
+
+    try
+    {
+        using var scope = app.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GeFeSLEDb>();
+        await db.SaveChangesAsync();
+        await db.Database.CloseConnectionAsync();
+        DBg.d(LogLevel.Information, $"Graceful shutdown database flush/close complete ({reason}).");
+    }
+    catch (Exception ex)
+    {
+        DBg.d(LogLevel.Error, $"Graceful shutdown database flush/close failed ({reason}): {ex.Message}");
+    }
+}
+
+async Task RequestStopAsync(string reason)
+{
+    if (Interlocked.Exchange(ref shutdownRequested, 1) == 1)
+    {
+        return;
+    }
+
+    DBg.d(LogLevel.Information, $"Shutdown requested ({reason}). Stopping host...");
+    try
+    {
+        await app.StopAsync(TimeSpan.FromSeconds(30));
+    }
+    catch (Exception ex)
+    {
+        DBg.d(LogLevel.Error, $"Error while stopping host ({reason}): {ex.Message}");
+    }
+}
+
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    FlushAndCloseDatabaseAsync("ApplicationStopping").GetAwaiter().GetResult();
+});
+
+Console.CancelKeyPress += (_, e) =>
+{
+    // Keep the process alive long enough to run the host shutdown path.
+    e.Cancel = true;
+    _ = RequestStopAsync("SIGINT/CancelKeyPress");
+};
+
+AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+{
+    RequestStopAsync("ProcessExit").GetAwaiter().GetResult();
+    FlushAndCloseDatabaseAsync("ProcessExit").GetAwaiter().GetResult();
+};
+
+PosixSignalRegistration? sigTermRegistration = null;
+PosixSignalRegistration? sigQuitRegistration = null;
+if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+{
+    sigTermRegistration = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
+    {
+        context.Cancel = true;
+        _ = RequestStopAsync("SIGTERM");
+    });
+
+    sigQuitRegistration = PosixSignalRegistration.Create(PosixSignal.SIGQUIT, context =>
+    {
+        context.Cancel = true;
+        _ = RequestStopAsync("SIGQUIT");
+    });
+}
+
+app.Lifetime.ApplicationStopped.Register(() =>
+{
+    sigTermRegistration?.Dispose();
+    sigQuitRegistration?.Dispose();
+    DBg.d(LogLevel.Information, "Application stopped.");
+});
 // this configures the middleware to respect the X-Forwarded-For and X-Forwarded-Proto headers
 // that are set by any reverse proxy server (nginx, apache, etc.)
 var forwardedHeadersOptions = new ForwardedHeadersOptions
@@ -1301,7 +1388,7 @@ app.MapGet("/lists", async (GeFeSLEDb db,
             visibleLists.Add(list);
             if (!isAllowed && sessionUser.Role == "SuperUser")
             {
-                DBg.d(LogLevel.Warning, $"{fn} SuperUser bypassed list permissions for {list.Name}");
+                DBg.d(LogLevel.Debug, $"{fn} SuperUser bypassed list permissions for {list.Name}");
             }
         }
 
@@ -2187,7 +2274,7 @@ app.MapPost("/me", async (HttpContext context,
             else
             {
                 DBg.d(LogLevel.Trace, $"LOGIN: BAD - RETURNING UNAUTH PAGE");
-                await GlobalStatic.GenerateUnAuthPage(sb, msg);
+                await GlobalStatic.GenerateUnAuthPage(sb, msg ?? "Unauthorized");
                 return Results.Content(sb.ToString(), "text/html");
             } // bad login - web
         }

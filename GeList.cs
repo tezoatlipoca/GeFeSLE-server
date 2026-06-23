@@ -66,7 +66,7 @@ public class ImportService
 
 public class GeListImportDto
 {
-    public string Service { get; set; } = null;
+    public string Service { get; set; } = string.Empty;
     public string? Data { get; set; } = null;
 
 
