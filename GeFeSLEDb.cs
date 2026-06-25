@@ -33,9 +33,15 @@ protected override void OnModelCreating(ModelBuilder builder)
 
     builder.Entity<GeAPActor>()
         .OwnsOne(a => a.Icon);
+    builder.Entity<GeAPActor>()
+        .Navigation(a => a.Icon)
+        .IsRequired();
 
     builder.Entity<GeAPActor>()
         .OwnsOne(a => a.Image);
+    builder.Entity<GeAPActor>()
+        .Navigation(a => a.Image)
+        .IsRequired();
 
     builder.Entity<GeList>()    // each list has zero or more listowners
         .HasMany(g => g.ListOwners)
@@ -65,7 +71,9 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<GeFeSLEDb>
         var optionsBuilder = new DbContextOptionsBuilder<GeFeSLEDb>();
         var dbName = args.Length > 0 ? args[0] : "default.db";
         Console.WriteLine("MIGRATING database: " + dbName);
-        optionsBuilder.UseSqlite($"Data Source={dbName}");
+        optionsBuilder.UseSqlite(
+            $"Data Source={dbName}",
+            sqliteOptions => sqliteOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery));
 
         return new GeFeSLEDb(optionsBuilder.Options);
     }

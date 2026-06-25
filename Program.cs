@@ -72,7 +72,9 @@ DBg.d(LogLevel.Information, $"GeFeSLE:{GlobalConfig.bldVersion}");
 //   Mode, Cache, Password, foreign key enforcement etc. 
 // TODO: extend this to allow OTHER database providers and connection strings
 builder.Services.AddDbContext<GeFeSLEDb>(options =>
-    options.UseSqlite($"Data Source={dbName}"));
+    options.UseSqlite(
+        $"Data Source={dbName}",
+        sqliteOptions => sqliteOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)));
 
 // if the above fails i.e. it might be because we're performing a migration 
 // using the dotnet ef tools - in which case don't want to continue with the
@@ -4084,7 +4086,7 @@ using (var mutex = new Mutex(true, GlobalStatic.applicationName, out createdNew)
             // loads the "restricted" uploads/attachment files into the protected files lookup cache
             _ = geListFileController.ProtectUploadFiles();
         }
-
+        DBg.d(LogLevel.Information, "Startup tasks completed successfully  =========================>");
         app.Run();
     }
     else

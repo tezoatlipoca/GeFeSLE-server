@@ -278,6 +278,12 @@ window.onload = async function () {
     }
     showDebuggingElements();
 
+    // Static index already contains public lists, so anonymous users do not need /lists.
+    if (username == null) {
+        console.debug(fn + ' | anonymous user; skip /lists fetch');
+        return;
+    }
+
     // index.html contains only public lists.
     // Fetch authorized lists and append any additional non-public lists.
     var lists = await getLists([id, username, role]);
