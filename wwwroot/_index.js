@@ -1,3 +1,187 @@
+function normalizeIdentityValue(value) {
+    if (typeof value !== "string") {
+        return "";
+    }
+    return value.trim().toLowerCase();
+}
+
+function getUserIdentitySet(sessionData) {
+    const identities = new Set();
+    const addIdentity = (candidate) => {
+        const normalized = normalizeIdentityValue(candidate);
+        if (normalized.length > 0) {
+            identities.add(normalized);
+        }
+    };
+
+    if (!sessionData || typeof sessionData !== "object") {
+        return identities;
+    }
+
+    addIdentity(sessionData.id);
+    addIdentity(sessionData.userId);
+    addIdentity(sessionData.userid);
+    addIdentity(sessionData.userName);
+    addIdentity(sessionData.username);
+    addIdentity(sessionData.email);
+    if (sessionData.user && typeof sessionData.user === "object") {
+        addIdentity(sessionData.user.id);
+        addIdentity(sessionData.user.userName);
+        addIdentity(sessionData.user.username);
+        addIdentity(sessionData.user.email);
+    }
+    return identities;
+}
+
+function objectMatchesIdentity(entity, identitySet) {
+    if (!entity || typeof entity !== "object" || !identitySet || identitySet.size === 0) {
+        return false;
+    }
+    const candidates = [
+        entity.id,
+        entity.userId,
+        entity.userid,
+        entity.userName,
+        entity.username,
+        entity.email
+    ];
+    return candidates.some((candidate) => identitySet.has(normalizeIdentityValue(candidate)));
+}
+
+function collectionMatchesIdentity(collection, identitySet) {
+    if (!Array.isArray(collection) || collection.length === 0) {
+        return false;
+    }
+    return collection.some((entry) => {
+        if (typeof entry === "string") {
+            return identitySet.has(normalizeIdentityValue(entry));
+        }
+        return objectMatchesIdentity(entry, identitySet);
+    });
+}
+
+function getHighestListPermissionLabel(list, identitySet) {
+    if (!list || !identitySet || identitySet.size === 0) {
+        return null;
+    }
+
+    const creatorFlags = [list.isCreator, list.iscreator, list.amICreator, list.amIcreator, list.userIsCreator];
+    if (creatorFlags.some((flag) => flag === true)) {
+        return "creator/owner";
+    }
+
+    const ownerFlags = [list.isListOwner, list.islistowner, list.amIListOwner, list.amIlistowner, list.userIsListOwner];
+    if (ownerFlags.some((flag) => flag === true)) {
+        return "listowner";
+    }
+
+    const contributorFlags = [list.isContributor, list.iscontributor, list.amIContributor, list.amIcontributor, list.userIsContributor];
+    if (contributorFlags.some((flag) => flag === true)) {
+        return "contributor";
+    }
+
+    const creatorMatches = objectMatchesIdentity(list.creator, identitySet);
+    if (creatorMatches) {
+        return "creator/owner";
+    }
+
+    if (identitySet.has(normalizeIdentityValue(list.creatorId))
+        || identitySet.has(normalizeIdentityValue(list.creatorUserId))
+        || identitySet.has(normalizeIdentityValue(list.creatorUserName))
+        || identitySet.has(normalizeIdentityValue(list.creatorUsername))) {
+        return "creator/owner";
+    }
+
+    if (collectionMatchesIdentity(list.listOwners, identitySet)
+        || collectionMatchesIdentity(list.listowners, identitySet)
+        || collectionMatchesIdentity(list.owners, identitySet)) {
+        return "listowner";
+    }
+
+    if (collectionMatchesIdentity(list.contributors, identitySet)
+        || collectionMatchesIdentity(list.listContributors, identitySet)
+        || collectionMatchesIdentity(list.listcontributors, identitySet)) {
+        return "contributor";
+    }
+
+    return null;
+}
+
+function upsertRuntimePermissionIndicator(listItem, permissionLabel) {
+    if (!listItem || !permissionLabel) {
+        return;
+    }
+
+    let indicator = listItem.querySelector(".runtime-list-permission");
+    if (!indicator) {
+        indicator = document.createElement("span");
+        indicator.className = "runtime-list-permission";
+        listItem.appendChild(document.createTextNode(" "));
+        listItem.appendChild(indicator);
+    }
+
+    indicator.textContent = "[" + permissionLabel + "]";
+    indicator.setAttribute("data-permission-level", permissionLabel);
+
+    const allSpans = Array.from(listItem.querySelectorAll("span"));
+    allSpans
+        .filter((span) => span !== indicator)
+        .forEach((span) => {
+            if ((span.textContent || "").toLowerCase().includes("non-public")) {
+                span.remove();
+            }
+        });
+}
+
+function annotateRuntimeAuthorizedPermissionIndicators(listsData, sessionData) {
+    if (!Array.isArray(listsData) || listsData.length === 0) {
+        return;
+    }
+
+    const runtimeRows = Array.from(document.querySelectorAll("li.runtime-authorized-list[data-render-source='runtime-authorized']"));
+    if (runtimeRows.length === 0) {
+        return;
+    }
+
+    const identitySet = getUserIdentitySet(sessionData);
+    if (identitySet.size === 0) {
+        return;
+    }
+
+    const permissionById = new Map();
+    for (const list of listsData) {
+        const listId = Number(list?.id);
+        if (!Number.isFinite(listId)) {
+            continue;
+        }
+        const label = getHighestListPermissionLabel(list, identitySet);
+        if (label) {
+            permissionById.set(listId, label);
+        }
+    }
+
+    runtimeRows.forEach((row) => {
+        const attrId = Number(row.getAttribute("data-list-id"));
+        let listId = Number.isFinite(attrId) ? attrId : NaN;
+        if (!Number.isFinite(listId)) {
+            const href = row.querySelector("a")?.getAttribute("href") || "";
+            const match = href.match(/\/lists\/(\d+)/);
+            if (match) {
+                listId = Number(match[1]);
+            }
+        }
+
+        if (!Number.isFinite(listId)) {
+            return;
+        }
+
+        const permissionLabel = permissionById.get(listId);
+        if (permissionLabel) {
+            upsertRuntimePermissionIndicator(row, permissionLabel);
+        }
+    });
+}
+
 // define the onClick event handler function for the indexregenlink link
 async function interceptRegen(event) {
     // prevent the default action of the link
@@ -96,7 +280,7 @@ window.onload = async function () {
 
     // index.html contains only public lists.
     // Fetch authorized lists and append any additional non-public lists.
-    var lists = await getLists();
+    var lists = await getLists([id, username, role]);
     if (lists == null) {
         console.debug('lists is null');
         return;
@@ -145,6 +329,12 @@ window.onload = async function () {
                 }
             }
         }
+
+        annotateRuntimeAuthorizedPermissionIndicators(lists, {
+            id: id,
+            userName: username,
+            role: role
+        });
 
         let noLists = document.getElementById('nolists');
         if (noLists && existingNames.size > 0) {

@@ -112,12 +112,55 @@ public static class ProtectedFiles
             AddFile($"/rss-{list.Name}.xml", list.Name);
             AddFile($"/{list.Name}.json", list.Name);
             AddFile($"/{list.Name}.html", list.Name);
-            Lists.TryAdd(list.Name!, list);
+            Lists.AddOrUpdate(list.Name!, list, (_, _) => list);
             ListAccess.AddOrUpdate(list.Name!, BuildSnapshot(list), (_, _) => BuildSnapshot(list));
         }
         else {
             DBg.d(LogLevel.Information, $"{fn} skipping name: {list.Name} or visibility: {list.Visibility}");
             
+        }
+    }
+
+    public static void RemoveProtectedListByName(string? listName)
+    {
+        if (string.IsNullOrWhiteSpace(listName))
+        {
+            return;
+        }
+
+        RemoveFile($"/rss-{listName}.xml");
+        RemoveFile($"/{listName}.json");
+        RemoveFile($"/{listName}.html");
+        Lists.TryRemove(listName, out _);
+        ListAccess.TryRemove(listName, out _);
+    }
+
+    public static async Task RefreshListCacheAsync(GeFeSLEDb db, int listId, string? oldName = null)
+    {
+        GeList? list = await db.Lists
+            .Include(l => l.Creator)
+            .Include(l => l.ListOwners)
+            .Include(l => l.Contributors)
+            .FirstOrDefaultAsync(l => l.Id == listId);
+
+        if (!string.IsNullOrWhiteSpace(oldName)
+            && (list is null || !string.Equals(oldName, list.Name, StringComparison.Ordinal)))
+        {
+            RemoveProtectedListByName(oldName);
+        }
+
+        if (list is null)
+        {
+            return;
+        }
+
+        if (list.Visibility > GeListVisibility.Public)
+        {
+            AddList(list);
+        }
+        else
+        {
+            RemoveProtectedListByName(list.Name);
         }
     }
     public static bool RemoveList(GeList list)

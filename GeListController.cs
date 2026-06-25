@@ -56,6 +56,7 @@ namespace GeFeSLE.Controllers
                 .Include(l => l.ListOwners)
                 .Include(l => l.Contributors)
                 .FirstOrDefaultAsync(l => l.Id == id);
+            var oldName = modlist?.Name;
             if (modlist is null)
             {
                 return NotFound();
@@ -97,6 +98,7 @@ namespace GeFeSLE.Controllers
             _db.Items.Where(item => item.ListId == id);
 
             await _db.SaveChangesAsync();
+            ProtectedFiles.RemoveProtectedListByName(oldName);
             _ = GlobalStatic.GenerateHTMLListIndex(_db);
             return Ok();
         }
@@ -118,6 +120,7 @@ namespace GeFeSLE.Controllers
                 .Include(l => l.ListOwners)
                 .Include(l => l.Contributors)
                 .FirstOrDefaultAsync(l => l.Id == inputList.Id);
+            var oldName = modlist?.Name;
             var namechange = false;
             if (modlist is null)
             {
@@ -192,6 +195,7 @@ namespace GeFeSLE.Controllers
                 return Results.BadRequest($"ActivityPubId contains invalid character {invalidActivityPubIdChar.c} starting at position {invalidActivityPubIdChar.index}.");
             }
             await _db.SaveChangesAsync();
+            await ProtectedFiles.RefreshListCacheAsync(_db, modlist.Id, oldName);
             await modlist.RegenerateAllFiles(_db);
             if (namechange)
             {

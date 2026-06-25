@@ -16,6 +16,7 @@ function LoginDto({OAuthProvider = null,
 
 async function Login(loginto) {
     let fn = "Login |"; console.debug(fn);
+    clearAuthSessionCache(true);
     let loginDto = null;
     if (loginto === undefined || loginto === "local") {
         let Username = document.getElementById("Username").value;

@@ -176,6 +176,45 @@ function isSuperUser(r) {
     }
 }
 
+function clearAuthSessionCache(clearPersistentTokens = false) {
+    window.__gefesleAuthTupleCache = null;
+    window.__gefesleAuthTuplePromise = null;
+
+    if (clearPersistentTokens) {
+        localStorage.removeItem('apiToken');
+        localStorage.removeItem('antiForgeryToken');
+        localStorage.removeItem('antiForgeryHeaderName');
+    }
+}
+
+function installAuthInvalidationHooks() {
+    if (window.__gefesleAuthHooksInstalled) {
+        return;
+    }
+    window.__gefesleAuthHooksInstalled = true;
+
+    document.addEventListener('click', function (event) {
+        let target = event.target;
+        if (!target || typeof target.closest !== 'function') {
+            return;
+        }
+
+        let clickable = target.closest('a, button, input[type="button"], div, span');
+        if (!clickable) {
+            return;
+        }
+
+        let href = (clickable.getAttribute('href') || '').toLowerCase();
+        let onClick = (clickable.getAttribute('onclick') || '').toLowerCase();
+
+        if (href.includes('/me/delete') || onClick.includes('/me/delete')) {
+            clearAuthSessionCache(true);
+        }
+    }, true);
+}
+
+installAuthInvalidationHooks();
+
 // similar to getRole, this function "attempts" to see if the user is logged in or not. 
 // WHAT that entails is encapsulated here. The point is to have a boolean we can easily check
 // before exposing any EDIT fields - don't want the user to make tons of changes then have 
@@ -184,6 +223,16 @@ function isSuperUser(r) {
 async function amloggedin() {
     let fn = 'amLoggedIn';
     console.info(fn);
+
+    if (window.__gefesleAuthTupleCache) {
+        console.debug(fn + ' | Using cached auth tuple');
+        return window.__gefesleAuthTupleCache;
+    }
+
+    if (window.__gefesleAuthTuplePromise) {
+        console.debug(fn + ' | Awaiting in-flight auth request');
+        return await window.__gefesleAuthTuplePromise;
+    }
 
 
     // check to see if our jwt token is in local storage
@@ -208,7 +257,7 @@ async function amloggedin() {
         console.debug(fn + ' | API URL: ' + apiUrl);
 
         // Perform a GET request
-        return await fetch(apiUrl, {
+        window.__gefesleAuthTuplePromise = fetch(apiUrl, {
             headers: {
                 "GeFeSLE-XMLHttpRequest": "true",
             }
@@ -227,9 +276,15 @@ async function amloggedin() {
                 }
                 console.debug(fn + ' | API Response: ' + JSON.stringify(json));
 
-                return [id, userName, role];
-            }
-            );
+                const tuple = [id, userName, role];
+                window.__gefesleAuthTupleCache = tuple;
+                return tuple;
+            })
+            .finally(() => {
+                window.__gefesleAuthTuplePromise = null;
+            });
+
+        return await window.__gefesleAuthTuplePromise;
     } catch (error) {
         console.error(error);
         d(error);
@@ -334,7 +389,7 @@ function handleResponse(response) {
 
 // function to obtain a list of lists the user is allowed to view
 
-async function getLists() {
+async function getLists(authTuple = null) {
     let fn = 'getLists';
     console.info(fn);
 
@@ -344,7 +399,15 @@ async function getLists() {
         return;
     }
 
-    let [id, username, role] = await amloggedin();
+    let id;
+    let username;
+    let role;
+    if (Array.isArray(authTuple) && authTuple.length >= 3) {
+        [id, username, role] = authTuple;
+    }
+    else {
+        [id, username, role] = await amloggedin();
+    }
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
 

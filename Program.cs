@@ -727,32 +727,8 @@ app.Use(async (context, next) =>
                 }
 
                 var db = context.RequestServices.GetRequiredService<GeFeSLEDb>();
-                var userManager = context.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
-                GeFeSLEUser? user = null;
-                if (!string.IsNullOrWhiteSpace(sessionUser.Id))
                 {
-                    user = await userManager.FindByIdAsync(sessionUser.Id);
-                }
-                if (user is null)
-                {
-                    user = await UserSessionService.mapUserNameToDBUser(sessionUser.UserName, userManager);
-                }
-                // if the user isn't in the db (null here) but we're authenticated we have an issue
-                // maybe someone deleted them from db after they logged in. 
-                if (user is null)
-                {
-                    var msg = $"{fn} User {sessionUser.UserName} is authenticated but not in database. Logging them out!";
-                    DBg.d(LogLevel.Warning, msg);
-                    context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-                    var sb = new StringBuilder();
-                    await GlobalStatic.GenerateUnAuthPage(sb, msg);
-                    var result = Results.Content(sb.ToString(), "text/html");
-                    await result.ExecuteAsync(context);
-                    return;
-                }
-                else
-                {
-                    (bool isAllowed, string? ynot) = await ProtectedFiles.IsFileVisibleToUser(path, user, sessionUser.Role, db);
+                    (bool isAllowed, string? ynot) = await ProtectedFiles.IsFileVisibleToUser(path, sessionUser.Id, sessionUser.Role, db);
                     if (!isAllowed)
                     {
                         // no - make a nice redirect page like the normal UNAUTH page using the ynot message  
@@ -766,7 +742,7 @@ app.Use(async (context, next) =>
                     }
                     else
                     {
-                        DBg.d(LogLevel.Debug, $"{fn} Protected file {path} - ALLOWED for {user.UserName}.");
+                        DBg.d(LogLevel.Debug, $"{fn} Protected file {path} - ALLOWED for {sessionUser.UserName}.");
 
                     }
                 }
@@ -1547,8 +1523,8 @@ app.MapPost("/lists", async (GeList newlist,
     newlist.Creator = me;
     newlist.ListOwners.Add(me);
     db.Lists.Add(newlist);
-    ProtectedFiles.AddList(newlist);
     await db.SaveChangesAsync();
+    await ProtectedFiles.RefreshListCacheAsync(db, newlist.Id);
     await newlist.RegenerateAllFiles(db);
     string msg = $"/lists/{newlist.Id}";
     return Results.Created(msg, newlist);
@@ -2793,6 +2769,7 @@ app.MapPost("/lists/{list:int}/owners", async (int list,
 
     targetList.ListOwners.Add(user);
     await db.SaveChangesAsync();
+    await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
     var addedMsg = $"{caller.UserName} Added {user.UserName} to {targetList.Name} as a listowner";
     DBg.d(LogLevel.Information, addedMsg);
     return Results.Ok(new ListUserOperationResponse
@@ -2912,6 +2889,7 @@ app.MapPost("/lists/{list:int}/contributors", async (int list,
 
     targetList.Contributors.Add(user);
     await db.SaveChangesAsync();
+    await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
     var addedMsg = $"{caller.UserName} Added {user.UserName} to {targetList.Name} as a contributor";
     DBg.d(LogLevel.Information, addedMsg);
     return Results.Ok(new ListUserOperationResponse
@@ -3029,6 +3007,7 @@ app.MapDelete("/lists/{list:int}/owners", async (int list,
 
     targetList.ListOwners.Remove(user);
     await db.SaveChangesAsync();
+    await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
     var msg = $"{caller.UserName} REMOVED {user.UserName} FROM {targetList.Name} as a listowner";
     DBg.d(LogLevel.Information, msg);
     return Results.Ok(new ListUserOperationResponse
@@ -3147,6 +3126,7 @@ app.MapDelete("/lists/{list:int}/contributors", async (int list,
 
     targetList.Contributors.Remove(user);
     await db.SaveChangesAsync();
+    await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
     var msg = $"{caller.UserName} REMOVED {user.UserName} FROM {targetList.Name} as a contributor";
     DBg.d(LogLevel.Information, msg);
     return Results.Ok(new ListUserOperationResponse
