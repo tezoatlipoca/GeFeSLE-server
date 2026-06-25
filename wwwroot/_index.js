@@ -94,31 +94,74 @@ window.onload = async function () {
     }
     showDebuggingElements();
 
-    // by default all lists - which are <li class="indexliitem"> - are hidden
-    // except the Public ones which visible by default. 
-    // obtain the list of lists the user can see and make visible the ones 
-    // they're allowed to see
+    // index.html contains only public lists.
+    // Fetch authorized lists and append any additional non-public lists.
     var lists = await getLists();
-    // lists is a json glob which is a lot more information about each list than we need. 
-    // we just need the NAME of the list
     if (lists == null) {
         console.debug('lists is null');
         return;
     }
     else {
-        lists = lists.map((l) => l.name);
         console.debug('lists:', lists);
-        // now iterate through all the list bullets and make visible the ones
-        // where the NAME in the <a> tag is in the lists array (but it has to match exact)
-        var listItems = document.getElementsByClassName('indexliitem');
+        let listRoot = document.getElementById('indexuloflists');
+        if (!listRoot) {
+            console.debug('index list root not found');
+            return;
+        }
+
+        // Track what static index already contains (public lists).
+        let existingNames = new Set();
+        let listItems = document.getElementsByClassName('indexliitem');
         for (let li of listItems) {
-            let listName = li.getElementsByTagName('a')[0].innerText;
-            if (lists.includes(listName)) {
-                li.style.display = '';
+            let anchor = li.getElementsByTagName('a')[0];
+            if (anchor && anchor.innerText) {
+                existingNames.add(anchor.innerText);
             }
+        }
+
+        for (let list of lists) {
+            if (!list || !list.name || existingNames.has(list.name)) {
+                continue;
+            }
+
+            let li = document.createElement('li');
+            li.className = 'indexliitem runtime-authorized-list';
+            li.setAttribute('data-render-source', 'runtime-authorized');
+            li.setAttribute('data-list-name', list.name);
+            li.setAttribute('data-list-id', list.id);
+
+            let listUrl = encodeURI(list.name + '.html');
+            li.innerHTML = '<a href="' + listUrl + '">' + escapeHtml(list.name) + '</a>' +
+                ' <span class="indexeditlink" style="display: none;"><a href="_edit.list.html?listid=' + list.id + '">Edit</a></span>' +
+                ' <span class="indexeditlink" style="display: none;"><a href="#" onclick="deleteList(' + list.id + '); return;">Delete</a></span>';
+
+            listRoot.appendChild(li);
+            existingNames.add(list.name);
+
+            if (isSuperUser(role) || isListOwner(role)) {
+                let links = li.getElementsByClassName('indexeditlink');
+                for (let l of links) {
+                    l.style.display = '';
+                }
+            }
+        }
+
+        let noLists = document.getElementById('nolists');
+        if (noLists && existingNames.size > 0) {
+            noLists.remove();
         }
     }
 
+}
+
+function escapeHtml(input) {
+    if (!input) return '';
+    return input
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
 }
 
 

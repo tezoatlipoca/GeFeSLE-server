@@ -236,7 +236,11 @@ public static class GoogleController
         sb.AppendLine("</select>");
         sb.AppendLine("<p>Destination list</p>");
         sb.AppendLine("<select name=\"destinationList\">");
-        List<GeList> lists = await db.Lists.ToListAsync();
+        List<GeList> lists = await db.Lists
+            .Include(l => l.Creator)
+            .Include(l => l.ListOwners)
+            .Include(l => l.Contributors)
+            .ToListAsync();
         IList<string> myRoles = await userManager.GetRolesAsync(me);
         foreach (GeList list in lists)
         {

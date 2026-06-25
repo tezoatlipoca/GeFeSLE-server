@@ -5,6 +5,7 @@ using System.Text;
 using Mastonet.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace GeFeSLE.Controllers
 {
@@ -50,7 +51,11 @@ namespace GeFeSLE.Controllers
 
             GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, _db, _userManager);
             var sessionUser = UserSessionService.amILoggedIn(httpContext);
-            var modlist = await _db.Lists.FindAsync(id);
+            var modlist = await _db.Lists
+                .Include(l => l.Creator)
+                .Include(l => l.ListOwners)
+                .Include(l => l.Contributors)
+                .FirstOrDefaultAsync(l => l.Id == id);
             if (modlist is null)
             {
                 return NotFound();
@@ -108,7 +113,11 @@ namespace GeFeSLE.Controllers
             DBg.d(LogLevel.Trace, $"{fn}: {dumpList}");
             GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, _db, _userManager);
             var sessionUser = UserSessionService.amILoggedIn(httpContext);
-            var modlist = await _db.Lists.FindAsync(inputList.Id);
+            var modlist = await _db.Lists
+                .Include(l => l.Creator)
+                .Include(l => l.ListOwners)
+                .Include(l => l.Contributors)
+                .FirstOrDefaultAsync(l => l.Id == inputList.Id);
             var namechange = false;
             if (modlist is null)
             {

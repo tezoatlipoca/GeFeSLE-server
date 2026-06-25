@@ -27,8 +27,11 @@ public static class GlobalStatic
     public static async Task GenerateHTMLListIndex(GeFeSLEDb db)
     {
         DBg.d(LogLevel.Trace, "GenerateHTMLListIndex");
-        // get all the lists
-        var lists = await db.Lists.ToListAsync();
+        // Only render public lists into static index.html.
+        // Non-public lists are appended client-side after /lists authorization checks.
+        var lists = await db.Lists
+            .Where(list => list.Visibility == GeListVisibility.Public)
+            .ToListAsync();
         //if (lists.Count == 0) return;
 
         var sb = new StringBuilder();
@@ -51,10 +54,10 @@ public static class GlobalStatic
         sb.AppendLine($"<div class=\"button admin indexeditlink\" onclick=\"window.location.href='/_edit.list.html'\" style=\"display: none;\">Add New List</div> ");
         // write a line that calls the regenerate endpoint and refreshes this page
         sb.AppendLine($"<div class=\"button admin indexeditlink\" onclick=\"window.location.href='/lists/regen'\" style=\"display: none;\">Regenerate</div>");
-        sb.AppendLine("<ul class=\"indexuloflists\">");
+        sb.AppendLine("<ul class=\"indexuloflists\" id=\"indexuloflists\">");
         if (lists.Count == 0)
         {
-            sb.AppendLine("<h3 class=\"indexliitem\">No lists here yet!</h3>");
+            sb.AppendLine("<li class=\"indexliitem\" id=\"nolists\">No lists here yet!</li>");
         }
         else
         {
@@ -64,7 +67,7 @@ public static class GlobalStatic
                 
 
 
-                sb.AppendLine($"<li class=\"indexliitem\" style=\"display: none;\"><a href=\"{list.Name}.html\">{list.Name}</a> ({itemCount})");
+                sb.AppendLine($"<li class=\"indexliitem\" data-list-name=\"{list.Name}\" data-list-id=\"{list.Id}\"><a href=\"{list.Name}.html\">{list.Name}</a> ({itemCount})");
                 sb.AppendLine($"<span class=\"indexeditlink\" style=\"display: none;\"><a href=\"_edit.list.html?listid={list.Id}\">Edit</a></span>");
                 sb.AppendLine($"<span class=\"indexeditlink\" style=\"display: none;\"><a href=\"#\" onclick=\"deleteList({list.Id}); return;\">Delete</a></span>");
 

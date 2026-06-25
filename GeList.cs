@@ -405,6 +405,9 @@ sb.AppendLine("</div>");
         DBg.d(LogLevel.Trace, $"{user.UserName} ? {Name}");
         string? ynot = null;
         bool allowed = false;
+        DBg.d(LogLevel.Trace, $"ListOwners: {string.Join(", ", ListOwners.Select(u => u.UserName))}");
+        DBg.d(LogLevel.Trace, $"Contributors: {string.Join(", ", Contributors.Select(u => u.UserName))}");
+        DBg.d(LogLevel.Trace, $"Creator: {Creator?.UserName}");
         if (Contributors.Contains(user) || ListOwners.Contains(user) || Creator == user)
         {
             allowed = true;

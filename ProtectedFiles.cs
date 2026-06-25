@@ -123,7 +123,8 @@ public static class ProtectedFiles
 
     public static async Task<(bool, string?)> IsFileVisibleToUser(string path,
         GeFeSLEUser user,
-        UserManager<GeFeSLEUser> userManager)
+        UserManager<GeFeSLEUser> userManager,
+        GeFeSLEDb db)
     {
         var fn = "IsFileVisibleToUser"; DBg.d(LogLevel.Trace, fn);
 
@@ -148,9 +149,32 @@ public static class ProtectedFiles
         }
 
         DBg.d(LogLevel.Trace, $"{fn} file {path} is not an interal protected file.");
-        GeList? list = Lists.TryGetValue(listName!, out var tempList)
-            ? tempList
-            : null;
+        GeList? list = null;
+        if (!string.IsNullOrWhiteSpace(listName))
+        {
+            GeList? cached = Lists.TryGetValue(listName, out var tempList)
+                ? tempList
+                : null;
+
+            // Harden cache reads: if auth graph is absent, rehydrate with includes.
+            if (cached is null || !HasLoadedAuthGraph(cached))
+            {
+                GeList? hydrated = await db.Lists
+                    .Include(l => l.Creator)
+                    .Include(l => l.ListOwners)
+                    .Include(l => l.Contributors)
+                    .FirstOrDefaultAsync(l => l.Name == listName);
+                if (hydrated is not null)
+                {
+                    Lists.AddOrUpdate(listName, hydrated, (_, _) => hydrated);
+                }
+                list = hydrated ?? cached;
+            }
+            else
+            {
+                list = cached;
+            }
+        }
         // did we get a list? 
         if (list == null)
         {
@@ -171,6 +195,11 @@ public static class ProtectedFiles
             return (isVis, ynot);
 
         };
+    }
+
+    private static bool HasLoadedAuthGraph(GeList list)
+    {
+        return list.Creator is not null || list.ListOwners.Count > 0 || list.Contributors.Count > 0;
     }
 
     public static bool IsInternalProtected(string listName)

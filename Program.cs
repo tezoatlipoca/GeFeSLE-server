@@ -662,7 +662,7 @@ app.Use(async (context, next) =>
                 GlobalStatic.AddCorsHeaders(context.Request, context.Response);
             }
 
-            DBg.d(LogLevel.Information, $"HEAD request from {remoteIpAddress} - {context.Request.Headers["User-Agent"].FirstOrDefault()} - for {context.Request.Path}");
+            DBg.d(LogLevel.Information, $"{context.Request.Path} ({context.Request.Method}) <-- {remoteIpAddress} - {context.Request.Headers["User-Agent"].FirstOrDefault()}");
             context.Request.Method = "GET";
             await next.Invoke();
             context.Response.Body = Stream.Null;
@@ -726,7 +726,7 @@ app.Use(async (context, next) =>
                 }
                 else
                 {
-                    (bool isAllowed, string? ynot) = await ProtectedFiles.IsFileVisibleToUser(path, user, userManager);
+                    (bool isAllowed, string? ynot) = await ProtectedFiles.IsFileVisibleToUser(path, user, userManager, db);
                     if (!isAllowed)
                     {
                         // no - make a nice redirect page like the normal UNAUTH page using the ynot message  
@@ -748,7 +748,7 @@ app.Use(async (context, next) =>
         }
         else
         {
-            string msg = $"{path} <-- {sessionUser.UserName ?? "anonymous"} [{sessionUser.Role ?? "no role"}] from {remoteIpAddress}";
+            string msg = $"{path} ({context.Request.Method}) <-- {remoteIpAddress} - {sessionUser.UserName ?? "anonymous"} [{sessionUser.Role ?? "no role"}] using {context.Request.Headers["User-Agent"].FirstOrDefault()}";
             DBg.d(LogLevel.Information, msg);
         }
 
@@ -1378,7 +1378,11 @@ app.MapGet("/lists", async (GeFeSLEDb db,
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var sessionUser = UserSessionService.amILoggedIn(httpContext);
 
-    List<GeList> lists = await db.Lists.ToListAsync();
+    List<GeList> lists = await db.Lists
+        .Include(l => l.Creator)
+        .Include(l => l.ListOwners)
+        .Include(l => l.Contributors)
+        .ToListAsync();
     List<GeList> visibleLists = new List<GeList>();
     foreach (GeList list in lists)
     {
@@ -1414,7 +1418,11 @@ app.MapGet("/lists/{listid:int}", async (GeFeSLEDb db,
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var sessionUser = UserSessionService.amILoggedIn(httpContext);
 
-    GeList list = await db.Lists.FindAsync(listid);
+    GeList list = await db.Lists
+        .Include(l => l.Creator)
+        .Include(l => l.ListOwners)
+        .Include(l => l.Contributors)
+        .FirstOrDefaultAsync(l => l.Id == listid);
     if (list is null)
     {
         return Results.NotFound();
@@ -1650,14 +1658,22 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
     // if the item's listid is different from the inputItem's listid, then we have to make sure the 
     // caller has modification rights to BOTH lists
     // first, find the OLD list. 
-    var oldlist = await db.Lists.FindAsync(moditem.ListId);
+    var oldlist = await db.Lists
+        .Include(l => l.Creator)
+        .Include(l => l.ListOwners)
+        .Include(l => l.Contributors)
+        .FirstOrDefaultAsync(l => l.Id == moditem.ListId);
     if (oldlist is null) return Results.NotFound($"Original list {moditem.ListId} not found");
     // if the listid is changing, find the NEW list and check permissions on that too
     var itemMoved = false;
     if (moditem.ListId != inputItem.ListId)
     {
         itemMoved = true;
-        var newlist = await db.Lists.FindAsync(inputItem.ListId);
+        var newlist = await db.Lists
+            .Include(l => l.Creator)
+            .Include(l => l.ListOwners)
+            .Include(l => l.Contributors)
+            .FirstOrDefaultAsync(l => l.Id == inputItem.ListId);
         if (newlist is null) return Results.NotFound($"New list {inputItem.ListId} not found");
         (bool canModifyOld, string? ynotOld) = oldlist.IsUserAllowedToModify(user);
         (bool canModifyNew, string? ynotNew) = newlist.IsUserAllowedToModify(user);
@@ -1729,16 +1745,27 @@ app.MapDelete("/items/{id:int}", async (int id,
         UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext) =>
 {
-    DBg.d(LogLevel.Trace, $"/items(DELETE)/{id}");
+    var fn = $"/items/{id} (DELETE)"; DBg.d(LogLevel.Trace, $"{fn}");
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // check if list owner is owner of, or can modify THIS list
     var delitem = await db.Items.FindAsync(id);
-    if (delitem is null) return Results.NotFound();
-    var list = await db.Lists.FindAsync(delitem.ListId);
-    if (list is null) return Results.NotFound($"List {delitem.ListId} not found");
+    if (delitem is null) {
+        DBg.d(LogLevel.Error, $"{fn} -- item not found");
+        return Results.NotFound();
+    }
+    var list = await db.Lists
+        .Include(l => l.Creator)
+        .Include(l => l.ListOwners)
+        .Include(l => l.Contributors)
+        .FirstOrDefaultAsync(l => l.Id == delitem.ListId);
+    if (list is null) {
+        DBg.d(LogLevel.Error, $"{fn} -- list not found");
+        return Results.NotFound($"List {delitem.ListId} not found");
+    }
     (bool canModify, string? ynot) = list.IsUserAllowedToModify(user);
     if (!canModify)    {
         string reason = $"Cannot delete item. No modify permissions on list (id {list.Id}, name {list.Name}): {ynot}.";
+        DBg.d(LogLevel.Error, $"{fn} -- {reason}");
         return Results.BadRequest(reason);
     }
     else {
@@ -1746,6 +1773,7 @@ app.MapDelete("/items/{id:int}", async (int id,
         await db.SaveChangesAsync();
         
         await list.RegenerateAllFiles(db);
+        DBg.d(LogLevel.Information, $"{fn} -- item deleted successfully");
         return Results.Ok();
     }
 })
@@ -1779,10 +1807,18 @@ app.MapPatch("/items/{id:int}/list", async (
     if (item is null) return Results.NotFound($"Item {id} not found");
 
     var oldlistid = item.ListId;
-    var oldlist = await db.Lists.FindAsync(oldlistid);
+    var oldlist = await db.Lists
+        .Include(l => l.Creator)
+        .Include(l => l.ListOwners)
+        .Include(l => l.Contributors)
+        .FirstOrDefaultAsync(l => l.Id == oldlistid);
     if (oldlist is null) return Results.NotFound($"Source list {oldlistid} not found");
 
-    var newlist = await db.Lists.FindAsync(newlistid);
+    var newlist = await db.Lists
+        .Include(l => l.Creator)
+        .Include(l => l.ListOwners)
+        .Include(l => l.Contributors)
+        .FirstOrDefaultAsync(l => l.Id == newlistid);
     if (newlist is null) return Results.NotFound($"Destination list {newlistid} not found");
 
     if (oldlistid == newlistid)
@@ -2096,7 +2132,11 @@ app.MapGet("/lists/{listid}/regen", async (int listid,
     // add check for if listowner is owner of THIS list
 
     // find the list for this id
-    var list = await db.Lists.FindAsync(listid);
+    var list = await db.Lists
+        .Include(l => l.Creator)
+        .Include(l => l.ListOwners)
+        .Include(l => l.Contributors)
+        .FirstOrDefaultAsync(l => l.Id == listid);
     if (list is null) return Results.NotFound();
     else
     {
@@ -2505,7 +2545,11 @@ app.MapPost("/lists/{listid:int}", async Task<IResult> (HttpContext httpContext)
     // get session user
     var sessionUser = UserSessionService.amILoggedIn(httpContext);
     // obtain the target list - if it doesn't exist return 404 list not found
-    var list = await db.Lists.FindAsync(listid);
+    var list = await db.Lists
+        .Include(l => l.Creator)
+        .Include(l => l.ListOwners)
+        .Include(l => l.Contributors)
+        .FirstOrDefaultAsync(l => l.Id == listid);
     if (list is null) return Results.NotFound($"List {listid} not found.");
     // is the user allowed to modify this list? 
     (bool canMod, string? ynot) = list.IsUserAllowedToModify(user);

@@ -757,8 +757,8 @@ async function removeTag(itemid, tag, feedbackPosition = null) {
 }
 
 
-// on page load, call the filterTAGSUpdate function
-window.onload = async function () {
+// initialize list view as soon as DOM is ready (faster than window.onload)
+document.addEventListener('DOMContentLoaded', async function () {
     let fn = 'list_view.js - window.onload';
     if (localStorage.getItem('result')) {
         document.getElementById('result').innerHTML = localStorage.getItem('result');
@@ -791,11 +791,12 @@ window.onload = async function () {
     filterUpdate();
     // turn any 1st cell links into links
     make1stcelllinks();
-    // create the quick move menus
-    createQuickMoveMenu();
-    // create the quick tag add/remove 
-    buildTagsMenu();
-}
+    // create editor-only controls only when authorized
+    if (globalCanEditList) {
+        createQuickMoveMenu();
+        buildTagsMenu();
+    }
+});
 
 
 async function importItems(sourceService, destLIst) {
