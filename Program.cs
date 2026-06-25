@@ -29,6 +29,8 @@ using System.Threading;
 using Microsoft.OpenApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using GeFeSLE.DTOs;
+using System.Security.Cryptography;
+using System.Net.Http.Headers;
 
 
 // check a bunch of stuff; we MUST have a configuration file AND
@@ -3698,6 +3700,97 @@ app.MapPost("/lists/import", async (IFormFile file,
 
 //============================================================== ACTIVITY PUB IMPLEMENTATION
 
+static string PemEncode(string label, byte[] data)
+{
+    var b64 = Convert.ToBase64String(data);
+    var sb = new StringBuilder();
+    sb.AppendLine($"-----BEGIN {label}-----");
+    for (int i = 0; i < b64.Length; i += 64)
+    {
+        int len = Math.Min(64, b64.Length - i);
+        sb.AppendLine(b64.Substring(i, len));
+    }
+    sb.AppendLine($"-----END {label}-----");
+    return sb.ToString();
+}
+
+static string ResolveConfigPath(string configuredPath)
+{
+    if (Path.IsPathRooted(configuredPath))
+    {
+        return configuredPath;
+    }
+
+    return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, configuredPath));
+}
+
+static string ComputeBodyDigestSha256(string payload)
+{
+    byte[] payloadBytes = Encoding.UTF8.GetBytes(payload);
+    byte[] digestBytes = SHA256.HashData(payloadBytes);
+    return $"SHA-256={Convert.ToBase64String(digestBytes)}";
+}
+
+RSA? activityPubSigningKey = null;
+string? activityPubPublicKeyPem = null;
+
+if (!string.IsNullOrWhiteSpace(GlobalConfig.ActivityPubPrivateKeyPemFile))
+{
+    try
+    {
+        var privateKeyPath = ResolveConfigPath(GlobalConfig.ActivityPubPrivateKeyPemFile);
+        if (!File.Exists(privateKeyPath))
+        {
+            DBg.d(LogLevel.Warning, $"ActivityPub signing key file not found: {privateKeyPath}");
+        }
+        else
+        {
+            string privateKeyPem = await File.ReadAllTextAsync(privateKeyPath);
+            var rsa = RSA.Create();
+            rsa.ImportFromPem(privateKeyPem);
+            activityPubPublicKeyPem = PemEncode("PUBLIC KEY", rsa.ExportSubjectPublicKeyInfo());
+            activityPubSigningKey = rsa;
+            DBg.d(LogLevel.Information, $"ActivityPub signing key loaded from {privateKeyPath}");
+        }
+    }
+    catch (Exception ex)
+    {
+        DBg.d(LogLevel.Warning, $"Unable to load ActivityPub signing key: {ex.Message}");
+    }
+}
+
+string ActivityPubKeyIdForActor(string actorUrl)
+{
+    return $"{actorUrl}#main-key";
+}
+
+string BuildActivityPubSignatureHeader(HttpMethod method, Uri requestUri, string dateHeaderValue, string digestHeaderValue, string contentType, string actorUrl)
+{
+    if (activityPubSigningKey is null)
+    {
+        throw new InvalidOperationException("ActivityPub signing key is not loaded.");
+    }
+
+    string requestTarget = $"{method.Method.ToLowerInvariant()} {requestUri.PathAndQuery}";
+    string hostHeader = requestUri.IsDefaultPort ? requestUri.Host : requestUri.Authority;
+    string signingString =
+        $"(request-target): {requestTarget}\n" +
+        $"host: {hostHeader}\n" +
+        $"date: {dateHeaderValue}\n" +
+        $"digest: {digestHeaderValue}\n" +
+        $"content-type: {contentType}";
+
+    byte[] signature = activityPubSigningKey.SignData(
+        Encoding.UTF8.GetBytes(signingString),
+        HashAlgorithmName.SHA256,
+        RSASignaturePadding.Pkcs1);
+
+    string signatureB64 = Convert.ToBase64String(signature);
+    string keyId = ActivityPubKeyIdForActor(actorUrl);
+
+    return $"keyId=\"{keyId}\",algorithm=\"rsa-sha256\",headers=\"(request-target) host date digest content-type\",signature=\"{signatureB64}\"";
+}
+
 // webfinger. /.well-known/webfinger?resource=acct:username@hostname
 app.MapGet("/.well-known/webfinger", async (string resource, GeFeSLEDb db) =>
 {
@@ -3752,7 +3845,11 @@ app.MapGet("/apv1/lists/{listId:int}", async (int listId, GeFeSLEDb db) =>
     }
     var actor = new Dictionary<string, object?>
     {
-        ["@context"] = "https://www.w3.org/ns/activitystreams",
+        ["@context"] = new object[]
+        {
+            "https://www.w3.org/ns/activitystreams",
+            "https://w3id.org/security/v1"
+        },
         ["id"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}",
         ["type"] = "Group",
         ["name"] = list.Name,
@@ -3761,6 +3858,18 @@ app.MapGet("/apv1/lists/{listId:int}", async (int listId, GeFeSLEDb db) =>
         ["outbox"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/outbox",
         ["followers"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/followers"
     };
+
+    if (!string.IsNullOrWhiteSpace(activityPubPublicKeyPem))
+    {
+        string actorId = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}";
+        actor["publicKey"] = new Dictionary<string, object?>
+        {
+            ["id"] = ActivityPubKeyIdForActor(actorId),
+            ["owner"] = actorId,
+            ["publicKeyPem"] = activityPubPublicKeyPem
+        };
+    }
+
     return Results.Content(System.Text.Json.JsonSerializer.Serialize(actor), "application/activity+json");
 });
 
@@ -3886,14 +3995,158 @@ app.MapGet("/apv1/lists/{listId:int}/followers", async (int listId, GeFeSLEDb db
     return Results.Content(System.Text.Json.JsonSerializer.Serialize(followerCollection), "application/activity+json");
 });
 
+async Task<string?> ResolveActorInboxAsync(string actorIri, GeListFollower? knownFollower = null)
+{
+    if (knownFollower is not null && !string.IsNullOrWhiteSpace(knownFollower.Inbox))
+    {
+        return knownFollower.Inbox;
+    }
+
+    if (knownFollower is not null)
+    {
+        // Avoid refetching actor metadata in the same request path if we already tried.
+        var guessedInbox = GeListFollower.GuessInboxFromActorIri(actorIri);
+        if (!string.IsNullOrWhiteSpace(guessedInbox))
+        {
+            knownFollower.Inbox = guessedInbox;
+            return guessedInbox;
+        }
+
+        return null;
+    }
+
+    GeListFollower actorDetails = knownFollower ?? new GeListFollower
+    {
+        Id = actorIri,
+        Type = "Person"
+    };
+
+    await actorDetails.FetchActorInfoFromIriAsync();
+    if (!string.IsNullOrWhiteSpace(actorDetails.Inbox))
+    {
+        return actorDetails.Inbox;
+    }
+
+    var fallbackInbox = GeListFollower.GuessInboxFromActorIri(actorIri);
+    if (!string.IsNullOrWhiteSpace(fallbackInbox))
+    {
+        return fallbackInbox;
+    }
+
+    return null;
+}
+
+async Task<bool> SendActivityPubFollowAckAsync(
+    string inboxUrl,
+    string localActorUrl,
+    string sourceActivityId,
+    string sourceActivityType,
+    string sourceActorIri,
+    string? sourceObjectIri,
+    bool accepted,
+    string statusMessage)
+{
+    if (activityPubSigningKey is null)
+    {
+        DBg.d(LogLevel.Warning, $"Cannot send ActivityPub ACK to {inboxUrl}: signing key is not configured.");
+        return false;
+    }
+
+    var ackActivity = new Dictionary<string, object?>
+    {
+        ["@context"] = "https://www.w3.org/ns/activitystreams",
+        ["id"] = $"{GlobalConfig.Hostname}/apv1/activities/{Guid.NewGuid()}",
+        ["type"] = accepted ? "Accept" : "Reject",
+        ["actor"] = localActorUrl,
+        ["object"] = new Dictionary<string, object?>
+        {
+            ["id"] = sourceActivityId,
+            ["type"] = sourceActivityType,
+            ["actor"] = sourceActorIri,
+            ["object"] = sourceObjectIri
+        },
+        ["summary"] = statusMessage,
+        ["published"] = DateTimeOffset.UtcNow.ToString("o")
+    };
+
+    string payload = System.Text.Json.JsonSerializer.Serialize(ackActivity);
+    string digestHeader = ComputeBodyDigestSha256(payload);
+    string dateHeader = DateTimeOffset.UtcNow.ToString("r");
+
+    if (!Uri.TryCreate(inboxUrl, UriKind.Absolute, out var inboxUri))
+    {
+        DBg.d(LogLevel.Warning, $"AP ACK POST aborted: invalid inbox URL {inboxUrl}");
+        return false;
+    }
+
+    using var client = new HttpClient();
+    using var request = new HttpRequestMessage(HttpMethod.Post, inboxUri);
+    request.Content = new StringContent(payload, Encoding.UTF8, "application/activity+json");
+    request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse("application/activity+json");
+
+    string contentTypeHeader = request.Content.Headers.ContentType?.ToString() ?? "application/activity+json";
+
+    string signatureHeader;
+    try
+    {
+        signatureHeader = BuildActivityPubSignatureHeader(HttpMethod.Post, inboxUri, dateHeader, digestHeader, contentTypeHeader, localActorUrl);
+    }
+    catch (Exception ex)
+    {
+        DBg.d(LogLevel.Warning, $"AP ACK POST aborted: could not sign request for {inboxUrl}. {ex.Message}");
+        return false;
+    }
+
+    request.Headers.Host = inboxUri.IsDefaultPort ? inboxUri.Host : inboxUri.Authority;
+    request.Headers.TryAddWithoutValidation("Date", dateHeader);
+    request.Headers.TryAddWithoutValidation("Digest", digestHeader);
+    request.Headers.TryAddWithoutValidation("Signature", signatureHeader);
+    request.Headers.TryAddWithoutValidation("Authorization", $"Signature {signatureHeader}");
+
+    var response = await client.SendAsync(request);
+    if (!response.IsSuccessStatusCode)
+    {
+        var responseText = await response.Content.ReadAsStringAsync();
+        DBg.d(LogLevel.Warning, $"AP ACK POST failed to {inboxUrl} ({(int)response.StatusCode} {response.StatusCode}): {responseText}");
+        return false;
+    }
+
+    DBg.d(LogLevel.Information, $"AP {(accepted ? "Accept" : "Reject")} sent to {inboxUrl} for activity {sourceActivityId}");
+    return true;
+}
+
+static string? ReadIriFromActivityPubNode(JsonElement node)
+{
+    if (node.ValueKind == JsonValueKind.String)
+    {
+        return node.GetString();
+    }
+
+    if (node.ValueKind == JsonValueKind.Object)
+    {
+        if (node.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String)
+        {
+            return idProp.GetString();
+        }
+
+        if (node.TryGetProperty("iri", out var iriProp) && iriProp.ValueKind == JsonValueKind.String)
+        {
+            return iriProp.GetString();
+        }
+    }
+
+    return null;
+}
+
 // POST /apv1/lists/{listId}/inbox
 // receives ActivityPub activities from other servers
 // via ApActivityDtos... actions like Create or Delete to Follow or unfollow.
-app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] ApActivityDto activity, GeFeSLEDb db) =>
+app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] JsonElement activityJson, GeFeSLEDb db) =>
 {
     string fn = "/apv1/lists/{listId}/inbox (POST)"; DBg.d(LogLevel.Trace, fn);
     GeList? list = await db.Lists
         .FirstOrDefaultAsync(l => l.Id == listId);
+    string expectedActorUrl = $"{GlobalConfig.Hostname}/apv1/lists/{listId}";
     if (list == null)
     {
         return Results.NotFound($"List with id {listId} not found"); 
@@ -3901,7 +4154,38 @@ app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] ApAc
     }       
     // list is ok
 
-    DBg.d(LogLevel.Trace, $"{fn} <-- {System.Text.Json.JsonSerializer.Serialize(activity)}");
+    DBg.d(LogLevel.Trace, $"{fn} <-- {activityJson.GetRawText()}");
+
+    string incomingType = activityJson.TryGetProperty("type", out var typeProp) && typeProp.ValueKind == JsonValueKind.String
+        ? typeProp.GetString() ?? string.Empty
+        : string.Empty;
+    string incomingId = activityJson.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String
+        ? idProp.GetString() ?? $"{GlobalConfig.Hostname}/apv1/activities/unknown-{Guid.NewGuid()}"
+        : $"{GlobalConfig.Hostname}/apv1/activities/unknown-{Guid.NewGuid()}";
+    string? actorIri = activityJson.TryGetProperty("actor", out var actorProp)
+        ? ReadIriFromActivityPubNode(actorProp)
+        : null;
+
+    string? targetObject = null;
+    if (activityJson.TryGetProperty("object", out var objectProp))
+    {
+        targetObject = ReadIriFromActivityPubNode(objectProp);
+
+        if (objectProp.ValueKind == JsonValueKind.Object)
+        {
+            // Create{object:{type:Follow,object:"..."}} and Undo/Delete {object:{type:Follow,object:"..."}}
+            if (objectProp.TryGetProperty("object", out var followTargetProp))
+            {
+                targetObject = ReadIriFromActivityPubNode(followTargetProp) ?? targetObject;
+            }
+
+            if (string.IsNullOrWhiteSpace(actorIri)
+                && objectProp.TryGetProperty("actor", out var nestedActorProp))
+            {
+                actorIri = ReadIriFromActivityPubNode(nestedActorProp);
+            }
+        }
+    }
     
     // now process the activity.
     // from what I can tell in AP, follows/unfollow msgs can be direct or indirect:
@@ -3943,34 +4227,62 @@ app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] ApAc
 
     // if we get this far the deserialization to ApActivityDto worked. 
     // 1. check that the activity.object is a valid URL that points to this list's actor URL
-    string expectedActorUrl = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}";
-    string? targetObject = activity.@object?.id ?? activity.@object?.iri;
+    expectedActorUrl = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}";
     if (string.IsNullOrWhiteSpace(targetObject) || !string.Equals(targetObject, expectedActorUrl, StringComparison.OrdinalIgnoreCase))
     {
         DBg.d(LogLevel.Warning, $"{fn} -- activity.object is null or does not match expected actor URL. Expected: {expectedActorUrl}, Actual: {targetObject ?? "(null)"}");
+        if (!string.IsNullOrWhiteSpace(actorIri))
+        {
+            string? rejectInbox = await ResolveActorInboxAsync(actorIri);
+            if (!string.IsNullOrWhiteSpace(rejectInbox))
+            {
+                await SendActivityPubFollowAckAsync(rejectInbox, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, false,
+                    $"Rejected: activity.object must match {expectedActorUrl}");
+            }
+        }
         return Results.BadRequest($"activity.object is null or does not match expected actor URL. Expected: {expectedActorUrl}, Actual: {targetObject ?? "(null)"}");
     }
     // 2. check that the activity.actor is a valid URL that points to a valid actor on the remote server
-    if (string.IsNullOrWhiteSpace(activity.actor.id))
+    if (string.IsNullOrWhiteSpace(actorIri))
     {
         DBg.d(LogLevel.Warning, $"{fn} -- activity.actor is null or empty");
         return Results.BadRequest($"activity.actor is null or empty");
     }
     else {
-        bool isUnfollow = string.Equals(activity.type, "Undo", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(activity.type, "Delete", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(activity.type, "Unfollow", StringComparison.OrdinalIgnoreCase);
+        bool isUnfollow = string.Equals(incomingType, "Undo", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(incomingType, "Delete", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(incomingType, "Unfollow", StringComparison.OrdinalIgnoreCase);
+        bool isFollow = string.Equals(incomingType, "Follow", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(incomingType, "Create", StringComparison.OrdinalIgnoreCase);
+
+        if (!isFollow && !isUnfollow)
+        {
+            var unsupportedMsg = $"Unsupported ActivityPub activity type: {incomingType}";
+            DBg.d(LogLevel.Warning, $"{fn} -- {unsupportedMsg}");
+            string? rejectInbox = await ResolveActorInboxAsync(actorIri);
+            if (!string.IsNullOrWhiteSpace(rejectInbox))
+            {
+                await SendActivityPubFollowAckAsync(rejectInbox, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, false, unsupportedMsg);
+            }
+            return Results.BadRequest(unsupportedMsg);
+        }
 
         // see if the follower is already in the table of followers (even if not a follower of THIS list)
         // if not, create a new GeListFollower and add it to db. 
-        GeListFollower? follower = await db.ListFollowers.FirstOrDefaultAsync(f => f.Id == activity.actor.id);
+        GeListFollower? follower = await db.ListFollowers.FirstOrDefaultAsync(f => f.Id == actorIri);
 
         if (isUnfollow)
         {
             if (follower == null)
             {
-                DBg.d(LogLevel.Information, $"{fn} -- ignoring unfollow for unknown follower {activity.actor.id}");
-                return Results.Ok($"Unfollow ignored for unknown follower {activity.actor.id}");
+                DBg.d(LogLevel.Information, $"{fn} -- ignoring unfollow for unknown follower {actorIri}");
+                string? rejectInbox = await ResolveActorInboxAsync(actorIri);
+                if (!string.IsNullOrWhiteSpace(rejectInbox))
+                {
+                    await SendActivityPubFollowAckAsync(rejectInbox, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, false,
+                        $"Unfollow rejected: follower {actorIri} is unknown for this list");
+                }
+                return Results.BadRequest($"Unfollow rejected: follower {actorIri} is unknown for this list");
             }
 
             follower.FollowingLists.RemoveAll(id => id == list.Id);
@@ -3980,6 +4292,13 @@ app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] ApAc
             }
 
             await db.SaveChangesAsync();
+            string? acceptInbox = await ResolveActorInboxAsync(actorIri, follower);
+            if (string.IsNullOrWhiteSpace(acceptInbox)
+                || !await SendActivityPubFollowAckAsync(acceptInbox, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, true,
+                    $"Unfollow accepted for list {list.Name} (id: {list.Id})"))
+            {
+                return Results.Problem($"Unfollow processed locally but failed to send ActivityPub Accept to {actorIri}", statusCode: 502);
+            }
             DBg.d(LogLevel.Information, $"{fn} -- unfollow processed for list {list.Name} (id: {list.Id}) by follower {follower.Id}");
             return Results.Ok($"Unfollow processed for list {list.Name} (id: {list.Id})");
         }
@@ -3988,7 +4307,7 @@ app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] ApAc
         {
             follower = new GeListFollower
             {
-                Id = activity.actor.id,
+                Id = actorIri,
                 Type = "Person"
             };
             db.ListFollowers.Add(follower);
@@ -4010,6 +4329,14 @@ app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] ApAc
         }
         // save the db
         await db.SaveChangesAsync();
+
+        string? acceptInboxForFollow = await ResolveActorInboxAsync(actorIri, follower);
+        if (string.IsNullOrWhiteSpace(acceptInboxForFollow)
+            || !await SendActivityPubFollowAckAsync(acceptInboxForFollow, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, true,
+                $"Follow accepted for list {list.Name} (id: {list.Id})"))
+        {
+            return Results.Problem($"Follow processed locally but failed to send ActivityPub Accept to {actorIri}", statusCode: 502);
+        }
         
     }       
     

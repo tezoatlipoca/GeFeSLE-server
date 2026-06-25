@@ -56,6 +56,9 @@ public static class GlobalConfig
 
     public static TimeSpan apiTokenDuration { get; set; } = TimeSpan.Parse("1.00:00:00"); // 1 day   
 
+    // Dedicated ActivityPub signing key (PEM private key file path).
+    public static string? ActivityPubPrivateKeyPemFile { get; set; }
+
     public static string? googleClientID;
     public static string? googleClientSecret;
 
@@ -345,6 +348,16 @@ public static class GlobalConfig
         {
             GlobalConfig.apiTokenDuration = TimeSpan.Parse(apiTokenDuration);
             DBg.d(LogLevel.Debug, $"API Token duration override: {apiTokenDuration}");
+        }
+
+        ActivityPubPrivateKeyPemFile = config.GetValue<string>("ActivityPub:privateKeyPemFile");
+        if (string.IsNullOrWhiteSpace(ActivityPubPrivateKeyPemFile))
+        {
+            DBg.d(LogLevel.Warning, "ActivityPub signing key not configured (ActivityPub:privateKeyPemFile). Outbound federation signatures will be disabled.");
+        }
+        else
+        {
+            DBg.d(LogLevel.Debug, $"ActivityPub private key file configured: {ActivityPubPrivateKeyPemFile}");
         }
 
         // read all of the API and OAuth2, 2nd party site settings

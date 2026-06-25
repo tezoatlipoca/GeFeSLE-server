@@ -8,6 +8,32 @@ public class GeListFollower : GeAPActor
 {
     public List<int> FollowingLists { get; set; } = new List<int>(); // the list of listIds that this fedi-fellow is following. This is used to generate the /apv1/lists/{listId}/followers endpoint.
 
+    public static string? GuessInboxFromActorIri(string? actorIri)
+    {
+        if (string.IsNullOrWhiteSpace(actorIri))
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(actorIri, UriKind.Absolute, out var actorUri))
+        {
+            return null;
+        }
+
+        var path = actorUri.AbsolutePath.TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        if (path.EndsWith("/inbox", StringComparison.OrdinalIgnoreCase))
+        {
+            return actorUri.GetLeftPart(UriPartial.Path);
+        }
+
+        return $"{actorUri.GetLeftPart(UriPartial.Authority)}{path}/inbox";
+    }
+
     // a constructor that takes an ApActorDto and initializes the GeListFollower object with its properties.
  
 
@@ -83,22 +109,59 @@ public class GeListFollower : GeAPActor
         {
             try
             {
+                httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"{GlobalStatic.applicationName}/{GlobalConfig.bldVersion}");
+                httpClient.DefaultRequestHeaders.Accept.Clear();
+                httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/activity+json");
+                httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"");
+                httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+
                 // send GET request to the IRI
                 var response = await httpClient.GetAsync(Id);
                 if (!response.IsSuccessStatusCode)
                 {
                     DBg.d(LogLevel.Warning, $"{fn} -- Failed to fetch actor info from IRI: {Id}, StatusCode: {response.StatusCode}");
+                    if (string.IsNullOrWhiteSpace(Inbox))
+                    {
+                        Inbox = GuessInboxFromActorIri(Id);
+                    }
                     return false;
                 }
 
                 // read response content as string
                 var content = await response.Content.ReadAsStringAsync();
 
+                if (string.IsNullOrWhiteSpace(content))
+                {
+                    DBg.d(LogLevel.Warning, $"{fn} -- Empty actor payload from IRI: {Id}");
+                    if (string.IsNullOrWhiteSpace(Inbox))
+                    {
+                        Inbox = GuessInboxFromActorIri(Id);
+                    }
+                    return false;
+                }
+
+                var contentType = response.Content.Headers.ContentType?.MediaType ?? "(none)";
+                var trimmed = content.TrimStart();
+                if (!(trimmed.StartsWith("{") || trimmed.StartsWith("[")))
+                {
+                    var preview = content.Length > 140 ? content.Substring(0, 140) + "..." : content;
+                    DBg.d(LogLevel.Warning, $"{fn} -- Non-JSON actor payload from IRI: {Id}, Content-Type: {contentType}, Preview: {preview}");
+                    if (string.IsNullOrWhiteSpace(Inbox))
+                    {
+                        Inbox = GuessInboxFromActorIri(Id);
+                    }
+                    return false;
+                }
+
                 // deserialize JSON to ApActorDto
                 var actorDto = System.Text.Json.JsonSerializer.Deserialize<ApActorDto>(content);
                 if (actorDto == null)
                 {
-                    DBg.d(LogLevel.Warning, $"{fn} -- Failed to deserialize actor info from IRI: {Id}");
+                    DBg.d(LogLevel.Warning, $"{fn} -- Failed to deserialize actor info from IRI: {Id}, Content-Type: {contentType}");
+                    if (string.IsNullOrWhiteSpace(Inbox))
+                    {
+                        Inbox = GuessInboxFromActorIri(Id);
+                    }
                     return false;
                 }
 
@@ -118,7 +181,11 @@ public class GeListFollower : GeAPActor
             }
             catch (Exception ex)
             {
-                DBg.d(LogLevel.Error, $"{fn} -- Exception occurred while fetching actor info from IRI: {Id}, Exception: {ex.Message}");
+                DBg.d(LogLevel.Warning, $"{fn} -- Exception occurred while fetching actor info from IRI: {Id}, Exception: {ex.Message}");
+                if (string.IsNullOrWhiteSpace(Inbox))
+                {
+                    Inbox = GuessInboxFromActorIri(Id);
+                }
                 return false;
             }
         }

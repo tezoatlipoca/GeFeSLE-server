@@ -64,6 +64,14 @@ For `sitehead`, `bodyheader` and `bodyfooter`, these files should be HTML, but d
 ```
 * **API:apiTokenSecretKey** - secret sauce seed used to create JWTokens used by API only clients like the browser plugins
 * **API:apiTokenDuration** - specifies how long that token is good for; string value representing time duration in `D.HH:MM:SS`; default is `1.00:00:00` (1 day).  _The browser session cookies are currently hardcoded to 30m_
+
+```
+    "ActivityPub": {
+        "privateKeyPemFile": "/etc/gefesle/activitypub-private.pem"
+    },
+```
+* **ActivityPub:privateKeyPemFile** - absolute (or relative) path to an RSA private key PEM file used to sign outbound ActivityPub inbox deliveries (for example Accept/Reject responses to Follow/Undo). The matching public key is published from each ActivityPub actor endpoint as `publicKey.publicKeyPem` so remote servers can verify signatures. Without this key, some servers (including Mastodon) reject deliveries with `401 Request not signed`.
+
 ```
     "OtherSites": {
         "Google": {
