@@ -685,10 +685,6 @@ app.Use(async (context, next) =>
         // but its not a pre-flight
         // now we check to see if the file requested is in our list of protected
 
-        var db = context.RequestServices.GetRequiredService<GeFeSLEDb>();
-        var userManager = context.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
-        var roleManager = context.RequestServices.GetRequiredService<RoleManager<IdentityRole>>();
-
         var path = context.Request.Path.Value;
         //DBg.d(LogLevel.Trace, $"{fn} protected file check: {path}");
         UserDto sessionUser = UserSessionService.amILoggedIn(context);
@@ -710,7 +706,37 @@ app.Use(async (context, next) =>
             }
             else
             {
-                var user = await UserSessionService.mapUserNameToDBUser(sessionUser.UserName, userManager);
+                if (ProtectedFiles.TryGetProtectionScope(path, out var protectionScope)
+                    && !string.IsNullOrWhiteSpace(protectionScope)
+                    && ProtectedFiles.IsInternalProtected(protectionScope))
+                {
+                    if (!ProtectedFiles.IsInternalPathVisibleToRole(protectionScope, sessionUser.Role, out var ynot))
+                    {
+                        DBg.d(LogLevel.Debug, $"{fn} Protected file {path} - UNAUTH: {ynot}");
+                        var sb = new StringBuilder();
+                        string msg = $"401 -You are not authorized to access {path}<br>{ynot}";
+                        await GlobalStatic.GenerateUnAuthPage(sb, msg);
+                        var result = Results.Content(sb.ToString(), "text/html");
+                        await result.ExecuteAsync(context);
+                        return;
+                    }
+
+                    DBg.d(LogLevel.Debug, $"{fn} Protected internal file {path} - ALLOWED for {sessionUser.UserName}.");
+                    await next.Invoke();
+                    return;
+                }
+
+                var db = context.RequestServices.GetRequiredService<GeFeSLEDb>();
+                var userManager = context.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
+                GeFeSLEUser? user = null;
+                if (!string.IsNullOrWhiteSpace(sessionUser.Id))
+                {
+                    user = await userManager.FindByIdAsync(sessionUser.Id);
+                }
+                if (user is null)
+                {
+                    user = await UserSessionService.mapUserNameToDBUser(sessionUser.UserName, userManager);
+                }
                 // if the user isn't in the db (null here) but we're authenticated we have an issue
                 // maybe someone deleted them from db after they logged in. 
                 if (user is null)
@@ -726,7 +752,7 @@ app.Use(async (context, next) =>
                 }
                 else
                 {
-                    (bool isAllowed, string? ynot) = await ProtectedFiles.IsFileVisibleToUser(path, user, userManager, db);
+                    (bool isAllowed, string? ynot) = await ProtectedFiles.IsFileVisibleToUser(path, user, sessionUser.Role, db);
                     if (!isAllowed)
                     {
                         // no - make a nice redirect page like the normal UNAUTH page using the ynot message  

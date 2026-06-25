@@ -7,6 +7,15 @@ using Newtonsoft.Json; // Add this import statement
 
 public static class ProtectedFiles
 {
+    private sealed class ListAccessSnapshot
+    {
+        public GeListVisibility Visibility { get; set; }
+        public string? CreatorId { get; set; }
+        public HashSet<string> OwnerIds { get; set; } = new HashSet<string>(StringComparer.Ordinal);
+        public HashSet<string> ContributorIds { get; set; } = new HashSet<string>(StringComparer.Ordinal);
+        public bool HydratedFromDb { get; set; }
+    }
+
     // define a bunch of defaults: List<string>
     private static readonly Dictionary<string, string> internalFiles = new Dictionary<string, string> {
     //    { "/_edit.item.html", "contributor" },
@@ -32,6 +41,7 @@ public static class ProtectedFiles
     // its associated with a List that is not public, it will be in here. The VALUE is the NAME of the LIST
     // which you use to look up the List object in the next dictionary (saves a DB query)
     private static ConcurrentDictionary<string, GeList> Lists = new ConcurrentDictionary<string, GeList>();
+    private static ConcurrentDictionary<string, ListAccessSnapshot> ListAccess = new ConcurrentDictionary<string, ListAccessSnapshot>();
 
 
     // add a file to the list
@@ -56,6 +66,13 @@ public static class ProtectedFiles
         return Files.ContainsKey(path);
     }
 
+    public static bool TryGetProtectionScope(string path, out string? scope)
+    {
+        var found = Files.TryGetValue(path, out var mapped);
+        scope = mapped;
+        return found;
+    }
+
     // call this on:
     // 1. startup
     // 2. when a list is created
@@ -78,7 +95,6 @@ public static class ProtectedFiles
 
         foreach (var list in lists)
         {
-
             AddList(list);
 
         }
@@ -97,6 +113,7 @@ public static class ProtectedFiles
             AddFile($"/{list.Name}.json", list.Name);
             AddFile($"/{list.Name}.html", list.Name);
             Lists.TryAdd(list.Name!, list);
+            ListAccess.AddOrUpdate(list.Name!, BuildSnapshot(list), (_, _) => BuildSnapshot(list));
         }
         else {
             DBg.d(LogLevel.Information, $"{fn} skipping name: {list.Name} or visibility: {list.Visibility}");
@@ -112,6 +129,7 @@ public static class ProtectedFiles
             RemoveFile($"/rss-{list.Name}.xml");
             RemoveFile($"/{list.Name}.json");
             RemoveFile($"/{list.Name}.html");
+            ListAccess.TryRemove(list.Name!, out _);
             return Lists.TryRemove(list.Name!, out _);
         }
         else {
@@ -122,8 +140,8 @@ public static class ProtectedFiles
     }
 
     public static async Task<(bool, string?)> IsFileVisibleToUser(string path,
-        GeFeSLEUser user,
-        UserManager<GeFeSLEUser> userManager,
+        string? userId,
+        string? realizedRole,
         GeFeSLEDb db)
     {
         var fn = "IsFileVisibleToUser"; DBg.d(LogLevel.Trace, fn);
@@ -132,8 +150,9 @@ public static class ProtectedFiles
 
         Files.TryGetValue(path, out var listName);
 
-        // get user's highest realizedRole
-        IList<string> roles = await userManager.GetRolesAsync(user);
+        // Build an effective role set from the already-realized session role.
+        // This avoids a role DB lookup on every protected resource request.
+        IList<string> roles = BuildEffectiveRoles(realizedRole);
         if (IsInternalProtected(listName))
         {
             if (IsInternalProtectedVisibleToUser(listName, roles, out ynot))
@@ -149,41 +168,27 @@ public static class ProtectedFiles
         }
 
         DBg.d(LogLevel.Trace, $"{fn} file {path} is not an interal protected file.");
-        GeList? list = null;
+        ListAccessSnapshot? access = null;
         if (!string.IsNullOrWhiteSpace(listName))
         {
-            GeList? cached = Lists.TryGetValue(listName, out var tempList)
-                ? tempList
-                : null;
-
-            // Harden cache reads: if auth graph is absent, rehydrate with includes.
-            if (cached is null || !HasLoadedAuthGraph(cached))
+            if (!ListAccess.TryGetValue(listName, out var cachedAccess) || cachedAccess is null || !cachedAccess.HydratedFromDb)
             {
-                GeList? hydrated = await db.Lists
-                    .Include(l => l.Creator)
-                    .Include(l => l.ListOwners)
-                    .Include(l => l.Contributors)
-                    .FirstOrDefaultAsync(l => l.Name == listName);
-                if (hydrated is not null)
-                {
-                    Lists.AddOrUpdate(listName, hydrated, (_, _) => hydrated);
-                }
-                list = hydrated ?? cached;
+                access = await HydrateSnapshotForListName(db, listName);
             }
             else
             {
-                list = cached;
+                access = cachedAccess;
             }
         }
         // did we get a list? 
-        if (list == null)
+        if (access == null)
         {
-            DBg.d(LogLevel.Critical, $"{fn}: {path} - {user.UserName} - NO LIST ASSOCIATED - WHY AM I HERE?");
+            DBg.d(LogLevel.Critical, $"{fn}: {path} - user {userId ?? "(no-id)"} - NO LIST ASSOCIATED - WHY AM I HERE?");
             ynot = "No list associated with this file! Why am I here?";
             return (false, ynot);
         }
 
-        (bool isVis, ynot) = IsListVisibleToUser(list, user, roles);
+        (bool isVis, ynot) = IsSnapshotVisibleToUser(access, userId, roles);
         if (isVis)
         {
             ynot = $"Path {path} is visible: {ynot}";
@@ -197,9 +202,76 @@ public static class ProtectedFiles
         };
     }
 
-    private static bool HasLoadedAuthGraph(GeList list)
+    private static ListAccessSnapshot BuildSnapshot(GeList list)
     {
-        return list.Creator is not null || list.ListOwners.Count > 0 || list.Contributors.Count > 0;
+        return new ListAccessSnapshot
+        {
+            Visibility = list.Visibility,
+            CreatorId = list.CreatorId,
+            OwnerIds = list.ListOwners
+                .Where(u => !string.IsNullOrWhiteSpace(u.Id))
+                .Select(u => u.Id)
+                .ToHashSet(StringComparer.Ordinal),
+            ContributorIds = list.Contributors
+                .Where(u => !string.IsNullOrWhiteSpace(u.Id))
+                .Select(u => u.Id)
+                .ToHashSet(StringComparer.Ordinal),
+            HydratedFromDb = list.Creator is not null
+                || list.ListOwners.Count > 0
+                || list.Contributors.Count > 0
+        };
+    }
+
+    private static async Task<ListAccessSnapshot?> HydrateSnapshotForListName(GeFeSLEDb db, string listName)
+    {
+        GeList? hydrated = await db.Lists
+            .Include(l => l.Creator)
+            .Include(l => l.ListOwners)
+            .Include(l => l.Contributors)
+            .FirstOrDefaultAsync(l => l.Name == listName);
+
+        if (hydrated is null)
+        {
+            return null;
+        }
+
+        var snapshot = BuildSnapshot(hydrated);
+        snapshot.HydratedFromDb = true;
+        ListAccess.AddOrUpdate(listName, snapshot, (_, _) => snapshot);
+        Lists.AddOrUpdate(listName, hydrated, (_, _) => hydrated);
+        return snapshot;
+    }
+
+    private static IList<string> BuildEffectiveRoles(string? realizedRole)
+    {
+        var roles = new List<string>();
+        if (string.IsNullOrWhiteSpace(realizedRole))
+        {
+            return roles;
+        }
+
+        if (string.Equals(realizedRole, "SuperUser", StringComparison.Ordinal))
+        {
+            roles.Add("SuperUser");
+            roles.Add("listowner");
+            roles.Add("contributor");
+            return roles;
+        }
+
+        if (string.Equals(realizedRole, "listowner", StringComparison.Ordinal))
+        {
+            roles.Add("listowner");
+            roles.Add("contributor");
+            return roles;
+        }
+
+        if (string.Equals(realizedRole, "contributor", StringComparison.Ordinal))
+        {
+            roles.Add("contributor");
+            return roles;
+        }
+
+        return roles;
     }
 
     public static bool IsInternalProtected(string listName)
@@ -210,6 +282,61 @@ public static class ProtectedFiles
             return true;
         }
         else return false;
+    }
+
+    public static bool IsInternalPathVisibleToRole(string listName, string? realizedRole, out string ynot)
+    {
+        IList<string> roles = BuildEffectiveRoles(realizedRole);
+        return IsInternalProtectedVisibleToUser(listName, roles, out ynot);
+    }
+
+    private static (bool, string?) IsSnapshotVisibleToUser(
+        ListAccessSnapshot access,
+        string? userId,
+        IList<string> roles)
+    {
+        if (access.Visibility == GeListVisibility.Public)
+        {
+            return (true, "List is public");
+        }
+
+        if (roles.Contains("SuperUser"))
+        {
+            return (true, "User is a super user");
+        }
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return (false, "User is not identified");
+        }
+
+        bool isCreator = string.Equals(access.CreatorId, userId, StringComparison.Ordinal);
+        bool isOwner = access.OwnerIds.Contains(userId);
+        bool isContributor = access.ContributorIds.Contains(userId);
+
+        switch (access.Visibility)
+        {
+            case GeListVisibility.Contributors:
+                if (isContributor || isOwner || isCreator)
+                {
+                    return (true, "User is contributor/owner/creator");
+                }
+                return (false, "User is not a contributor/list owner/creator");
+            case GeListVisibility.ListOwners:
+                if (isOwner || isCreator)
+                {
+                    return (true, "User is list owner/creator");
+                }
+                return (false, "User is not a list owner/creator");
+            case GeListVisibility.Private:
+                if (isCreator)
+                {
+                    return (true, "User is the creator");
+                }
+                return (false, "User is not the creator");
+            default:
+                return (false, "Visibility rule denied");
+        }
     }
 
     // For "protected" files like the edit and modify pages, internal .js files
