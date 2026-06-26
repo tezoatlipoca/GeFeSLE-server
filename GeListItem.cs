@@ -17,6 +17,10 @@ public class GeListItem
     // not sure yet if this is gonna be different from Visible or not. 
     public bool IsDeleted { get; set; } = false;
 
+    // When item IDs are rotated (e.g., visibility toggles), old versions point to
+    // the newest canonical item ID for 301 redirect behavior on AP item endpoints.
+    public int? RedirectToItemId { get; set; }
+
     // add a member that is a collection of tags (which are strings)
     public List<string> Tags { get; set; } = new List<string>();
 

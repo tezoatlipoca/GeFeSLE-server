@@ -64,7 +64,7 @@ public static class GlobalStatic
         {
             foreach (var list in lists)
             {
-                var itemCount = await db.Items.CountAsync(x => x.ListId == list.Id && x.Visible);
+                var itemCount = await db.Items.CountAsync(x => x.ListId == list.Id && x.Visible && !x.IsDeleted);
                 
 
 

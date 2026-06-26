@@ -321,7 +321,11 @@ window.onload = async function () {
             li.setAttribute('data-list-id', list.id);
 
             let listUrl = encodeURI(list.name + '.html');
+            const runtimeCount = Number.isFinite(Number(list.visibleItemCount))
+                ? Number(list.visibleItemCount)
+                : 0;
             li.innerHTML = '<a href="' + listUrl + '">' + escapeHtml(list.name) + '</a>' +
+                ' (' + runtimeCount + ')' +
                 ' <span class="indexeditlink" style="display: none;"><a href="_edit.list.html?listid=' + list.id + '">Edit</a></span>' +
                 ' <span class="indexeditlink" style="display: none;"><a href="#" onclick="deleteList(' + list.id + '); return;">Delete</a></span>';
 

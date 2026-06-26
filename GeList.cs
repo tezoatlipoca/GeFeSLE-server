@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Identity;
 using System.Text.Json.Serialization;
 using System.Net;
 using System.Text.RegularExpressions;
+using System.ComponentModel.DataAnnotations.Schema;
 
 using GeFeSLE;
 
@@ -107,6 +108,9 @@ public class GeList
     // OrderedCollection (isOrdered = true) or Collection (isOrdered = false).
     public bool isOrdered { get; set; } = false; // for future use when we implement ordered lists. For now, all lists are unordered.
 
+    [NotMapped]
+    public int VisibleItemCount { get; set; }
+
 
 
 
@@ -179,7 +183,14 @@ public class GeList
 
 
         
-        var items = await db.Items.Where(item => item.ListId == Id && item.Visible).ToListAsync();
+        var items = await db.Items.Where(item => item.ListId == Id && item.Visible && !item.IsDeleted).ToListAsync();
+        var movedItems = await db.Items
+            .Where(item => item.ListId == Id
+                && item.IsDeleted
+                && !item.Visible
+                && item.RedirectToItemId.HasValue)
+            .Select(item => new { OldId = item.Id, NewId = item.RedirectToItemId!.Value })
+            .ToListAsync();
         var followerCount = await db.ListFollowers
             .Where(f => f.FollowingLists.Contains(Id) && !string.IsNullOrWhiteSpace(f.Id))
             .Select(f => f.Id)
@@ -215,6 +226,15 @@ public class GeList
         else {
             sb.AppendLine("<div class=\"listActivityPubId\"><strong>ActivityPub:</strong> not configured</div>");
         }
+        string visibilityLabel = Visibility switch
+        {
+            GeListVisibility.Public => "public",
+            GeListVisibility.Contributors => "contributor",
+            GeListVisibility.ListOwners => "owner",
+            GeListVisibility.Private => "private",
+            _ => Visibility.ToString()
+        };
+        sb.AppendLine($"<div class=\"listVisibility\"><strong>Visibility:</strong> {visibilityLabel}</div>");
         sb.AppendLine($"<div class=\"listFollowerCount\"><strong>Followers:</strong> {followerCount}</div>");
         sb.AppendLine("</div>");
         sb.AppendLine($"<p class=\"listmodified\">Modified: {ModifiedDate.ToString("yyyy-MM-dd HH:mm:ss")}</p>");
@@ -310,6 +330,22 @@ sb.AppendLine("</div>");
         sb.AppendLine("<script src=\"_modal.google.js\"></script>");
         sb.AppendLine("<script src=\"_modal.report.item.js\"></script>");
 
+        if (movedItems.Count > 0)
+        {
+            string movedMapJson = System.Text.Json.JsonSerializer.Serialize(
+                movedItems.ToDictionary(m => m.OldId.ToString(), m => m.NewId.ToString()));
+            sb.AppendLine("<script>");
+            sb.AppendLine($"const movedItemMap = {movedMapJson};");
+            sb.AppendLine("if (window.location.hash) {");
+            sb.AppendLine("  const hashId = window.location.hash.substring(1);");
+            sb.AppendLine("  const redirectedId = movedItemMap[hashId];");
+            sb.AppendLine("  if (redirectedId) {");
+            sb.AppendLine("    window.location.replace(`${window.location.pathname}#${redirectedId}`);");
+            sb.AppendLine("  }");
+            sb.AppendLine("}");
+            sb.AppendLine("</script>");
+        }
+
 
         await GlobalStatic.GeneratePageFooter(sb);
         DBg.d(LogLevel.Trace, $"Writing to {dest}");
@@ -321,7 +357,7 @@ sb.AppendLine("</div>");
         DBg.d(LogLevel.Trace, $"GenerateRssFeed {Id}");
         // create new database context
 
-        var items = await db.Items.Where(item => item.ListId == Id && item.Visible).ToListAsync();
+        var items = await db.Items.Where(item => item.ListId == Id && item.Visible && !item.IsDeleted).ToListAsync();
         // if there are no items then return
         if (items.Count == 0) return;
         var list = await db.Lists.FindAsync(Id);
@@ -364,7 +400,7 @@ sb.AppendLine("</div>");
     public async Task GenerateJSON(GeFeSLEDb db)
     {
         DBg.d(LogLevel.Trace, $"GenerateJSON {Id}");
-        var items = await db.Items.Where(item => item.ListId == Id && item.Visible).ToListAsync();
+        var items = await db.Items.Where(item => item.ListId == Id && item.Visible && !item.IsDeleted).ToListAsync();
         if (items.Count == 0) return;
         var list = await db.Lists.FindAsync(Id);
         if (list is null) return;
@@ -497,7 +533,7 @@ sb.AppendLine("</div>");
         DBg.d(LogLevel.Trace, $"GetItems for list {Id} - {Name}");
         // for now, we will just return items ordered by CreatedDate desc (newest first)
         // in the future, we can modify this to return items in a different order based on the list type
-        var items = await db.Items.Where(item => item.ListId == Id && item.Visible).OrderByDescending(item => item.CreatedDate).ToListAsync();
+        var items = await db.Items.Where(item => item.ListId == Id && item.Visible && !item.IsDeleted).OrderByDescending(item => item.CreatedDate).ToListAsync();
         DBg.d(LogLevel.Trace, $"Found {items.Count} items for list {Id} - {Name}");
         return items;
     }

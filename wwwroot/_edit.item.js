@@ -175,6 +175,12 @@ async function getItem() {
             //.then(response => response.json())
             .then(data => {
                 console.log('Success:', data);
+                if (itemid != null && data.id != null && String(data.id) !== String(itemid)) {
+                    const newUrl = `${window.location.pathname}?listid=${listid}&itemid=${data.id}`;
+                    console.info(`${fn} -- item moved ${itemid} -> ${data.id}; reloading editor to canonical item URL: ${newUrl}`);
+                    window.location.replace(newUrl);
+                    return;
+                }
                 // Populate the form with the data from the API
                 document.getElementById('item.id').value = data.id;
                 document.getElementById('item.name').value = data.name;

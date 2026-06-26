@@ -1419,6 +1419,18 @@ app.MapGet("/lists", async (GeFeSLEDb db,
     }
     else
     {
+        var visibleListIds = visibleLists.Select(l => l.Id).ToList();
+        var itemCounts = await db.Items
+            .Where(i => visibleListIds.Contains(i.ListId) && i.Visible && !i.IsDeleted)
+            .GroupBy(i => i.ListId)
+            .Select(g => new { ListId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.ListId, x => x.Count);
+
+        foreach (var list in visibleLists)
+        {
+            list.VisibleItemCount = itemCounts.TryGetValue(list.Id, out int count) ? count : 0;
+        }
+
         return Results.Ok(visibleLists);
     }
 })
@@ -1580,7 +1592,7 @@ app.MapPut("/lists", async (HttpContext context,
 
                 if (wasPublic && !isPublic)
                 {
-                    await BroadcastAllActivityPubItemsToFollowersAsync(updatedList, db, "Delete");
+                    await RotateActivityPubItemIdsForListVisibilityDropAsync(updatedList, db);
                 }
                 else if (!wasPublic && isPublic)
                 {
@@ -1634,6 +1646,10 @@ app.MapGet("/items/{id:int}", async (int id,
     var showitem = await db.Items.FindAsync(id);
     if (showitem is not null)
     {
+        if (showitem.RedirectToItemId.HasValue)
+        {
+            return Results.Redirect($"/items/{showitem.RedirectToItemId.Value}", permanent: true);
+        }
         return Results.Ok(showitem);
     }
     else
@@ -4575,6 +4591,10 @@ async Task<bool> SendSignedActivityPubMessageAsync(string inboxUrl, string actor
     }
 
     string payload = System.Text.Json.JsonSerializer.Serialize(activityPayload);
+    // TODO: add a config param that governs "Debug of ActivityPub content."
+    DBg.d(LogLevel.Trace,
+        $"ActivityPub outbound message to follower inbox {inboxUrl} from actor {actorUrl}:\n" +
+        System.Text.Json.JsonSerializer.Serialize(activityPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     string digestHeader = ComputeBodyDigestSha256(payload);
     string dateHeader = DateTimeOffset.UtcNow.ToString("r");
 
@@ -4672,6 +4692,72 @@ async Task BroadcastAllActivityPubItemsToFollowersAsync(GeList list, GeFeSLEDb d
     foreach (var item in items)
     {
         await BroadcastActivityPubItemToFollowersAsync(list, db, item, activityType);
+    }
+}
+
+async Task RotateActivityPubItemIdsForListVisibilityDropAsync(GeList list, GeFeSLEDb db)
+{
+    string fn = "RotateActivityPubItemIdsForListVisibilityDropAsync";
+    var currentItems = await db.Items
+        .Where(i => i.ListId == list.Id && i.Visible && !i.IsDeleted)
+        .ToListAsync();
+
+    foreach (var current in currentItems)
+    {
+        var cloned = new GeListItem
+        {
+            ListId = current.ListId,
+            Name = current.Name,
+            Comment = current.Comment,
+            IsComplete = current.IsComplete,
+            Visible = true,
+            IsDeleted = false,
+            Tags = current.Tags?.ToList() ?? new List<string>(),
+            CreatedDate = current.CreatedDate,
+            ModifiedDate = current.ModifiedDate,
+            RedirectToItemId = null
+        };
+
+        db.Items.Add(cloned);
+        await db.SaveChangesAsync();
+
+        var predecessorIds = new HashSet<int> { current.Id };
+        bool discovered;
+        do
+        {
+            var moreIds = await db.Items
+                .Where(i => i.ListId == list.Id
+                    && i.RedirectToItemId.HasValue
+                    && predecessorIds.Contains(i.RedirectToItemId.Value)
+                    && !predecessorIds.Contains(i.Id))
+                .Select(i => i.Id)
+                .ToListAsync();
+
+            discovered = moreIds.Count > 0;
+            foreach (var id in moreIds)
+            {
+                predecessorIds.Add(id);
+            }
+        }
+        while (discovered);
+
+        var predecessors = await db.Items
+            .Where(i => i.ListId == list.Id && predecessorIds.Contains(i.Id))
+            .ToListAsync();
+
+        string replacementPath = $"{GlobalConfig.Hostname}/apv1/items/{cloned.Id}";
+        foreach (var predecessor in predecessors)
+        {
+            predecessor.Visible = false;
+            predecessor.IsDeleted = true;
+            predecessor.Comment = replacementPath;
+            predecessor.RedirectToItemId = cloned.Id;
+        }
+
+        await db.SaveChangesAsync();
+
+        DBg.d(LogLevel.Trace, $"{fn}: rotated item {current.Id} -> {cloned.Id} for list {list.Id}");
+        await BroadcastActivityPubItemToFollowersAsync(list, db, current, "Delete");
     }
 }
 
@@ -4874,6 +4960,10 @@ app.MapGet("/apv1/lists/{listId:int}/items/{itemId:int}", async (int listId, int
     {
         return Results.BadRequest($"Item with id {itemId} does not belong to list with id {listId}");
     }
+    if (item.RedirectToItemId.HasValue)
+    {
+        return Results.Redirect($"/apv1/lists/{listId}/items/{item.RedirectToItemId.Value}", permanent: true);
+    }
     if (list.Visibility != GeListVisibility.Public)
     {
         return Results.StatusCode(403);
@@ -4894,6 +4984,11 @@ app.MapGet("/apv1/items/{itemId:int}", async (int itemId, GeFeSLEDb db) =>
     if (item == null)
     {
         return Results.NotFound($"Item with id {itemId} not found");
+    }
+
+    if (item.RedirectToItemId.HasValue)
+    {
+        return Results.Redirect($"/apv1/items/{item.RedirectToItemId.Value}", permanent: true);
     }
 
     if (item.IsDeleted)
