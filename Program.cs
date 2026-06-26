@@ -1557,15 +1557,36 @@ app.MapPut("/lists", async (HttpContext context,
     GeListController geListController) =>
     {
         string fn = "/lists (PUT)"; DBg.d(LogLevel.Trace, fn);
+        GeListVisibility? oldVisibility = await db.Lists
+            .AsNoTracking()
+            .Where(l => l.Id == inputList.Id)
+            .Select(l => (GeListVisibility?)l.Visibility)
+            .FirstOrDefaultAsync();
+
         var result = await geListController.ListsPut(context, inputList);
 
         if (result is IStatusCodeHttpResult statusResult
             && statusResult.StatusCode >= 200
             && statusResult.StatusCode < 300)
         {
-            GeList? updatedList = await db.Lists.FindAsync(inputList.Id);
+            GeList? updatedList = await db.Lists
+                .Include(l => l.Creator)
+                .Include(l => l.ListOwners)
+                .FirstOrDefaultAsync(l => l.Id == inputList.Id);
             if (updatedList is not null)
             {
+                bool wasPublic = oldVisibility == GeListVisibility.Public;
+                bool isPublic = updatedList.Visibility == GeListVisibility.Public;
+
+                if (wasPublic && !isPublic)
+                {
+                    await BroadcastAllActivityPubItemsToFollowersAsync(updatedList, db, "Delete");
+                }
+                else if (!wasPublic && isPublic)
+                {
+                    await BroadcastAllActivityPubItemsToFollowersAsync(updatedList, db, "Create");
+                }
+
                 await BroadcastActivityPubActorUpdateToFollowersAsync(updatedList, db);
             }
         }
@@ -2953,6 +2974,7 @@ app.MapPost("/lists/{list:int}/owners", async (int list,
     targetList.ListOwners.Add(user);
     await db.SaveChangesAsync();
     await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
+    await BroadcastActivityPubActorUpdateToFollowersAsync(targetList, db);
     var addedMsg = $"{caller.UserName} Added {user.UserName} to {targetList.Name} as a listowner";
     DBg.d(LogLevel.Information, addedMsg);
     return Results.Ok(new ListUserOperationResponse
@@ -3073,6 +3095,7 @@ app.MapPost("/lists/{list:int}/contributors", async (int list,
     targetList.Contributors.Add(user);
     await db.SaveChangesAsync();
     await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
+    await BroadcastActivityPubActorUpdateToFollowersAsync(targetList, db);
     var addedMsg = $"{caller.UserName} Added {user.UserName} to {targetList.Name} as a contributor";
     DBg.d(LogLevel.Information, addedMsg);
     return Results.Ok(new ListUserOperationResponse
@@ -3191,6 +3214,7 @@ app.MapDelete("/lists/{list:int}/owners", async (int list,
     targetList.ListOwners.Remove(user);
     await db.SaveChangesAsync();
     await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
+    await BroadcastActivityPubActorUpdateToFollowersAsync(targetList, db);
     var msg = $"{caller.UserName} REMOVED {user.UserName} FROM {targetList.Name} as a listowner";
     DBg.d(LogLevel.Information, msg);
     return Results.Ok(new ListUserOperationResponse
@@ -3310,6 +3334,7 @@ app.MapDelete("/lists/{list:int}/contributors", async (int list,
     targetList.Contributors.Remove(user);
     await db.SaveChangesAsync();
     await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
+    await BroadcastActivityPubActorUpdateToFollowersAsync(targetList, db);
     var msg = $"{caller.UserName} REMOVED {user.UserName} FROM {targetList.Name} as a contributor";
     DBg.d(LogLevel.Information, msg);
     return Results.Ok(new ListUserOperationResponse
@@ -4133,6 +4158,12 @@ Dictionary<string, object?> BuildActivityPubItemNote(GeList list, GeListItem ite
 
 Dictionary<string, object?> BuildActivityPubListActor(GeList list)
 {
+    static string NormalizeHandle(string rawHandle)
+    {
+        string trimmed = rawHandle.Trim();
+        return trimmed.StartsWith("@", StringComparison.Ordinal) ? trimmed : $"@{trimmed}";
+    }
+
     static string GuessMentionHref(string username, string domain)
     {
         return $"https://{domain}/@{username}";
@@ -4144,6 +4175,17 @@ Dictionary<string, object?> BuildActivityPubListActor(GeList list)
         return $"{baseUrl}/tags/{Uri.EscapeDataString(tag)}";
     }
 
+    static bool IsLikelyEmailDomain(string domain)
+    {
+        return domain.Equals("gmail.com", StringComparison.OrdinalIgnoreCase)
+            || domain.Equals("outlook.com", StringComparison.OrdinalIgnoreCase)
+            || domain.Equals("hotmail.com", StringComparison.OrdinalIgnoreCase)
+            || domain.Equals("yahoo.com", StringComparison.OrdinalIgnoreCase)
+            || domain.Equals("icloud.com", StringComparison.OrdinalIgnoreCase)
+            || domain.Equals("proton.me", StringComparison.OrdinalIgnoreCase)
+            || domain.Equals("protonmail.com", StringComparison.OrdinalIgnoreCase);
+    }
+
     List<Dictionary<string, object?>> BuildActivityPubTagObjects(IEnumerable<string?> sourceTexts)
     {
         var tags = new List<Dictionary<string, object?>>();
@@ -4151,6 +4193,8 @@ Dictionary<string, object?> BuildActivityPubListActor(GeList list)
         var seenHashtags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var seenLinks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var mentionRegex = new Regex(@"(?<![\w/])@(?<user>[A-Za-z0-9_]+)@(?<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled);
+        var bareHandleRegex = new Regex(@"(?<![\w/@])(?<user>[A-Za-z0-9_]+)@(?<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled);
+        var emailRegex = new Regex(@"(?<![\w/@])(?<email>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         var hashtagRegex = new Regex(@"(?<![\w&])#(?<tag>[A-Za-z0-9_]+)", RegexOptions.Compiled);
         var linkRegex = new Regex(@"(?<url>https?://[^\s<""')]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -4168,6 +4212,41 @@ Dictionary<string, object?> BuildActivityPubListActor(GeList list)
                         ["type"] = "Mention",
                         ["name"] = handle,
                         ["href"] = GuessMentionHref(username, domain)
+                    });
+                }
+            }
+
+            foreach (Match match in bareHandleRegex.Matches(text!))
+            {
+                string username = match.Groups["user"].Value;
+                string domain = match.Groups["domain"].Value;
+                if (IsLikelyEmailDomain(domain))
+                {
+                    continue;
+                }
+
+                string handle = $"@{username}@{domain}";
+                if (seenMentions.Add(handle))
+                {
+                    tags.Add(new Dictionary<string, object?>
+                    {
+                        ["type"] = "Mention",
+                        ["name"] = handle,
+                        ["href"] = GuessMentionHref(username, domain)
+                    });
+                }
+            }
+
+            foreach (Match match in emailRegex.Matches(text!))
+            {
+                string email = match.Groups["email"].Value;
+                if (!string.IsNullOrWhiteSpace(email) && seenLinks.Add($"mailto:{email}"))
+                {
+                    tags.Add(new Dictionary<string, object?>
+                    {
+                        ["type"] = "Link",
+                        ["name"] = email,
+                        ["href"] = $"mailto:{email}"
                     });
                 }
             }
@@ -4221,12 +4300,49 @@ Dictionary<string, object?> BuildActivityPubListActor(GeList list)
             return $"<span class=\"h-card\"><a href=\"{WebUtility.HtmlEncode(href)}\" class=\"u-url mention\" rel=\"nofollow noopener noreferrer\">{WebUtility.HtmlEncode(handle)}</a></span>";
         });
 
+        var bareHandleRegex = new Regex(@"(?<![\w""'=/@])(?<user>[A-Za-z0-9_]+)@(?<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled);
+        var withBareMentions = bareHandleRegex.Replace(withMentions, match =>
+        {
+            string username = match.Groups["user"].Value;
+            string domain = match.Groups["domain"].Value;
+            if (IsLikelyEmailDomain(domain))
+            {
+                return match.Value;
+            }
+
+            string href = GuessMentionHref(username, domain);
+            string handle = $"@{username}@{domain}";
+            return $"<span class=\"h-card\"><a href=\"{WebUtility.HtmlEncode(href)}\" class=\"u-url mention\" rel=\"nofollow noopener noreferrer\">{WebUtility.HtmlEncode(handle)}</a></span>";
+        });
+
         var hashtagRegex = new Regex(@"(?<![\w&/""'=])#(?<tag>[A-Za-z0-9_]+)(?![\w-])", RegexOptions.Compiled);
-        return hashtagRegex.Replace(withMentions, match =>
+        return hashtagRegex.Replace(withBareMentions, match =>
         {
             string tag = match.Groups["tag"].Value;
             string href = GuessHashtagHref(tag);
             return $"<a href=\"{WebUtility.HtmlEncode(href)}\" class=\"mention hashtag\" rel=\"tag\">#<span>{WebUtility.HtmlEncode(tag)}</span></a>";
+        });
+    }
+
+    string LinkifyEmailsInMarkdown(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown))
+        {
+            return markdown;
+        }
+
+        var emailRegex = new Regex(@"(?<![\w/@\(:])(?<local>[A-Za-z0-9._%+-]+)@(?<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        return emailRegex.Replace(markdown, match =>
+        {
+            string local = match.Groups["local"].Value;
+            string domain = match.Groups["domain"].Value;
+            if (!IsLikelyEmailDomain(domain))
+            {
+                return match.Value;
+            }
+
+            string email = $"{local}@{domain}";
+            return $"[{email}](mailto:{email})";
         });
     }
 
@@ -4236,13 +4352,98 @@ Dictionary<string, object?> BuildActivityPubListActor(GeList list)
     string instanceUrl = $"{(GlobalConfig.Hostname ?? string.Empty).TrimEnd('/')}/";
     const string projectHomepageUrl = "https://github.com/tezoatlipoca/GeFeSLE-server";
     string iconUrl = string.IsNullOrWhiteSpace(hostBase) ? "/gefesleff.png" : $"{hostBase}/gefesleff.png";
-    string? actorSummary = string.IsNullOrWhiteSpace(list.Comment)
+    string? FormatHelpContact(GeFeSLEUser? user)
+    {
+        if (user is null)
+        {
+            return null;
+        }
+
+        string? username = string.IsNullOrWhiteSpace(user.UserName) ? null : user.UserName.Trim();
+        string? email = string.IsNullOrWhiteSpace(user.Email) ? null : user.Email.Trim();
+        string? primary = username ?? email;
+
+        if (string.IsNullOrWhiteSpace(primary))
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(username) && !username.Contains('@'))
+        {
+            if (!string.IsNullOrWhiteSpace(email) && email.Contains('@'))
+            {
+                return email;
+            }
+
+            // Local-only users without an external contact channel are not rendered.
+            return null;
+        }
+
+        if (!primary.Contains('@'))
+        {
+            return null;
+        }
+
+        if (primary.StartsWith("@", StringComparison.Ordinal))
+        {
+            return NormalizeHandle(primary);
+        }
+
+        if (!string.IsNullOrWhiteSpace(username) && username.Contains('@'))
+        {
+            return NormalizeHandle(username);
+        }
+
+        return email ?? primary;
+    }
+
+    var helpContacts = new List<string>();
+    var seenHelpContacts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var seenUserIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var userContact in list.ListOwners.Append(list.Creator).Where(u => u is not null))
+    {
+        if (!string.IsNullOrWhiteSpace(userContact!.Id) && !seenUserIds.Add(userContact.Id))
+        {
+            continue;
+        }
+
+        var contact = FormatHelpContact(userContact);
+        if (!string.IsNullOrWhiteSpace(contact) && seenHelpContacts.Add(contact))
+        {
+            helpContacts.Add(contact);
+        }
+    }
+
+    if (!string.IsNullOrWhiteSpace(GlobalConfig.owner)
+        && seenHelpContacts.Add(GlobalConfig.owner))
+    {
+        helpContacts.Add(GlobalConfig.owner);
+    }
+
+    string helpText = helpContacts.Count > 0
+        ? string.Join(", ", helpContacts)
+        : "the list creator or one of the list owners";
+    string ownerContactMarkdown = LinkifyEmailsInMarkdown($"For help ask {helpText}");
+    string visibilityStatusHtml = list.Visibility == GeListVisibility.Public
+        ? "<span style=\"color: green;\"><b>PUBLIC</b></span>"
+        : "<span style=\"color: red;\"><b>NOT PUBLIC</b> -- list items will not be visible.</span>";
+
+    var summaryMarkdownParts = new List<string>();
+    if (!string.IsNullOrWhiteSpace(list.Comment))
+    {
+        summaryMarkdownParts.Add(list.Comment);
+    }
+    summaryMarkdownParts.Add(ownerContactMarkdown);
+    summaryMarkdownParts.Add($"Status: {visibilityStatusHtml}");
+
+    string combinedSummaryMarkdown = string.Join("\n\n", summaryMarkdownParts);
+    string? actorSummary = string.IsNullOrWhiteSpace(combinedSummaryMarkdown)
         ? null
-        : Markdown.ToHtml(list.Comment, activityPubMarkdownPipeline);
+        : Markdown.ToHtml(combinedSummaryMarkdown, activityPubMarkdownPipeline);
     actorSummary = string.IsNullOrWhiteSpace(actorSummary)
         ? actorSummary
         : LinkifyFediverseEntitiesInHtml(actorSummary);
-    var actorTags = BuildActivityPubTagObjects(new[] { list.Comment });
+    var actorTags = BuildActivityPubTagObjects(new[] { list.Comment, ownerContactMarkdown });
 
     string htmlFileName = $"{listBaseName}.html";
     string rssFileName = $"rss-{listBaseName}.xml";
@@ -4353,6 +4554,8 @@ Dictionary<string, object?> BuildActivityPubListActor(GeList list)
             ["publicKeyPem"] = activityPubPublicKeyPem
         };
     }
+    // debug .trace levle the actor before we return it
+    DBg.d(LogLevel.Trace, $"ActivityPub actor for list {list.Id}:\n{System.Text.Json.JsonSerializer.Serialize(actor, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })}");
 
     return actor;
 }
@@ -4414,6 +4617,12 @@ async Task<bool> SendSignedActivityPubMessageAsync(string inboxUrl, string actor
 async Task BroadcastActivityPubItemToFollowersAsync(GeList list, GeFeSLEDb db, GeListItem item, string activityType, GeListFollower? onlyFollower = null)
 {
     if (!string.Equals(activityType, "Delete", StringComparison.OrdinalIgnoreCase)
+        && list.Visibility != GeListVisibility.Public)
+    {
+        return;
+    }
+
+    if (!string.Equals(activityType, "Delete", StringComparison.OrdinalIgnoreCase)
         && (item.IsDeleted || !item.Visible))
     {
         return;
@@ -4454,6 +4663,18 @@ async Task BroadcastActivityPubItemToFollowersAsync(GeList list, GeFeSLEDb db, G
     }
 }
 
+async Task BroadcastAllActivityPubItemsToFollowersAsync(GeList list, GeFeSLEDb db, string activityType)
+{
+    var items = await db.Items
+        .Where(i => i.ListId == list.Id && i.Visible && !i.IsDeleted)
+        .ToListAsync();
+
+    foreach (var item in items)
+    {
+        await BroadcastActivityPubItemToFollowersAsync(list, db, item, activityType);
+    }
+}
+
 async Task BroadcastMovedItemToFollowersAsync(GeList oldList, GeList newList, GeFeSLEDb db, GeListItem item)
 {
     var oldFollowers = await db.ListFollowers
@@ -4491,6 +4712,14 @@ async Task BroadcastMovedItemToFollowersAsync(GeList oldList, GeList newList, Ge
 
 async Task BroadcastActivityPubActorUpdateToFollowersAsync(GeList list, GeFeSLEDb db)
 {
+    if (list.Creator is null || list.ListOwners.Count == 0)
+    {
+        list = await db.Lists
+            .Include(l => l.Creator)
+            .Include(l => l.ListOwners)
+            .FirstOrDefaultAsync(l => l.Id == list.Id) ?? list;
+    }
+
     var actorUrl = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}";
     var actorObject = BuildActivityPubListActor(list);
     var followers = await db.ListFollowers.Where(f => f.FollowingLists.Contains(list.Id)).ToListAsync();
@@ -4570,7 +4799,10 @@ app.MapGet("/.well-known/webfinger", async (string resource, GeFeSLEDb db) =>
 app.MapGet("/apv1/lists/{listId:int}", async (int listId, GeFeSLEDb db) =>
 {
     string fn = "/apv1/lists/{listId} (GET)"; DBg.d(LogLevel.Trace, fn);
-    GeList? list = await db.Lists.FindAsync(listId);
+    GeList? list = await db.Lists
+        .Include(l => l.Creator)
+        .Include(l => l.ListOwners)
+        .FirstOrDefaultAsync(l => l.Id == listId);
     if (list == null)
     {
         return Results.NotFound($"List with id {listId} not found");
@@ -4592,6 +4824,10 @@ app.MapGet("/apv1/lists/{listId:int}/outbox", async (int listId, GeFeSLEDb db) =
     if (list == null)
     {
         return Results.NotFound($"List with id {listId} not found");
+    }
+    if (list.Visibility != GeListVisibility.Public)
+    {
+        return Results.StatusCode(403);
     }
     var items = await list.GetItems(db);
 
@@ -4638,6 +4874,10 @@ app.MapGet("/apv1/lists/{listId:int}/items/{itemId:int}", async (int listId, int
     {
         return Results.BadRequest($"Item with id {itemId} does not belong to list with id {listId}");
     }
+    if (list.Visibility != GeListVisibility.Public)
+    {
+        return Results.StatusCode(403);
+    }
     if (item.IsDeleted)
     {
         return Results.StatusCode(410); // Gone
@@ -4666,6 +4906,10 @@ app.MapGet("/apv1/items/{itemId:int}", async (int itemId, GeFeSLEDb db) =>
     {
         return Results.NotFound($"List with id {item.ListId} not found for item {itemId}");
     }
+    if (list.Visibility != GeListVisibility.Public)
+    {
+        return Results.StatusCode(403);
+    }
 
     var note = BuildActivityPubItemNote(list, item);
     return Results.Content(System.Text.Json.JsonSerializer.Serialize(note), "application/activity+json");
@@ -4692,6 +4936,10 @@ app.MapGet("/apv1/lists/{listId:int}/followers", async (int listId, GeFeSLEDb db
     if (list == null)
     {
         return Results.NotFound($"List with id {listId} not found");
+    }
+    if (list.Visibility != GeListVisibility.Public)
+    {
+        return Results.StatusCode(403);
     }
 
     // return all followers who follow listId

@@ -306,6 +306,32 @@ public static class GlobalConfig
         // get the owner from the config file
         owner = config.GetValue<string>("SiteCustomize:owner");
 
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            string fallbackHost = APDomain ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(fallbackHost))
+            {
+                fallbackHost = (Hostname ?? "localhost")
+                    .Replace("http://", string.Empty, StringComparison.OrdinalIgnoreCase)
+                    .Replace("https://", string.Empty, StringComparison.OrdinalIgnoreCase)
+                    .TrimEnd('/');
+            }
+
+            string processUser = Environment.UserName;
+            if (string.IsNullOrWhiteSpace(processUser))
+            {
+                processUser = "unknown";
+            }
+
+            owner = string.IsNullOrWhiteSpace(fallbackHost)
+                ? processUser
+                : $"{processUser} AT {fallbackHost}";
+        }
+        else
+        {
+            owner = owner.Trim();
+        }
+
         // probably not kosher, but I'm lazy
         // get the admin user from the config file
         backdoorAdmin = config.GetSection("Users:backdooradmin").Get<GeFeSLEUser>();
