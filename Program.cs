@@ -2199,6 +2199,77 @@ app.MapGet("/lists/{listid}/regen", async (int listid,
     Roles = "SuperUser,listowner,contributor"
 });
 
+async Task<string> ResolveEffectiveRoleAsync(GeFeSLEUser user, UserManager<GeFeSLEUser> userManager, GeFeSLEDb db)
+{
+    var roles = await userManager.GetRolesAsync(user);
+    var realizedRole = GlobalStatic.FindHighestRole(roles);
+    if (!string.Equals(realizedRole, "anonymous", StringComparison.OrdinalIgnoreCase))
+    {
+        return realizedRole;
+    }
+
+    bool isListOwnerLike = await db.Lists.AnyAsync(l =>
+        l.CreatorId == user.Id
+        || l.ListOwners.Any(owner => owner.Id == user.Id));
+    if (isListOwnerLike)
+    {
+        return "listowner";
+    }
+
+    bool isContributor = await db.Lists.AnyAsync(l =>
+        l.Contributors.Any(contributor => contributor.Id == user.Id));
+    if (isContributor)
+    {
+        return "contributor";
+    }
+
+    return realizedRole;
+}
+
+async Task<GeFeSLEUser?> ResolveOAuthUserAsync(ClaimsPrincipal claimsPrincipal, UserManager<GeFeSLEUser> userManager)
+{
+    var candidates = new List<string?>
+    {
+        claimsPrincipal.FindFirstValue(ClaimTypes.NameIdentifier),
+        claimsPrincipal.FindFirstValue("sub"),
+        claimsPrincipal.FindFirstValue("preferred_username"),
+        claimsPrincipal.FindFirstValue(ClaimTypes.Name),
+        claimsPrincipal.FindFirstValue(ClaimTypes.Email),
+        claimsPrincipal.Identity?.Name
+    }
+    .Where(v => !string.IsNullOrWhiteSpace(v))
+    .Select(v => v!.Trim())
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToList();
+
+    foreach (var value in candidates)
+    {
+        var byId = await userManager.FindByIdAsync(value);
+        if (byId is not null)
+        {
+            return byId;
+        }
+
+        var byName = await userManager.FindByNameAsync(value.ToUpperInvariant());
+        if (byName is not null)
+        {
+            return byName;
+        }
+    }
+
+    foreach (var value in candidates)
+    {
+        var byEmail = await userManager.Users
+            .FirstOrDefaultAsync(u => u.Email != null && u.Email.ToUpper() == value.ToUpper());
+        if (byEmail is not null)
+        {
+            return byEmail;
+        }
+    }
+
+    return null;
+}
+
 app.MapGet("/oauthcallback", async (HttpContext context,
         GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
@@ -2244,7 +2315,7 @@ app.MapGet("/oauthcallback", async (HttpContext context,
     // TODO: the user should have been "granted" with both username and email in our system the same
     //       Modify this so it checks for the OAuth user by either username OR email (or any other 
     //      identifying info? dunno !?)
-    GeFeSLEUser? user = await userManager.FindByEmailAsync(email);
+    GeFeSLEUser? user = await ResolveOAuthUserAsync(claimsPrincipal, userManager);
     string? realizedRole = null;
     string username = null;
     if (user is null)
@@ -2258,8 +2329,8 @@ app.MapGet("/oauthcallback", async (HttpContext context,
         // user exists. get their role. Add a claimsPrincipal for the role
         // and create a session for them.
         username = user!.UserName;
-        var roles = await userManager.GetRolesAsync(user);
-        realizedRole = GlobalStatic.FindHighestRole(roles);
+        realizedRole = await ResolveEffectiveRoleAsync(user, userManager, db);
+        DBg.d(LogLevel.Information, $"{fn} OAuth mapped user {user.Id}/{user.UserName} role resolved to {realizedRole}");
         msg = $"Welcome {username}! You are logged in as {realizedRole}";
 
     }
@@ -2336,9 +2407,7 @@ app.MapPost("/me", async (HttpContext context,
                 var result = await userManager.CheckPasswordAsync(user, login.Password);
                 if (result)
                 {
-                    // get the user's role
-                    var roles = await userManager.GetRolesAsync(user);
-                    realizedRole = GlobalStatic.FindHighestRole(roles);
+                    realizedRole = await ResolveEffectiveRoleAsync(user, userManager, db);
                     success = true;
 
 
@@ -2461,6 +2530,7 @@ app.MapPost("/me", async (HttpContext context,
 // new endpoint that handles the Mastodon Oauth2 callback
 app.MapGet("/mastocallback", async (string code,
     HttpContext httpContext,
+    GeFeSLEDb db,
 
     UserManager<GeFeSLEUser> userManager,
     RoleManager<IdentityRole> roleManager) =>
@@ -2545,10 +2615,38 @@ app.MapGet("/mastocallback", async (string code,
             var instancename = appToken.instance.Replace("http://", "").Replace("https://", "");
             var username = $"{account.UserName}@{instancename}";
             DBg.d(LogLevel.Trace, $"username: {username}");
-            // look this username up in the database, see if they exist
-            // if so, get the roles and log them in
+            // look this username up in the database, tolerating either handle form:
+            //   user@instance
+            //   @user@instance
+            string atUsername = username.StartsWith("@", StringComparison.Ordinal) ? username : $"@{username}";
+            var handleCandidates = new[] { username, atUsername }
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-            var localuser = await userManager.FindByNameAsync(username!.ToUpper());
+            GeFeSLEUser? localuser = null;
+            foreach (var handle in handleCandidates)
+            {
+                localuser = await userManager.FindByIdAsync(handle);
+                if (localuser is not null) break;
+
+                localuser = await userManager.FindByNameAsync(handle.ToUpperInvariant());
+                if (localuser is not null) break;
+            }
+
+            if (localuser is null)
+            {
+                foreach (var handle in handleCandidates)
+                {
+                    localuser = await userManager.Users.FirstOrDefaultAsync(u =>
+                        (u.UserName != null && u.UserName.ToUpper() == handle.ToUpper())
+                        || (u.Email != null && u.Email.ToUpper() == handle.ToUpper())
+                        || (u.Id != null && u.Id.ToUpper() == handle.ToUpper()));
+                    if (localuser is not null) break;
+                }
+            }
+
+            DBg.d(LogLevel.Trace, $"{fn} resolved localuser: {(localuser is null ? "(none)" : $"{localuser.Id}/{localuser.UserName}")}");
             // if they're not in there, that's fine. Add them, they can have 
             // anonymous role. Not sure why they're logging in tho
             StringBuilder sb = new StringBuilder();
@@ -2563,8 +2661,7 @@ app.MapGet("/mastocallback", async (string code,
             else
             {
                 // they're in there, which means we've added them, probably to assign them a role
-                var roles = await userManager.GetRolesAsync(localuser);
-                var realizedRole = GlobalStatic.FindHighestRole(roles);
+                var realizedRole = await ResolveEffectiveRoleAsync(localuser, userManager, db);
                 await UserSessionService.createSession(httpContext, localuser.Id, localuser.UserName!, realizedRole);
                 var msg = $"Hi {username} from the fediverse; You've been logged in with role: {realizedRole}.";
                 await GlobalStatic.GenerateLoginResult(sb, msg);
@@ -2643,7 +2740,10 @@ app.MapPost("/lists/query", async (
 });
 
 
-app.MapGet("/me", (HttpContext httpContext, IAntiforgery antiforgery) =>
+app.MapGet("/me", async (HttpContext httpContext,
+    IAntiforgery antiforgery,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager) =>
 {
     string fn = "/me (GET)"; DBg.d(LogLevel.Trace, fn);
     //GlobalStatic.DumpHTTPRequestHeaders(httpContext.Request);
@@ -2657,6 +2757,43 @@ app.MapGet("/me", (HttpContext httpContext, IAntiforgery antiforgery) =>
     }
 
     UserDto sessionUser = UserSessionService.amILoggedIn(httpContext);
+
+    // Auto-heal authenticated sessions stuck with anonymous role by recomputing effective role.
+    if (sessionUser.IsAuthenticated
+        && string.Equals(sessionUser.Role, "anonymous", StringComparison.OrdinalIgnoreCase)
+        && !string.IsNullOrWhiteSpace(sessionUser.Id))
+    {
+        GeFeSLEUser? dbUser = await userManager.FindByIdAsync(sessionUser.Id);
+        if (dbUser is null && !string.IsNullOrWhiteSpace(sessionUser.UserName))
+        {
+            dbUser = await userManager.FindByNameAsync(sessionUser.UserName.ToUpperInvariant());
+        }
+        if (dbUser is null && !string.IsNullOrWhiteSpace(sessionUser.UserName) && sessionUser.UserName.Contains('@'))
+        {
+            dbUser = await userManager.FindByEmailAsync(sessionUser.UserName);
+        }
+        if (dbUser is null && !string.IsNullOrWhiteSpace(sessionUser.UserName))
+        {
+            dbUser = await userManager.Users
+                .FirstOrDefaultAsync(u =>
+                    (u.UserName != null && u.UserName.ToUpper() == sessionUser.UserName.ToUpper())
+                    || (u.Email != null && u.Email.ToUpper() == sessionUser.UserName.ToUpper()));
+        }
+        if (dbUser is not null)
+        {
+            var effectiveRole = await ResolveEffectiveRoleAsync(dbUser, userManager, db);
+            if (!string.Equals(effectiveRole, "anonymous", StringComparison.OrdinalIgnoreCase))
+            {
+                await UserSessionService.createSession(
+                    httpContext,
+                    dbUser.Id,
+                    dbUser.UserName ?? sessionUser.UserName ?? dbUser.Email ?? "OAuth",
+                    effectiveRole);
+                sessionUser = UserSessionService.amILoggedIn(httpContext);
+            }
+        }
+    }
+
     DBg.d(LogLevel.Information, $"{fn} --> {sessionUser}");
     if (sessionUser.IsAuthenticated)
     {
@@ -3960,6 +4097,12 @@ Dictionary<string, object?> BuildActivityPubItemNote(GeList list, GeListItem ite
         contentMarkdownParts.Add(hashtagLine);
     }
 
+    string hostBase = (GlobalConfig.Hostname ?? string.Empty).TrimEnd('/');
+    string listFileName = $"{list.Name}.html";
+    string staticItemUrl = $"{hostBase}/{Uri.EscapeDataString(listFileName)}#{item.Id}";
+
+    contentMarkdownParts.Add($"[View in list]({staticItemUrl})");
+
     string renderedContent = string.Join("\n\n", contentMarkdownParts);
     var noteTags = BuildActivityPubTagObjects(new[] { item.Name, item.Comment, hashtagLine }, item.Tags);
     string renderedContentHtml = string.IsNullOrWhiteSpace(renderedContent)
@@ -3974,6 +4117,7 @@ Dictionary<string, object?> BuildActivityPubItemNote(GeList list, GeListItem ite
         ["type"] = item.IsDeleted ? "Tombstone" : "Note",
         ["name"] = item.Name,
         ["content"] = renderedContentHtml,
+        ["url"] = staticItemUrl,
         ["attributedTo"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}",
         ["published"] = item.CreatedDate.ToUniversalTime().ToString("o"),
         ["updated"] = item.ModifiedDate.ToUniversalTime().ToString("o")

@@ -431,7 +431,7 @@ public static class GlobalStatic
                 // find the highest one in precdence and use that
                 var highestRole = GlobalStatic.roleNames
                     .OrderBy(role => GlobalStatic.roleNames.IndexOf(role))
-                    .FirstOrDefault(role => roles.Contains(role));
+                    .FirstOrDefault(role => roles.Any(r => string.Equals(r, role, StringComparison.OrdinalIgnoreCase)));
                 if (highestRole is not null)
                 {
                     return highestRole;
@@ -443,7 +443,9 @@ public static class GlobalStatic
             }
             else
             {
-                return roles[0];
+                var normalizedSingle = GlobalStatic.roleNames
+                    .FirstOrDefault(role => string.Equals(role, roles[0], StringComparison.OrdinalIgnoreCase));
+                return normalizedSingle ?? roles[0];
             }
         }
         // this make sure we have the desired roles in the database
