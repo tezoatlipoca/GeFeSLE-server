@@ -27,6 +27,9 @@
     "API": {
         "apiTokenSecretKey" : "IlikeBIGbuttsandIcannotlie!Youotherbrotherscan'tdeny!WhenagirlwalksinwithanittybittywaistandaroundthinginyourfaceyougetSPRUNG!"
     },
+    "ActivityPub": {
+        "privateKeyPemFile": "/etc/gefesle/activitypub-private.pem"
+    },
     "OtherSites": {
         "Google": {
             "googleClientID" : "invalid // must set this up",
