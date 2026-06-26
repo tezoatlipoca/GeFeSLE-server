@@ -6,6 +6,8 @@ using System.Text.Json;
 using Markdig;
 using Microsoft.AspNetCore.Identity;
 using System.Text.Json.Serialization;
+using System.Net;
+using System.Text.RegularExpressions;
 
 using GeFeSLE;
 
@@ -132,6 +134,44 @@ public class GeList
     {
         DBg.d(LogLevel.Trace, $"GenerateHTMLListPage: {Id}");
 
+        var listMarkdownPipeline = new MarkdownPipelineBuilder()
+            .UseSoftlineBreakAsHardlineBreak()
+            .UseAutoLinks()
+            .Build();
+
+        static string LinkifyObviousUrls(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return string.Empty;
+            }
+
+            if (Regex.IsMatch(raw, @"<a\b", RegexOptions.IgnoreCase))
+            {
+                return raw;
+            }
+
+            string encoded = WebUtility.HtmlEncode(raw);
+            var urlRegex = new Regex(@"(?<url>https?://[^\s<""']+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            return urlRegex.Replace(encoded, match =>
+            {
+                string url = match.Groups["url"].Value;
+                string trailing = string.Empty;
+                while (url.Length > 0 && ".,!?;:)".Contains(url[^1]))
+                {
+                    trailing = url[^1] + trailing;
+                    url = url[..^1];
+                }
+
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    return match.Value;
+                }
+
+                return $"<a href=\"{url}\" rel=\"nofollow noopener noreferrer\" target=\"_blank\">{url}</a>{trailing}";
+            });
+        }
+
 
         // create a new file in wwwroot with the name of the list
         var filename = $"{Name}.html";
@@ -140,6 +180,11 @@ public class GeList
 
         
         var items = await db.Items.Where(item => item.ListId == Id && item.Visible).ToListAsync();
+        var followerCount = await db.ListFollowers
+            .Where(f => f.FollowingLists.Contains(Id) && !string.IsNullOrWhiteSpace(f.Id))
+            .Select(f => f.Id)
+            .Distinct()
+            .CountAsync();
         DBg.d(LogLevel.Trace, $"Found {items.Count} items for list {Name}");
 
         var sb = new StringBuilder();
@@ -162,13 +207,16 @@ public class GeList
         sb.AppendLine("<div class=\"list-header-content\">");
         sb.AppendLine($"<h1 class=\"listtitle\"><a class=\"indexlink\" href=\"index.html\">&lt;-</a> {Name}</h1>");
         sb.AppendLine($"<p class=\"listcreated\">Created: {CreatedDate.ToString("yyyy-MM-dd HH:mm:ss")}");
+        sb.AppendLine("<div class=\"list-federation-meta\">");
         if(ActivityPubId != null)
         {
-            sb.AppendLine($"<p class=\"listActivityPubId\">Follow @ (ActivityPub ID): {ActivityPubId}@{GlobalConfig.APDomain}</p>");
+            sb.AppendLine($"<div class=\"listActivityPubId\"><strong>ActivityPub:</strong> @{ActivityPubId}@{GlobalConfig.APDomain}</div>");
         }
         else {
-            sb.AppendLine($"<p class=\"listActivityPubId\">ActivityPub ID: None</p>");
+            sb.AppendLine("<div class=\"listActivityPubId\"><strong>ActivityPub:</strong> not configured</div>");
         }
+        sb.AppendLine($"<div class=\"listFollowerCount\"><strong>Followers:</strong> {followerCount}</div>");
+        sb.AppendLine("</div>");
         sb.AppendLine($"<p class=\"listmodified\">Modified: {ModifiedDate.ToString("yyyy-MM-dd HH:mm:ss")}</p>");
         if (Comment != null)
         {
@@ -218,13 +266,13 @@ sb.AppendLine("</div>");
 
         foreach (var item in items)
         {
-            sb.AppendLine($"<div class=\"namecell\">{item.Name}<img src=\"{GlobalConfig.Hostname}/gefesleff.png\" width=\"15px\" height=\"15px\" onclick=\"copyToClipboard({item.Id});\"></div>");
+            sb.AppendLine($"<div class=\"namecell\">{LinkifyObviousUrls(item.Name)}<img src=\"{GlobalConfig.Hostname}/gefesleff.png\" width=\"15px\" height=\"15px\" onclick=\"copyToClipboard({item.Id});\"></div>");
             sb.AppendLine($"<div class=\"itemrow\" id=\"{item.Id}\">");
             
 
             if (item.Comment != null)
             {
-                var itemmd = Markdown.ToHtml(item.Comment);
+                var itemmd = Markdown.ToHtml(item.Comment, listMarkdownPipeline);
                 sb.AppendLine($"<div class=\"commentcell\">{itemmd}</div>");
             }
             else

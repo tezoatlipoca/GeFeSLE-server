@@ -179,6 +179,17 @@ namespace GeFeSLE.Controllers
 
             modlist.Name = inputList.Name;
             modlist.Comment = inputList.Comment;
+
+            bool activityPubIdChanged = !string.Equals(modlist.ActivityPubId, inputList.ActivityPubId, StringComparison.Ordinal);
+            if (activityPubIdChanged)
+            {
+                bool hasFollowers = await _db.ListFollowers.AnyAsync(f => f.FollowingLists.Contains(modlist.Id));
+                if (hasFollowers)
+                {
+                    return Results.BadRequest("Cannot change ActivityPubId for a list that already has followers.");
+                }
+            }
+
             modlist.ActivityPubId = inputList.ActivityPubId;
             modlist.ModifiedDate = DateTime.Now;
             modlist.SetVisibility(inputList.Visibility);
