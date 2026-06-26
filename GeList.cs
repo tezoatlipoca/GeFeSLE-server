@@ -138,6 +138,10 @@ public class GeList
     {
         DBg.d(LogLevel.Trace, $"GenerateHTMLListPage: {Id}");
 
+        await db.Entry(this).Reference(list => list.Creator).LoadAsync();
+        await db.Entry(this).Collection(list => list.ListOwners).LoadAsync();
+        await db.Entry(this).Collection(list => list.Contributors).LoadAsync();
+
         var listMarkdownPipeline = new MarkdownPipelineBuilder()
             .UseSoftlineBreakAsHardlineBreak()
             .UseAutoLinks()
@@ -174,6 +178,52 @@ public class GeList
 
                 return $"<a href=\"{url}\" rel=\"nofollow noopener noreferrer\" target=\"_blank\">{url}</a>{trailing}";
             });
+        }
+
+        static string FormatUserDisplay(GeFeSLEUser? user)
+        {
+            string displayName = user?.UserName
+                ?? user?.Email
+                ?? user?.Id
+                ?? "unknown";
+            return WebUtility.HtmlEncode(displayName);
+        }
+
+        static List<string> FormatDistinctUsers(IEnumerable<GeFeSLEUser> users, params string?[] excludedIds)
+        {
+            var excluded = new HashSet<string>(excludedIds.Where(id => !string.IsNullOrWhiteSpace(id))!, StringComparer.OrdinalIgnoreCase);
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var formatted = new List<string>();
+
+            foreach (var user in users)
+            {
+                if (user == null)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(user.Id) && excluded.Contains(user.Id))
+                {
+                    continue;
+                }
+
+                string displayName = user.UserName
+                    ?? user.Email
+                    ?? user.Id
+                    ?? string.Empty;
+
+                if (string.IsNullOrWhiteSpace(displayName))
+                {
+                    continue;
+                }
+
+                if (seen.Add(displayName))
+                {
+                    formatted.Add(WebUtility.HtmlEncode(displayName));
+                }
+            }
+
+            return formatted;
         }
 
 
@@ -217,9 +267,9 @@ public class GeList
         sb.AppendLine("<div class=\"list-header-wrapper\">");
         sb.AppendLine("<div class=\"list-header-content\">");
         sb.AppendLine($"<h1 class=\"listtitle\"><a class=\"indexlink\" href=\"index.html\">&lt;-</a> {Name}</h1>");
-        sb.AppendLine($"<p class=\"listcreated\">Created: {CreatedDate.ToString("yyyy-MM-dd HH:mm:ss")}");
+        sb.AppendLine("<div class=\"list-header-stack\">");
         sb.AppendLine("<div class=\"list-federation-meta\">");
-        if(ActivityPubId != null)
+        if(!string.IsNullOrWhiteSpace(ActivityPubId))
         {
             sb.AppendLine($"<div class=\"listActivityPubId\"><strong>ActivityPub:</strong> @{ActivityPubId}@{GlobalConfig.APDomain}</div>");
         }
@@ -234,14 +284,39 @@ public class GeList
             GeListVisibility.Private => "private",
             _ => Visibility.ToString()
         };
+        var ownerIds = ListOwners
+            .Where(owner => owner != null && !string.IsNullOrWhiteSpace(owner.Id))
+            .Select(owner => owner.Id)
+            .ToArray();
+        string creatorDisplay = FormatUserDisplay(Creator);
+        string ownerDisplay = string.Join(", ", FormatDistinctUsers(ListOwners, CreatorId));
+        if (string.IsNullOrWhiteSpace(ownerDisplay))
+        {
+            ownerDisplay = "none";
+        }
+
+        string contributorDisplay = string.Join(", ", FormatDistinctUsers(Contributors, ownerIds.Concat(new[] { CreatorId }).ToArray()));
+        if (string.IsNullOrWhiteSpace(contributorDisplay))
+        {
+            contributorDisplay = "none";
+        }
+
         sb.AppendLine($"<div class=\"listVisibility\"><strong>Visibility:</strong> {visibilityLabel}</div>");
         sb.AppendLine($"<div class=\"listFollowerCount\"><strong>Followers:</strong> {followerCount}</div>");
         sb.AppendLine("</div>");
-        sb.AppendLine($"<p class=\"listmodified\">Modified: {ModifiedDate.ToString("yyyy-MM-dd HH:mm:ss")}</p>");
+        sb.AppendLine("<div class=\"list-date-box\">");
+        sb.AppendLine($"<div class=\"list-date-item\"><strong>Created:</strong> {CreatedDate:yyyy-MM-dd HH:mm:ss}</div>");
+        sb.AppendLine($"<div class=\"list-date-item\"><strong>Modified:</strong> {ModifiedDate:yyyy-MM-dd HH:mm:ss}</div>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("<div class=\"list-people-box\">");
+        sb.AppendLine($"<div class=\"list-people-item\"><strong>Creator:</strong> {creatorDisplay}</div>");
+        sb.AppendLine($"<div class=\"list-people-item\"><strong>List Owners:</strong> {ownerDisplay}</div>");
+        sb.AppendLine($"<div class=\"list-people-item\"><strong>Contributors:</strong> {contributorDisplay}</div>");
+        sb.AppendLine("</div>");
         if (Comment != null)
         {
             var md = Markdown.ToHtml(Comment);
-            sb.AppendLine($"<p class=\"listcomment\">{md}</p>");
+            sb.AppendLine($"<div class=\"list-comment-box\">{md}</div>");
         }
         sb.AppendLine("</div>");
         sb.AppendLine("<div class=\"list-options-panel\">");

@@ -1,6 +1,134 @@
 let rightClickedLink;
 let globalCanEditList = false;
 
+function normalizeListIdentityValue(value) {
+    if (typeof value !== 'string') {
+        return '';
+    }
+
+    return value.trim().toLowerCase();
+}
+
+function getCurrentSessionIdentitySet(sessionData) {
+    const identities = new Set();
+    if (!sessionData || typeof sessionData !== 'object') {
+        return identities;
+    }
+
+    const addIdentity = (candidate) => {
+        const normalized = normalizeListIdentityValue(candidate);
+        if (normalized.length > 0) {
+            identities.add(normalized);
+        }
+    };
+
+    addIdentity(sessionData.id);
+    addIdentity(sessionData.userId);
+    addIdentity(sessionData.userid);
+    addIdentity(sessionData.userName);
+    addIdentity(sessionData.username);
+    addIdentity(sessionData.email);
+
+    return identities;
+}
+
+function objectMatchesCurrentSession(entity, identitySet) {
+    if (!entity || typeof entity !== 'object' || !identitySet || identitySet.size === 0) {
+        return false;
+    }
+
+    const candidates = [entity.id, entity.userId, entity.userid, entity.userName, entity.username, entity.email];
+    return candidates.some((candidate) => identitySet.has(normalizeListIdentityValue(candidate)));
+}
+
+function collectionMatchesCurrentSession(collection, identitySet) {
+    if (!Array.isArray(collection) || collection.length === 0) {
+        return false;
+    }
+
+    return collection.some((entry) => {
+        if (typeof entry === 'string') {
+            return identitySet.has(normalizeListIdentityValue(entry));
+        }
+
+        return objectMatchesCurrentSession(entry, identitySet);
+    });
+}
+
+function canModifyCurrentList(list, sessionData) {
+    if (!list || !sessionData) {
+        return false;
+    }
+
+    if (isSuperUser(sessionData.role)) {
+        return true;
+    }
+
+    const identitySet = getCurrentSessionIdentitySet(sessionData);
+    if (identitySet.size === 0) {
+        return false;
+    }
+
+    if (objectMatchesCurrentSession(list.creator, identitySet)) {
+        return true;
+    }
+
+    if (identitySet.has(normalizeListIdentityValue(list.creatorId))
+        || identitySet.has(normalizeListIdentityValue(list.creatorUserId))
+        || identitySet.has(normalizeListIdentityValue(list.creatorUserName))
+        || identitySet.has(normalizeListIdentityValue(list.creatorUsername))) {
+        return true;
+    }
+
+    return collectionMatchesCurrentSession(list.listOwners, identitySet)
+        || collectionMatchesCurrentSession(list.listowners, identitySet)
+        || collectionMatchesCurrentSession(list.owners, identitySet);
+}
+
+function getCurrentListIdFromPage() {
+    const editListButton = document.querySelector('.editlink[onclick*="listid="]');
+    if (!editListButton) {
+        return null;
+    }
+
+    const onClick = editListButton.getAttribute('onclick') || '';
+    const match = onClick.match(/listid=(\d+)/i);
+    if (!match) {
+        return null;
+    }
+
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function updateListEditButtonPermission(sessionData) {
+    const editListButtons = Array.from(document.getElementsByClassName('editlink'));
+    if (editListButtons.length === 0 || !sessionData || !sessionData.userName) {
+        return;
+    }
+
+    const listId = getCurrentListIdFromPage();
+    if (!Number.isFinite(listId)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/lists/${listId}`);
+        if (!response.ok) {
+            return;
+        }
+
+        const list = await response.json();
+        const canModify = canModifyCurrentList(list, sessionData);
+        editListButtons.forEach((button) => {
+            button.style.display = canModify ? '' : 'none';
+        });
+    }
+    catch (error) {
+        console.error('updateListEditButtonPermission', error);
+    }
+}
+
 
 function deleteItem(listId, itemid) {
     let fn = "deleteItem"; console.log(fn);
@@ -766,6 +894,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     let [id, username, role] = await amloggedin();
+    const sessionData = { id: id, userName: username, role: role };
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
 
@@ -785,6 +914,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         globalCanEditList = true;
 
     }
+
+    await updateListEditButtonPermission(sessionData);
 
 
     // call the filterUpdate function (just to show how manyitems there are)

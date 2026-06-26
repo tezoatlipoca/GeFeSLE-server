@@ -107,7 +107,117 @@ function getHighestListPermissionLabel(list, identitySet) {
     return null;
 }
 
-function upsertRuntimePermissionIndicator(listItem, permissionLabel) {
+function getEntityDisplayName(entity) {
+    if (!entity || typeof entity !== "object") {
+        return "";
+    }
+
+    const candidates = [entity.userName, entity.username, entity.email, entity.id];
+    for (const candidate of candidates) {
+        if (typeof candidate === "string" && candidate.trim().length > 0) {
+            return candidate.trim();
+        }
+    }
+
+    return "";
+}
+
+function getListOwnerBlurb(list) {
+    if (!list || typeof list !== "object") {
+        return "";
+    }
+
+    const names = [];
+    const seen = new Set();
+    const addName = (candidate) => {
+        if (typeof candidate !== "string") {
+            return;
+        }
+
+        const trimmed = candidate.trim();
+        if (trimmed.length === 0) {
+            return;
+        }
+
+        const normalized = trimmed.toLowerCase();
+        if (seen.has(normalized)) {
+            return;
+        }
+
+        seen.add(normalized);
+        names.push(trimmed);
+    };
+
+    const ownerCollections = [list.listOwners, list.listowners, list.owners];
+    ownerCollections.forEach((collection) => {
+        if (!Array.isArray(collection)) {
+            return;
+        }
+
+        collection.forEach((entry) => {
+            if (typeof entry === "string") {
+                addName(entry);
+            }
+            else {
+                addName(getEntityDisplayName(entry));
+            }
+        });
+    });
+
+    if (names.length === 0) {
+        addName(getEntityDisplayName(list.creator));
+        addName(list.creatorUserName);
+        addName(list.creatorUsername);
+    }
+
+    if (names.length === 0) {
+        return "";
+    }
+
+    const label = names.length === 1 ? "owner" : "owners";
+    return " (" + label + ": " + names.join(", ") + ")";
+}
+
+function getRuntimePermissionPresentation(list, sessionData, identitySet) {
+    if (!list || !sessionData) {
+        return null;
+    }
+
+    const role = normalizeIdentityValue(sessionData.role || sessionData.user?.role);
+    if (role === "superuser") {
+        return {
+            label: "SuperUser",
+            detail: getListOwnerBlurb(list)
+        };
+    }
+
+    const permissionLabel = getHighestListPermissionLabel(list, identitySet);
+    if (!permissionLabel) {
+        return null;
+    }
+
+    const needsOwnerBlurb = permissionLabel === "contributor";
+    return {
+        label: permissionLabel,
+        detail: needsOwnerBlurb ? getListOwnerBlurb(list) : ""
+    };
+}
+
+function canModifyList(list, sessionData, identitySet) {
+    if (!list || !sessionData) {
+        return false;
+    }
+
+    const role = normalizeIdentityValue(sessionData.role || sessionData.user?.role);
+    if (role === "superuser") {
+        return true;
+    }
+
+    const permissionLabel = getHighestListPermissionLabel(list, identitySet);
+    return permissionLabel === "creator/owner" || permissionLabel === "listowner";
+}
+
+function upsertRuntimePermissionIndicator(listItem, permissionLabel, detailText) {
     if (!listItem || !permissionLabel) {
         return;
     }
@@ -120,7 +230,7 @@ function upsertRuntimePermissionIndicator(listItem, permissionLabel) {
         listItem.appendChild(indicator);
     }
 
-    indicator.textContent = "[" + permissionLabel + "]";
+    indicator.textContent = "[" + permissionLabel + "]" + (detailText || "");
     indicator.setAttribute("data-permission-level", permissionLabel);
 
     const allSpans = Array.from(listItem.querySelectorAll("span"));
@@ -138,29 +248,34 @@ function annotateRuntimeAuthorizedPermissionIndicators(listsData, sessionData) {
         return;
     }
 
-    const runtimeRows = Array.from(document.querySelectorAll("li.runtime-authorized-list[data-render-source='runtime-authorized']"));
-    if (runtimeRows.length === 0) {
+    const listRows = Array.from(document.querySelectorAll("li.indexliitem[data-list-id]"));
+    if (listRows.length === 0) {
         return;
     }
 
     const identitySet = getUserIdentitySet(sessionData);
-    if (identitySet.size === 0) {
+    const role = normalizeIdentityValue(sessionData?.role || sessionData?.user?.role);
+    if (identitySet.size === 0 && role !== "superuser") {
         return;
     }
 
     const permissionById = new Map();
+    const canModifyById = new Map();
     for (const list of listsData) {
         const listId = Number(list?.id);
         if (!Number.isFinite(listId)) {
             continue;
         }
-        const label = getHighestListPermissionLabel(list, identitySet);
-        if (label) {
-            permissionById.set(listId, label);
+
+        const presentation = getRuntimePermissionPresentation(list, sessionData, identitySet);
+        if (presentation) {
+            permissionById.set(listId, presentation);
         }
+
+        canModifyById.set(listId, canModifyList(list, sessionData, identitySet));
     }
 
-    runtimeRows.forEach((row) => {
+    listRows.forEach((row) => {
         const attrId = Number(row.getAttribute("data-list-id"));
         let listId = Number.isFinite(attrId) ? attrId : NaN;
         if (!Number.isFinite(listId)) {
@@ -175,10 +290,16 @@ function annotateRuntimeAuthorizedPermissionIndicators(listsData, sessionData) {
             return;
         }
 
-        const permissionLabel = permissionById.get(listId);
-        if (permissionLabel) {
-            upsertRuntimePermissionIndicator(row, permissionLabel);
+        const permissionPresentation = permissionById.get(listId);
+        if (permissionPresentation) {
+            upsertRuntimePermissionIndicator(row, permissionPresentation.label, permissionPresentation.detail);
         }
+
+        const canModify = canModifyById.get(listId) === true;
+        const actionLinks = Array.from(row.getElementsByClassName("indexeditlink"));
+        actionLinks.forEach((link) => {
+            link.style.display = canModify ? "" : "none";
+        });
     });
 }
 
@@ -269,9 +390,8 @@ window.onload = async function () {
     }
     if (isSuperUser(role) || isListOwner(role)) {
         console.debug(fn + ' | logged in and either isSuperUser or isListOwner');
-        // SHOW the id=indexeditlink
-        let links = document.getElementsByClassName('indexeditlink');
-        for (l of links) {
+        let links = document.querySelectorAll('.button.admin.indexeditlink');
+        for (let l of links) {
             l.style.display = '';
         }
         showAdminSecrets();
@@ -332,12 +452,6 @@ window.onload = async function () {
             listRoot.appendChild(li);
             existingNames.add(list.name);
 
-            if (isSuperUser(role) || isListOwner(role)) {
-                let links = li.getElementsByClassName('indexeditlink');
-                for (let l of links) {
-                    l.style.display = '';
-                }
-            }
         }
 
         annotateRuntimeAuthorizedPermissionIndicators(lists, {
