@@ -1,0 +1,68 @@
+ [GET]   /  [IN: none]  [OUT: redirect]
+ [GET]   /.well-known/webfinger  [IN: string resource]  [OUT: object]
+ [GET]   /{actorName:regex(^[A-Za-z0-9_-]+$)}  [IN: string actorName]  [OUT: redirect]
+
+ [GET]   /actions  [IN: none]  [OUT: List<string>]
+ [GET]   /actions/{processid}  [IN: string processid]  [OUT: string?]
+
+ [GET]   /apv1/activities/{activityId}  [IN: string activityId]  [OUT: object]
+ [GET]   /apv1/items/{itemId:int}  [IN: int itemId]  [OUT: object]
+ [POST]  /apv1/lists/{listId:int}/inbox  [IN: int listId, JsonElement activityJson]  [OUT: IResult]
+ [GET]   /apv1/lists/{listId:int}  [IN: int listId]  [OUT: object]
+ [GET]   /apv1/lists/{listId:int}/followers  [IN: int listId]  [OUT: object]
+ [GET]   /apv1/lists/{listId:int}/items  [IN: int listId]  [OUT: redirect]
+ [GET]   /apv1/lists/{listId:int}/items/{itemId:int}  [IN: int listId, int itemId]  [OUT: object]
+ [GET]   /apv1/lists/{listId:int}/outbox  [IN: int listId]  [OUT: object]
+
+ [POST]  /cleanup/empty-tags  [IN: none]  [OUT: string]
+
+ [POST]  /files  [IN: IFormFile]  [OUT: string]
+ [GET]   /files/clean  [IN: none]  [OUT: redirect]
+ [GET]   /files/cleanup  [IN: none]  [OUT: redirect]
+ [GET]   /files/orphan  [IN: none]  [OUT: HTML]
+
+ [GET]   /items/{id:int}  [IN: int id]  [OUT: GeListItemResponseDto]
+ [POST]  /items  [IN: GeListItemCreateUpdateDto]  [OUT: GeListItemResponseDto]
+ [PUT]   /items/{itemId:int}  [IN: int itemId, GeListItemCreateUpdateDto]  [OUT: GeListItemResponseDto]
+ [PATCH] /items/{id:int}/list  [IN: int id, MoveItemDto]  [OUT: string]
+ [POST]  /items/{itemid:int}/report  [IN: int itemid]  [OUT: IResult]
+ [PUT]   /items/{itemid:int}/tags  [IN: int itemid, AddTagDto]  [OUT: string]
+ [GET]   /items/orphan  [IN: bool delete = false]  [OUT: HTML]
+
+ [GET]   /lists  [IN: none]  [OUT: List<GeListResponseDto>]
+ [POST]  /lists  [IN: GeListDto]  [OUT: GeList]
+ [PUT]   /lists  [IN: GeListDto]  [OUT: IResult]
+ [GET]   /lists/export  [IN: none]  [OUT: redirect]
+ [POST]  /lists/import  [IN: IFormFile]  [OUT: IResult]
+ [POST]  /lists/query  [IN: GeListImportDto]  [OUT: IResult]
+ [GET]   /lists/regen  [IN: none]  [OUT: redirect]
+ [POST]  /lists/{list:int}/contributors  [IN: int list, AddListUserDto]  [OUT: ListUserOperationResponse]
+ [GET]   /lists/{list:int}/files  [IN: int list]  [OUT: HTML]
+ [POST]  /lists/{list:int}/owners  [IN: int list, AddListUserDto]  [OUT: ListUserOperationResponse]
+ [GET]   /lists/{list:int}/users  [IN: int list]  [OUT: GeListUsersDto]
+ [POST]  /lists/{listid:int}  [IN: GeListImportDto]  [OUT: IResult]
+ [GET]   /lists/{listid:int}  [IN: int listid]  [OUT: GeListResponseDto]
+ [POST]  /lists/{listid:int}/suggest  [IN: int listid, GeListItemCreateUpdateDto]  [OUT: GeListItemResponseDto]
+ [GET]   /lists/{listId:int}/items  [IN: int listId]  [OUT: List<GeListItemResponseDto>]
+ [GET]   /lists/{listid}/regen  [IN: int listid]  [OUT: redirect]
+
+ [GET]   /mastocallback  [IN: string code]  [OUT: HTML]
+
+ [GET]   /me  [IN: none]  [OUT: UserDto]
+ [POST]  /me  [IN: LoginDto (manual form binding)]  [OUT: object]
+ [GET]   /me/delete  [IN: none]  [OUT: HTML]
+
+ [GET]   /oauthcallback  [IN: none]  [OUT: HTML]
+
+ [GET]   /posts/{itemId:int}  [IN: int itemId]  [OUT: HTML]
+
+ [GET]   /session  [IN: none]  [OUT: HTML]
+
+ [GET]   /users  [IN: none]  [OUT: List<UserResponseDto>]
+ [POST]  /users  [IN: UserCreateUpdateDto]  [OUT: UserResponseDto]
+ [GET]   /users/{username}  [IN: none]  [OUT: UserResponseDto]
+ [PUT]   /users/{userid}  [IN: string userid, UserCreateUpdateDto]  [OUT: IResult]
+ [GET]   /users/{userid}/password  [IN: string userid]  [OUT: string]
+ [POST]  /users/{userid}/password  [IN: string userid, PasswordChangeDto]  [OUT: IResult]
+ [GET]   /users/{userid}/roles  [IN: string userid]  [OUT: List<string>]
+ [POST]  /users/{userid}/roles  [IN: string userid, List<string>]  [OUT: IResult]
