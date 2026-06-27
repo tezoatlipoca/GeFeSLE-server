@@ -1,11 +1,14 @@
 
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Net;
 using System.Text;
 using Mastonet.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.EntityFrameworkCore;
 
 namespace GeFeSLE.Controllers
 {
@@ -13,6 +16,46 @@ namespace GeFeSLE.Controllers
 
     public class GeListFileController : Controller
     {
+        public sealed class FileAuditRow
+        {
+            public string RelativePath { get; set; } = string.Empty;
+            public long SizeBytes { get; set; }
+            public bool IsListFile { get; set; }
+            public bool IsProtectedFile { get; set; }
+            public bool IsReferencedUpload { get; set; }
+            public List<UploadReferenceLocation> UploadReferences { get; set; } = new();
+        }
+
+        public sealed class UploadReferenceLocation
+        {
+            public string ListName { get; set; } = string.Empty;
+            public int ItemId { get; set; }
+        }
+
+        private static string ToHumanReadableSize(long bytes)
+        {
+            string[] units = { "B", "KB", "MB", "GB", "TB", "PB" };
+            double size = bytes;
+            int unitIndex = 0;
+
+            while (size >= 1024 && unitIndex < units.Length - 1)
+            {
+                size /= 1024;
+                unitIndex++;
+            }
+
+            if (unitIndex == 0)
+            {
+                return $"{bytes}{units[unitIndex]}";
+            }
+
+            if (size >= 10)
+            {
+                return $"{Math.Round(size):0}{units[unitIndex]}";
+            }
+
+            return $"{size:0.0}{units[unitIndex]}";
+        }
 
         /// <summary>
         /// List of protected files "owned" by the application
@@ -136,48 +179,285 @@ namespace GeFeSLE.Controllers
 
         }
 
+        public static string NormalizeRelativePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return string.Empty;
+            }
+
+            string normalized = path.Replace("\\", "/").Trim();
+            if (!normalized.StartsWith("/"))
+            {
+                normalized = "/" + normalized;
+            }
+
+            return normalized;
+        }
+
+        public static bool IsInternalProtectedPath(string path)
+        {
+            string normalized = NormalizeRelativePath(path);
+            return protectedFiles.Contains(normalized);
+        }
+
+        public static List<string> ExtractUploadReferences(string? text)
+        {
+            var refs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return refs.ToList();
+            }
+
+            string uploadsSegment = "/" + GlobalStatic.uploadsFolder + "/";
+            int start = 0;
+            while (start < text.Length)
+            {
+                int idx = text.IndexOf(uploadsSegment, start, StringComparison.OrdinalIgnoreCase);
+                if (idx < 0)
+                {
+                    break;
+                }
+
+                int end = idx;
+                while (end < text.Length)
+                {
+                    char ch = text[end];
+                    if (char.IsWhiteSpace(ch) || ch == '"' || ch == '\'' || ch == '<' || ch == '>' || ch == ')' || ch == '(')
+                    {
+                        break;
+                    }
+                    end++;
+                }
+
+                string candidate = text.Substring(idx, end - idx);
+                candidate = WebUtility.UrlDecode(candidate);
+                refs.Add(NormalizeRelativePath(candidate));
+                start = end;
+            }
+
+            return refs.Where(r => r.StartsWith(uploadsSegment, StringComparison.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        public async Task<HashSet<string>> GetAllReferencedUploadFilesAsync()
+        {
+            var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var lists = await _db.Lists.ToListAsync();
+            var items = await _db.Items.ToListAsync();
+
+            foreach (var list in lists)
+            {
+                foreach (var fileRef in ExtractUploadReferences(list.Comment))
+                {
+                    referenced.Add(fileRef);
+                }
+            }
+
+            foreach (var item in items)
+            {
+                foreach (var fileRef in item.LocalFiles())
+                {
+                    referenced.Add(NormalizeRelativePath(fileRef));
+                }
+
+                foreach (var fileRef in ExtractUploadReferences(item.Comment))
+                {
+                    referenced.Add(fileRef);
+                }
+
+                foreach (var fileRef in ExtractUploadReferences(item.Name))
+                {
+                    referenced.Add(fileRef);
+                }
+            }
+
+            return referenced;
+        }
+
+        public async Task<Dictionary<string, List<UploadReferenceLocation>>> GetReferencedUploadLocationsByPathAsync()
+        {
+            var refsByPath = new Dictionary<string, List<UploadReferenceLocation>>(StringComparer.OrdinalIgnoreCase);
+            var listNamesById = await _db.Lists.ToDictionaryAsync(l => l.Id, l => l.Name ?? string.Empty);
+            var items = await _db.Items.ToListAsync();
+
+            foreach (var item in items)
+            {
+                if (!listNamesById.TryGetValue(item.ListId, out string? listName) || string.IsNullOrWhiteSpace(listName))
+                {
+                    continue;
+                }
+
+                var itemRefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var fileRef in item.LocalFiles())
+                {
+                    itemRefs.Add(NormalizeRelativePath(fileRef));
+                }
+
+                foreach (var fileRef in ExtractUploadReferences(item.Comment))
+                {
+                    itemRefs.Add(fileRef);
+                }
+
+                foreach (var fileRef in ExtractUploadReferences(item.Name))
+                {
+                    itemRefs.Add(fileRef);
+                }
+
+                foreach (var fileRef in itemRefs)
+                {
+                    if (!refsByPath.TryGetValue(fileRef, out var locations))
+                    {
+                        locations = new List<UploadReferenceLocation>();
+                        refsByPath[fileRef] = locations;
+                    }
+
+                    if (!locations.Any(l => l.ItemId == item.Id && l.ListName == listName))
+                    {
+                        locations.Add(new UploadReferenceLocation
+                        {
+                            ListName = listName,
+                            ItemId = item.Id
+                        });
+                    }
+                }
+            }
+
+            return refsByPath;
+        }
+
+        public async Task<List<FileAuditRow>> GetFileAuditRowsAsync()
+        {
+            string absoroot = Path.GetFullPath(GlobalConfig.wwwroot);
+            string[] files = Directory.GetFiles(GlobalConfig.wwwroot, "*.*", SearchOption.AllDirectories);
+            var referencedUploads = await GetAllReferencedUploadFilesAsync();
+            var uploadLocationsByPath = await GetReferencedUploadLocationsByPathAsync();
+            var rows = new List<FileAuditRow>();
+
+            foreach (string file in files)
+            {
+                string relpath = file.Substring(file.IndexOf(absoroot, StringComparison.OrdinalIgnoreCase) + absoroot.Length);
+                relpath = NormalizeRelativePath(relpath);
+
+                bool isListFile = IsItAListFile(relpath);
+                bool isProtectedFile = IsItAProtectedFile(relpath);
+                bool isReferencedUpload = referencedUploads.Contains(relpath);
+
+                if (relpath == "/index.html")
+                {
+                    isListFile = true;
+                }
+
+                rows.Add(new FileAuditRow
+                {
+                    RelativePath = relpath,
+                    SizeBytes = new FileInfo(file).Length,
+                    IsListFile = isListFile,
+                    IsProtectedFile = isProtectedFile,
+                    IsReferencedUpload = isReferencedUpload,
+                    UploadReferences = uploadLocationsByPath.TryGetValue(relpath, out var refs) ? refs : new List<UploadReferenceLocation>()
+                });
+            }
+
+            return rows;
+        }
+
+        public async Task<List<string>> GetOrphanFilesAsync()
+        {
+            var rows = await GetFileAuditRowsAsync();
+            return rows
+                .Where(r => !r.IsListFile && !r.IsProtectedFile && !r.IsReferencedUpload)
+                .Select(r => r.RelativePath)
+                .ToList();
+        }
+
+        public async Task<int> DeleteOrphanFilesAsync()
+        {
+            string absRoot = Path.GetFullPath(GlobalConfig.wwwroot);
+            var orphans = await GetOrphanFilesAsync();
+            int deleted = 0;
+
+            foreach (var rel in orphans)
+            {
+                string abs = Path.GetFullPath(Path.Combine(absRoot, rel.TrimStart('/')));
+                if (!abs.StartsWith(absRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (System.IO.File.Exists(abs))
+                {
+                    System.IO.File.Delete(abs);
+                    ProtectedFiles.RemoveFile(rel);
+                    deleted++;
+                }
+            }
+
+            return deleted;
+        }
+
         public async Task<StringBuilder> GetAllFilesInWWWRoot()
         {
             string fn = "GetAllFilesInWWWRoot";
             DBg.d(LogLevel.Trace, fn);
 
-            string[] files = Directory.GetFiles(GlobalConfig.wwwroot, "*.*", SearchOption.AllDirectories);
+            var rows = await GetFileAuditRowsAsync();
             StringBuilder sb = new StringBuilder();
             await GlobalStatic.GenerateHTMLHead(sb, "File Orphan Report");
 
-            sb.AppendLine("<h1>File Orphan Report</h1>");
+            sb.AppendLine("<h1>File Report</h1>");
             sb.AppendLine("<p>This report shows all files in the wwwroot directory and categorizes them by their usage.</p>");
             sb.AppendLine("<p><strong>Red entries</strong> indicate files that may be orphaned (not referenced by any list, not protected, and not uploaded to any item).</p>");
-            // we'll want to remove the wwwroot from file pathnames
-            // the GlobalConfig.wwwroot could be a relative path. Convert that to an absolute path to match what
-            // the test functions are expecting (paths relative TO the wwwroot)
-
-            // convert GlobalConfig.wwwroot to absolute path
-            string absoroot = Path.GetFullPath(GlobalConfig.wwwroot);
+            sb.AppendLine("<div class=\"button admin\" onclick=\"window.location.href='/files/cleanup'\">Delete All Orphaned Files</div>");
+            sb.AppendLine("<br><br>");
 
             sb.AppendLine("<table>");
-            sb.AppendLine("<thead><tr><th>File</th><th>generated by a list?</th><th>protected?</th><th>upload 2 item?</th></tr></thead>");
-            foreach (string file in files)
+            sb.AppendLine("<thead><tr><th>File</th><th>generated by a list?</th><th>protected?</th><th>upload reference</th></tr></thead>");
+            foreach (var row in rows)
             {
-                DBg.d(LogLevel.Debug, $"{fn} -- {file}");
-
-                // remove everything before and including "\wwroot\" from filename
-                var relpath = file.Substring(file.IndexOf(absoroot) + absoroot.Length);
-                // change any \'s to /s
-                relpath = relpath.Replace("\\", "/");
-
-                var isListFile = IsItAListFile(relpath) ? "list file" : "";
-                var isProtectedFile = IsItAProtectedFile(relpath) ? "protected" : "";
-                var isInAGeListItem = IsItInAGeListItem(relpath) ? "upload" : "";
-
-                if (relpath == "/index.html")
+                string relpath = row.RelativePath;
+                string isListFile = row.IsListFile ? "list file" : "";
+                string isProtectedFile = row.IsProtectedFile ? "protected" : "";
+                string isReferencedUpload = "";
+                if (row.IsReferencedUpload)
                 {
-                    isListFile = "list file";
+                    if (row.UploadReferences.Count > 0)
+                    {
+                        isReferencedUpload = string.Join("<br>", row.UploadReferences
+                            .OrderBy(r => r.ListName)
+                            .ThenBy(r => r.ItemId)
+                            .Select(r =>
+                            {
+                                string listNameEncoded = Uri.EscapeDataString(r.ListName);
+                                string href = $"/{listNameEncoded}.html#{r.ItemId}";
+                                string label = $"{WebUtility.HtmlEncode(r.ListName)} #{r.ItemId}";
+                                return $"<a href=\"{href}\" target=\"_blank\">{label}</a>";
+                            }));
+                    }
+                    else
+                    {
+                        isReferencedUpload = "upload";
+                    }
+                }
+                bool isOrphan = !row.IsListFile && !row.IsProtectedFile && !row.IsReferencedUpload;
+                string fileSize = ToHumanReadableSize(row.SizeBytes);
+
+                string fileCell = WebUtility.HtmlEncode(relpath);
+                if (relpath.StartsWith("/" + GlobalStatic.uploadsFolder + "/", StringComparison.OrdinalIgnoreCase))
+                {
+                    fileCell = $"<a href=\"{WebUtility.HtmlEncode(relpath)}\" target=\"_blank\">{WebUtility.HtmlEncode(relpath)}</a>";
+                }
+                fileCell += $" ({fileSize})";
+
+                string actionCell = "";
+                if (isOrphan)
+                {
+                    string encoded = Uri.EscapeDataString(relpath.TrimStart('/'));
+                    actionCell = $"<button class=\"button admin\" onclick=\"deleteOrphanFile('{encoded}')\">Delete</button>";
                 }
 
-                var rowClass = (isListFile == "" && isProtectedFile == "" && isInAGeListItem == "") ? "red-row" : "";
-                var msg = $"<tr class='{rowClass}'><td>{relpath}</td><td>{isListFile}</td><td>{isProtectedFile}</td><td>{isInAGeListItem}</td></tr>";
-                DBg.d(LogLevel.Trace, msg);
+                var rowClass = isOrphan ? "red-row" : "";
+                var msg = $"<tr class='{rowClass}'><td>{fileCell}</td><td>{isListFile}</td><td>{isProtectedFile}</td><td>{isReferencedUpload}</td><td>{actionCell}</td></tr>";
+                //DBg.d(LogLevel.Trace, msg);
                 sb.AppendLine(msg);
 
             }
@@ -190,6 +470,21 @@ namespace GeFeSLE.Controllers
             sb.AppendLine("    showDebuggingElements();");
             sb.AppendLine("    showAdminSecrets();");
             sb.AppendLine("});");
+            sb.AppendLine("async function deleteOrphanFile(filePath) {");
+            sb.AppendLine("    if (!confirm('Delete orphan file ' + decodeURIComponent(filePath) + '?')) { return; }");
+            sb.AppendLine("    await amloggedin();");
+            sb.AppendLine("    const antiForgeryToken = localStorage.getItem('antiForgeryToken');");
+            sb.AppendLine("    const antiForgeryHeaderName = localStorage.getItem('antiForgeryHeaderName') || 'RequestVerificationToken';");
+            sb.AppendLine("    const headers = { 'GeFeSLE-XMLHttpRequest': 'true' };");
+            sb.AppendLine("    if (antiForgeryToken) { headers[antiForgeryHeaderName] = antiForgeryToken; }");
+            sb.AppendLine("    const response = await fetch('/files/' + filePath, { method: 'DELETE', headers });");
+            sb.AppendLine("    if (!response.ok) {");
+            sb.AppendLine("        const text = await response.text();");
+            sb.AppendLine("        alert('Delete failed: ' + text);");
+            sb.AppendLine("        return;");
+            sb.AppendLine("    }");
+            sb.AppendLine("    window.location.reload();");
+            sb.AppendLine("}");
             sb.AppendLine("</script>");
             
             await GlobalStatic.GeneratePageFooter(sb);

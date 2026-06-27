@@ -1858,6 +1858,90 @@ app.MapPost("/items", async (
     Roles = "SuperUser,listowner,contributor"
 });
 
+app.MapGet("/lists/{list:int}/files", async (int list,
+    GeFeSLEDb db,
+    HttpContext httpContext,
+    UserManager<GeFeSLEUser> userManager) =>
+{
+    string fn = "/lists/{list:int}/files (GET)"; DBg.d(LogLevel.Trace, fn);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+
+    var listObj = await db.Lists
+        .Include(l => l.Creator)
+        .Include(l => l.ListOwners)
+        .Include(l => l.Contributors)
+        .FirstOrDefaultAsync(l => l.Id == list);
+
+    if (listObj is null)
+    {
+        return Results.NotFound($"List {list} not found");
+    }
+
+    (bool canView, string? ynot) = listObj.IsUserAllowedToView(user);
+    if (!canView)
+    {
+        return Results.BadRequest(ynot);
+    }
+
+    var items = await db.Items.Where(i => i.ListId == list).ToListAsync();
+    var listRefs = GeListFileController.ExtractUploadReferences(listObj.Comment)
+        .Select(GeListFileController.NormalizeRelativePath)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    var itemResults = items.Select(item =>
+    {
+        var localFiles = item.LocalFiles()
+            .Select(GeListFileController.NormalizeRelativePath)
+            .ToList();
+        var commentFiles = GeListFileController.ExtractUploadReferences(item.Comment)
+            .Select(GeListFileController.NormalizeRelativePath)
+            .ToList();
+        var nameFiles = GeListFileController.ExtractUploadReferences(item.Name)
+            .Select(GeListFileController.NormalizeRelativePath)
+            .ToList();
+
+        var allRefs = localFiles
+            .Concat(commentFiles)
+            .Concat(nameFiles)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new
+        {
+            item.Id,
+            item.ListId,
+            item.Name,
+            localFiles,
+            commentFiles,
+            nameFiles,
+            allRefs
+        };
+    }).ToList();
+
+    var allListRefs = listRefs
+        .Concat(itemResults.SelectMany(i => i.allRefs))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    return Results.Ok(new
+    {
+        list = new
+        {
+            listObj.Id,
+            listObj.Name,
+            commentFiles = listRefs
+        },
+        items = itemResults,
+        allRefs = allListRefs
+    });
+})
+.RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser,listowner,contributor"
+});
+
 
 app.MapPut("/items/{itemId:int}", async (int itemId,
         [FromBody] GeListItemCreateUpdateDto inputItemDto,
@@ -3749,6 +3833,88 @@ app.MapPost("/files", async (IFormFile file,
     Roles = "SuperUser,listowner,contributor"
 });
 
+app.MapDelete("/files/{*file}", async (string file,
+    IAntiforgery antiforgery,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    HttpContext httpContext) =>
+{
+    string fn = "/files/{*file} (DELETE)"; DBg.d(LogLevel.Trace, fn);
+    _ = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+
+    try
+    {
+        await antiforgery.ValidateRequestAsync(httpContext);
+    }
+    catch (Exception e)
+    {
+        return Results.BadRequest(e.Message);
+    }
+
+    if (string.IsNullOrWhiteSpace(file))
+    {
+        return Results.BadRequest("No file path provided");
+    }
+
+    string decoded = WebUtility.UrlDecode(file).Replace("\\", "/").Trim();
+    decoded = decoded.TrimStart('/');
+    if (decoded.Contains("..", StringComparison.Ordinal))
+    {
+        return Results.BadRequest("Invalid file path");
+    }
+
+    string relPath = GeListFileController.NormalizeRelativePath(decoded);
+
+    if (GeListFileController.IsInternalProtectedPath(relPath)
+        || ProtectedFiles.ContainsFile(relPath)
+        || ProtectedFiles.ContainsFile(relPath.TrimStart('/')))
+    {
+        return Results.BadRequest("Protected internal files cannot be deleted");
+    }
+
+    bool isGeneratedListFile = string.Equals(relPath, "/index.html", StringComparison.OrdinalIgnoreCase)
+        || await db.Lists.AnyAsync(l =>
+            !string.IsNullOrWhiteSpace(l.Name)
+            && (
+                string.Equals(relPath, $"/{l.Name}.html", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(relPath, $"/{l.Name}.json", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(relPath, $"/rss-{l.Name}.xml", StringComparison.OrdinalIgnoreCase)
+            ));
+    if (isGeneratedListFile)
+    {
+        return Results.BadRequest("Generated list files cannot be deleted");
+    }
+
+    string uploadsPrefix = "/" + GlobalStatic.uploadsFolder + "/";
+    if (!relPath.StartsWith(uploadsPrefix, StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest("Only files under uploads can be deleted");
+    }
+
+    string absRoot = Path.GetFullPath(GlobalConfig.wwwroot);
+    string absFile = Path.GetFullPath(Path.Combine(absRoot, relPath.TrimStart('/')));
+    if (!absFile.StartsWith(absRoot, StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest("Invalid file path");
+    }
+
+    if (!System.IO.File.Exists(absFile))
+    {
+        return Results.NotFound("File not found");
+    }
+
+    System.IO.File.Delete(absFile);
+    ProtectedFiles.RemoveFile(relPath);
+    ProtectedFiles.RemoveFile(relPath.TrimStart('/'));
+
+    return Results.Ok(new { deleted = relPath });
+})
+.RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser,listowner"
+});
+
 
 
 app.MapGet("/actions/{processid}", (string processid) =>
@@ -3772,6 +3938,18 @@ app.MapGet("/files/orphan", async (GeListFileController geListFileController) =>
     string fn = "/files/orphan (GET)"; DBg.d(LogLevel.Trace, fn);
     StringBuilder sb = await geListFileController.GetAllFilesInWWWRoot();
     return Results.Content(sb.ToString(), "text/html");
+}).RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser"
+});
+
+app.MapGet("/files/cleanup", async (GeListFileController geListFileController) =>
+{
+    string fn = "/files/cleanup (GET)"; DBg.d(LogLevel.Trace, fn);
+    int deleted = await geListFileController.DeleteOrphanFilesAsync();
+    DBg.d(LogLevel.Information, $"{fn} -- deleted {deleted} orphan files");
+    return Results.Redirect("/files/orphan");
 }).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
