@@ -1592,14 +1592,47 @@ app.MapPut("/lists", async (HttpContext context,
 
                 if (wasPublic && !isPublic)
                 {
-                    await RotateActivityPubItemIdsForListVisibilityDropAsync(updatedList, db);
+                    await ActivityPubBroadcastService.RotateActivityPubItemIdsForListVisibilityDropAsync(
+                        updatedList,
+                        db,
+                        (listForBroadcast, dbForBroadcast, itemForBroadcast, activityTypeForBroadcast, onlyFollowerForBroadcast) =>
+                            ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+                                listForBroadcast,
+                                dbForBroadcast,
+                                itemForBroadcast,
+                                activityTypeForBroadcast,
+                                (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+                                ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+                                (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                                    ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey),
+                                onlyFollowerForBroadcast));
                 }
                 else if (!wasPublic && isPublic)
                 {
-                    await BroadcastAllActivityPubItemsToFollowersAsync(updatedList, db, "Create");
+                    await ActivityPubBroadcastService.BroadcastAllActivityPubItemsToFollowersAsync(
+                        updatedList,
+                        db,
+                        "Create",
+                        (listForBroadcast, dbForBroadcast, itemForBroadcast, activityTypeForBroadcast, onlyFollowerForBroadcast) =>
+                            ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+                                listForBroadcast,
+                                dbForBroadcast,
+                                itemForBroadcast,
+                                activityTypeForBroadcast,
+                                (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+                                ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+                                (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                                    ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey),
+                                onlyFollowerForBroadcast));
                 }
 
-                await BroadcastActivityPubActorUpdateToFollowersAsync(updatedList, db);
+                await ActivityPubBroadcastService.BroadcastActivityPubActorUpdateToFollowersAsync(
+                    updatedList,
+                    db,
+                    listForActor => ActivityPubActorFactory.BuildActivityPubListActor(listForActor, activityPubMarkdownPipeline, activityPubPublicKeyPem),
+                    ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+                    (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                        ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
             }
         }
 
@@ -1775,7 +1808,15 @@ app.MapPost("/items", async (
     }
 
     await list.RegenerateAllFiles(db);
-    await BroadcastActivityPubItemToFollowersAsync(list, db, newitem, "Create");
+    await ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+        list,
+        db,
+        newitem,
+        "Create",
+        (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+        ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+        (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+            ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
     return Results.Created($"/items/{newitem.Id}", newitem);
 }).RequireAuthorization(new AuthorizeAttribute
 {
@@ -1874,13 +1915,36 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
         await oldlist.RegenerateAllFiles(db);
         await nowlist.RegenerateAllFiles(db);
 
-        await BroadcastMovedItemToFollowersAsync(oldlist, nowlist, db, moditem);
+        await ActivityPubBroadcastService.BroadcastMovedItemToFollowersAsync(
+            oldlist,
+            nowlist,
+            db,
+            moditem,
+            (listForBroadcast, dbForBroadcast, itemForBroadcast, activityTypeForBroadcast, onlyFollowerForBroadcast) =>
+                ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+                    listForBroadcast,
+                    dbForBroadcast,
+                    itemForBroadcast,
+                    activityTypeForBroadcast,
+                    (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+                    ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+                    (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                        ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey),
+                    onlyFollowerForBroadcast));
     }
     else
     {
         await nowlist.RegenerateAllFiles(db);
 
-        await BroadcastActivityPubItemToFollowersAsync(nowlist, db, moditem, "Update");
+        await ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+            nowlist,
+            db,
+            moditem,
+            "Update",
+            (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+            ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+            (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
     }
 
     return Results.Ok();
@@ -1931,7 +1995,15 @@ app.MapDelete("/items/{id:int}", async (int id,
         delitem.ModifiedDate = DateTime.Now;
         await db.SaveChangesAsync();
 
-        await BroadcastActivityPubItemToFollowersAsync(list, db, delitem, "Delete");
+        await ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+            list,
+            db,
+            delitem,
+            "Delete",
+            (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+            ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+            (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
         
         await list.RegenerateAllFiles(db);
         DBg.d(LogLevel.Information, $"{fn} -- item deleted successfully");
@@ -2011,7 +2083,22 @@ app.MapPatch("/items/{id:int}/list", async (
     await newlist.RegenerateAllFiles(db);
     await oldlist.RegenerateAllFiles(db);
 
-    await BroadcastMovedItemToFollowersAsync(oldlist, newlist, db, item);
+    await ActivityPubBroadcastService.BroadcastMovedItemToFollowersAsync(
+        oldlist,
+        newlist,
+        db,
+        item,
+        (listForBroadcast, dbForBroadcast, itemForBroadcast, activityTypeForBroadcast, onlyFollowerForBroadcast) =>
+            ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+                listForBroadcast,
+                dbForBroadcast,
+                itemForBroadcast,
+                activityTypeForBroadcast,
+                (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+                ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+                (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                    ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey),
+                onlyFollowerForBroadcast));
 
     var msg = $"Item {id} moved from list {oldlistid} to list {newlistid}";
     return Results.Ok(msg);
@@ -3069,7 +3156,13 @@ app.MapPost("/lists/{list:int}/owners", async (int list,
     targetList.ListOwners.Add(user);
     await db.SaveChangesAsync();
     await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
-    await BroadcastActivityPubActorUpdateToFollowersAsync(targetList, db);
+    await ActivityPubBroadcastService.BroadcastActivityPubActorUpdateToFollowersAsync(
+        targetList,
+        db,
+        listForActor => ActivityPubActorFactory.BuildActivityPubListActor(listForActor, activityPubMarkdownPipeline, activityPubPublicKeyPem),
+        ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+        (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+            ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
     var addedMsg = $"{caller.UserName} Added {user.UserName} to {targetList.Name} as a listowner";
     DBg.d(LogLevel.Information, addedMsg);
     return Results.Ok(new ListUserOperationResponse
@@ -3190,7 +3283,13 @@ app.MapPost("/lists/{list:int}/contributors", async (int list,
     targetList.Contributors.Add(user);
     await db.SaveChangesAsync();
     await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
-    await BroadcastActivityPubActorUpdateToFollowersAsync(targetList, db);
+    await ActivityPubBroadcastService.BroadcastActivityPubActorUpdateToFollowersAsync(
+        targetList,
+        db,
+        listForActor => ActivityPubActorFactory.BuildActivityPubListActor(listForActor, activityPubMarkdownPipeline, activityPubPublicKeyPem),
+        ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+        (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+            ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
     var addedMsg = $"{caller.UserName} Added {user.UserName} to {targetList.Name} as a contributor";
     DBg.d(LogLevel.Information, addedMsg);
     return Results.Ok(new ListUserOperationResponse
@@ -3309,7 +3408,13 @@ app.MapDelete("/lists/{list:int}/owners", async (int list,
     targetList.ListOwners.Remove(user);
     await db.SaveChangesAsync();
     await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
-    await BroadcastActivityPubActorUpdateToFollowersAsync(targetList, db);
+    await ActivityPubBroadcastService.BroadcastActivityPubActorUpdateToFollowersAsync(
+        targetList,
+        db,
+        listForActor => ActivityPubActorFactory.BuildActivityPubListActor(listForActor, activityPubMarkdownPipeline, activityPubPublicKeyPem),
+        ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+        (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+            ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
     var msg = $"{caller.UserName} REMOVED {user.UserName} FROM {targetList.Name} as a listowner";
     DBg.d(LogLevel.Information, msg);
     return Results.Ok(new ListUserOperationResponse
@@ -3429,7 +3534,13 @@ app.MapDelete("/lists/{list:int}/contributors", async (int list,
     targetList.Contributors.Remove(user);
     await db.SaveChangesAsync();
     await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
-    await BroadcastActivityPubActorUpdateToFollowersAsync(targetList, db);
+    await ActivityPubBroadcastService.BroadcastActivityPubActorUpdateToFollowersAsync(
+        targetList,
+        db,
+        listForActor => ActivityPubActorFactory.BuildActivityPubListActor(listForActor, activityPubMarkdownPipeline, activityPubPublicKeyPem),
+        ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+        (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+            ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
     var msg = $"{caller.UserName} REMOVED {user.UserName} FROM {targetList.Name} as a contributor";
     DBg.d(LogLevel.Information, msg);
     return Results.Ok(new ListUserOperationResponse
@@ -3999,1103 +4110,14 @@ app.MapPost("/lists/import", async (IFormFile file,
 
 //============================================================== ACTIVITY PUB IMPLEMENTATION
 
-static string PemEncode(string label, byte[] data)
-{
-    var b64 = Convert.ToBase64String(data);
-    var sb = new StringBuilder();
-    sb.AppendLine($"-----BEGIN {label}-----");
-    for (int i = 0; i < b64.Length; i += 64)
-    {
-        int len = Math.Min(64, b64.Length - i);
-        sb.AppendLine(b64.Substring(i, len));
-    }
-    sb.AppendLine($"-----END {label}-----");
-    return sb.ToString();
-}
-
-static string ResolveConfigPath(string configuredPath)
-{
-    if (Path.IsPathRooted(configuredPath))
-    {
-        return configuredPath;
-    }
-
-    return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, configuredPath));
-}
-
-static string ComputeBodyDigestSha256(string payload)
-{
-    byte[] payloadBytes = Encoding.UTF8.GetBytes(payload);
-    byte[] digestBytes = SHA256.HashData(payloadBytes);
-    return $"SHA-256={Convert.ToBase64String(digestBytes)}";
-}
-
-if (!string.IsNullOrWhiteSpace(GlobalConfig.ActivityPubPrivateKeyPemFile))
-{
-    try
-    {
-        var privateKeyPath = ResolveConfigPath(GlobalConfig.ActivityPubPrivateKeyPemFile);
-        if (!File.Exists(privateKeyPath))
-        {
-            DBg.d(LogLevel.Warning, $"ActivityPub signing key file not found: {privateKeyPath}");
-        }
-        else
-        {
-            string privateKeyPem = await File.ReadAllTextAsync(privateKeyPath);
-            var rsa = RSA.Create();
-            rsa.ImportFromPem(privateKeyPem);
-            activityPubPublicKeyPem = PemEncode("PUBLIC KEY", rsa.ExportSubjectPublicKeyInfo());
-            activityPubSigningKey = rsa;
-            DBg.d(LogLevel.Information, $"ActivityPub signing key loaded from {privateKeyPath}");
-        }
-    }
-    catch (Exception ex)
-    {
-        DBg.d(LogLevel.Warning, $"Unable to load ActivityPub signing key: {ex.Message}");
-    }
-}
-
-string ActivityPubKeyIdForActor(string actorUrl)
-{
-    return $"{actorUrl}#main-key";
-}
-
-string BuildActivityPubSignatureHeader(HttpMethod method, Uri requestUri, string dateHeaderValue, string digestHeaderValue, string contentType, string actorUrl)
-{
-    if (activityPubSigningKey is null)
-    {
-        throw new InvalidOperationException("ActivityPub signing key is not loaded.");
-    }
-
-    string requestTarget = $"{method.Method.ToLowerInvariant()} {requestUri.PathAndQuery}";
-    string hostHeader = requestUri.IsDefaultPort ? requestUri.Host : requestUri.Authority;
-    string signingString =
-        $"(request-target): {requestTarget}\n" +
-        $"host: {hostHeader}\n" +
-        $"date: {dateHeaderValue}\n" +
-        $"digest: {digestHeaderValue}\n" +
-        $"content-type: {contentType}";
-
-    byte[] signature = activityPubSigningKey.SignData(
-        Encoding.UTF8.GetBytes(signingString),
-        HashAlgorithmName.SHA256,
-        RSASignaturePadding.Pkcs1);
-
-    string signatureB64 = Convert.ToBase64String(signature);
-    string keyId = ActivityPubKeyIdForActor(actorUrl);
-
-    return $"keyId=\"{keyId}\",algorithm=\"rsa-sha256\",headers=\"(request-target) host date digest content-type\",signature=\"{signatureB64}\"";
-}
-
-Dictionary<string, object?> BuildActivityPubItemNote(GeList list, GeListItem item)
-{
-    static string NormalizeHashtag(string rawTag)
-    {
-        return string.Concat(rawTag.Trim().TrimStart('#').Where(c => !char.IsWhiteSpace(c)));
-    }
-
-    static string GuessMentionHref(string username, string domain)
-    {
-        return $"https://{domain}/@{username}";
-    }
-
-    List<Dictionary<string, object?>> BuildActivityPubTagObjects(IEnumerable<string?> sourceTexts, IEnumerable<string>? extraHashtags = null)
-    {
-        var tags = new List<Dictionary<string, object?>>();
-        var seenMentions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var seenHashtags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var seenLinks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var mentionRegex = new Regex(@"(?<![\w/])@(?<user>[A-Za-z0-9_]+)@(?<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled);
-        var hashtagRegex = new Regex(@"(?<![\w&])#(?<tag>[A-Za-z0-9_]+)", RegexOptions.Compiled);
-        var linkRegex = new Regex(@"(?<url>https?://[^\s<""')]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-        foreach (var text in sourceTexts.Where(t => !string.IsNullOrWhiteSpace(t)))
-        {
-            foreach (Match match in mentionRegex.Matches(text!))
-            {
-                string username = match.Groups["user"].Value;
-                string domain = match.Groups["domain"].Value;
-                string handle = $"@{username}@{domain}";
-                if (seenMentions.Add(handle))
-                {
-                    tags.Add(new Dictionary<string, object?>
-                    {
-                        ["type"] = "Mention",
-                        ["name"] = handle,
-                        ["href"] = GuessMentionHref(username, domain)
-                    });
-                }
-            }
-
-            foreach (Match match in hashtagRegex.Matches(text!))
-            {
-                string tag = NormalizeHashtag(match.Groups["tag"].Value);
-                if (!string.IsNullOrWhiteSpace(tag) && seenHashtags.Add(tag))
-                {
-                    tags.Add(new Dictionary<string, object?>
-                    {
-                        ["type"] = "Hashtag",
-                        ["name"] = $"#{tag}"
-                    });
-                }
-            }
-
-            foreach (Match match in linkRegex.Matches(text!))
-            {
-                string url = match.Groups["url"].Value;
-                if (!string.IsNullOrWhiteSpace(url) && seenLinks.Add(url))
-                {
-                    tags.Add(new Dictionary<string, object?>
-                    {
-                        ["type"] = "Link",
-                        ["name"] = url,
-                        ["href"] = url
-                    });
-                }
-            }
-        }
-
-        if (extraHashtags is not null)
-        {
-            foreach (var rawTag in extraHashtags.Where(t => !string.IsNullOrWhiteSpace(t)))
-            {
-                string tag = NormalizeHashtag(rawTag!);
-                if (!string.IsNullOrWhiteSpace(tag) && seenHashtags.Add(tag))
-                {
-                    tags.Add(new Dictionary<string, object?>
-                    {
-                        ["type"] = "Hashtag",
-                        ["name"] = $"#{tag}"
-                    });
-                }
-            }
-        }
-
-        return tags;
-    }
-
-    string LinkifyFediverseMentionsInHtml(string html)
-    {
-        if (string.IsNullOrWhiteSpace(html))
-        {
-            return html;
-        }
-
-        var mentionRegex = new Regex(@"(?<![\w""'=/])@(?<user>[A-Za-z0-9_]+)@(?<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled);
-        return mentionRegex.Replace(html, match =>
-        {
-            string username = match.Groups["user"].Value;
-            string domain = match.Groups["domain"].Value;
-            string href = GuessMentionHref(username, domain);
-            return $"<span class=\"h-card\"><a href=\"{WebUtility.HtmlEncode(href)}\" class=\"u-url mention\" rel=\"nofollow noopener noreferrer\">@<span>{WebUtility.HtmlEncode(username)}</span></a></span>";
-        });
-    }
-
-    static string ResolveImageUrl(string rawUrl, string hostBase)
-    {
-        if (string.IsNullOrWhiteSpace(rawUrl))
-        {
-            return string.Empty;
-        }
-
-        string trimmed = rawUrl.Trim();
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absoluteUri))
-        {
-            return absoluteUri.ToString();
-        }
-
-        if (trimmed.StartsWith("//", StringComparison.Ordinal))
-        {
-            return $"https:{trimmed}";
-        }
-
-        if (trimmed.StartsWith("/", StringComparison.Ordinal))
-        {
-            return $"{hostBase}{trimmed}";
-        }
-
-        return $"{hostBase}/{trimmed.TrimStart('/')}";
-    }
-
-    static string GuessImageMediaType(string imageUrl)
-    {
-        if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var uri))
-        {
-            return "image/*";
-        }
-
-        string ext = Path.GetExtension(uri.AbsolutePath).ToLowerInvariant();
-        return ext switch
-        {
-            ".png" => "image/png",
-            ".jpg" => "image/jpeg",
-            ".jpeg" => "image/jpeg",
-            ".gif" => "image/gif",
-            ".webp" => "image/webp",
-            ".avif" => "image/avif",
-            ".svg" => "image/svg+xml",
-            _ => "image/*"
-        };
-    }
-
-    static (string SanitizedComment, List<Dictionary<string, object?>> Attachments) ExtractActivityPubImageAttachments(string? comment, string hostBase)
-    {
-        string working = comment ?? string.Empty;
-        var attachments = new List<Dictionary<string, object?>>();
-        var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        var htmlImgRegex = new Regex(@"<img\b[^>]*>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        var htmlSrcRegex = new Regex(@"src\s*=\s*[\""'](?<url>[^\""']+)[\""']", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        var htmlAltRegex = new Regex(@"alt\s*=\s*[\""'](?<alt>[^\""']*)[\""']", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-        working = htmlImgRegex.Replace(working, match =>
-        {
-            string tag = match.Value;
-            var srcMatch = htmlSrcRegex.Match(tag);
-            if (!srcMatch.Success)
-            {
-                return string.Empty;
-            }
-
-            string resolvedUrl = ResolveImageUrl(srcMatch.Groups["url"].Value, hostBase);
-            if (string.IsNullOrWhiteSpace(resolvedUrl) || !seenUrls.Add(resolvedUrl))
-            {
-                return string.Empty;
-            }
-
-            string altText = string.Empty;
-            var altMatch = htmlAltRegex.Match(tag);
-            if (altMatch.Success)
-            {
-                altText = altMatch.Groups["alt"].Value.Trim();
-            }
-
-            var attachment = new Dictionary<string, object?>
-            {
-                ["type"] = "Document",
-                ["mediaType"] = GuessImageMediaType(resolvedUrl),
-                ["url"] = resolvedUrl
-            };
-            if (!string.IsNullOrWhiteSpace(altText))
-            {
-                attachment["name"] = altText;
-            }
-            attachments.Add(attachment);
-            return string.Empty;
-        });
-
-        var markdownImgRegex = new Regex(@"!\[(?<alt>[^\]]*)\]\((?<url>[^\)\s]+)(?:\s+\""[^\""\)]*\"")?\)", RegexOptions.Compiled);
-        working = markdownImgRegex.Replace(working, match =>
-        {
-            string resolvedUrl = ResolveImageUrl(match.Groups["url"].Value, hostBase);
-            if (string.IsNullOrWhiteSpace(resolvedUrl) || !seenUrls.Add(resolvedUrl))
-            {
-                return string.Empty;
-            }
-
-            string altText = match.Groups["alt"].Value.Trim();
-            var attachment = new Dictionary<string, object?>
-            {
-                ["type"] = "Document",
-                ["mediaType"] = GuessImageMediaType(resolvedUrl),
-                ["url"] = resolvedUrl
-            };
-            if (!string.IsNullOrWhiteSpace(altText))
-            {
-                attachment["name"] = altText;
-            }
-            attachments.Add(attachment);
-            return string.Empty;
-        });
-
-        return (working.Trim(), attachments);
-    }
-
-    string hostBase = (GlobalConfig.Hostname ?? string.Empty).TrimEnd('/');
-    var extractedMedia = ExtractActivityPubImageAttachments(item.Comment, hostBase);
-    string sanitizedComment = extractedMedia.SanitizedComment;
-    var noteAttachments = extractedMedia.Attachments;
-
-    string? hashtagLine = null;
-    var renderedHashtags = item.Tags
-        .Where(tag => !string.IsNullOrWhiteSpace(tag))
-        .Select(tag => NormalizeHashtag(tag))
-        .Where(tag => !string.IsNullOrWhiteSpace(tag))
-        .Select(tag => $"#{tag}")
-        .ToList();
-    if (renderedHashtags.Count > 0)
-    {
-        hashtagLine = string.Join(" ", renderedHashtags);
-    }
-
-    var contentMarkdownParts = new List<string>();
-    if (!string.IsNullOrWhiteSpace(item.Name))
-    {
-        contentMarkdownParts.Add(item.Name.Trim());
-    }
-    if (!string.IsNullOrWhiteSpace(sanitizedComment))
-    {
-        contentMarkdownParts.Add(sanitizedComment);
-    }
-    if (!string.IsNullOrWhiteSpace(hashtagLine))
-    {
-        contentMarkdownParts.Add(hashtagLine);
-    }
-
-    string listFileName = $"{list.Name}.html";
-    string staticItemUrl = $"{hostBase}/{Uri.EscapeDataString(listFileName)}#{item.Id}";
-    string activityPubItemUrl = $"{hostBase}/apv1/items/{item.Id}";
-
-    contentMarkdownParts.Add($"[View in list]({staticItemUrl})");
-
-    string renderedContent = string.Join("\n\n", contentMarkdownParts);
-    var noteTags = BuildActivityPubTagObjects(new[] { item.Name, sanitizedComment, hashtagLine }, item.Tags);
-    string noteSummary = string.IsNullOrWhiteSpace(item.Name) ? string.Empty : item.Name.Trim();
-    string renderedContentHtml = string.IsNullOrWhiteSpace(renderedContent)
-        ? string.Empty
-        : Markdown.ToHtml(renderedContent, activityPubMarkdownPipeline);
-    renderedContentHtml = LinkifyFediverseMentionsInHtml(renderedContentHtml);
-
-    var note = new Dictionary<string, object?>
-    {
-        ["@context"] = "https://www.w3.org/ns/activitystreams",
-        ["id"] = activityPubItemUrl,
-        ["type"] = item.IsDeleted ? "Tombstone" : "Note",
-        ["name"] = item.Name,
-        //["summary"] = noteSummary, // this appears to add a content warning
-        ["content"] = renderedContentHtml,
-        ["url"] = activityPubItemUrl,
-        ["attributedTo"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}",
-        ["to"] = new[] { "https://www.w3.org/ns/activitystreams#Public" },
-        ["cc"] = new[] { "https://www.w3.org/ns/activitystreams#Public" },
-        ["published"] = item.CreatedDate.ToUniversalTime().ToString("o"),
-        ["updated"] = item.ModifiedDate.ToUniversalTime().ToString("o")
-    };
-
-    if (noteTags.Count > 0)
-    {
-        note["tag"] = noteTags;
-    }
-
-    if (noteAttachments.Count > 0)
-    {
-        note["attachment"] = noteAttachments;
-    }
-
-    return note;
-}
-
-Dictionary<string, object?> BuildActivityPubListActor(GeList list)
-{
-    static string NormalizeHandle(string rawHandle)
-    {
-        string trimmed = rawHandle.Trim();
-        return trimmed.StartsWith("@", StringComparison.Ordinal) ? trimmed : $"@{trimmed}";
-    }
-
-    static string GuessMentionHref(string username, string domain)
-    {
-        return $"https://{domain}/@{username}";
-    }
-
-    static string GuessHashtagHref(string tag)
-    {
-        string baseUrl = (GlobalConfig.Hostname ?? string.Empty).TrimEnd('/');
-        return $"{baseUrl}/tags/{Uri.EscapeDataString(tag)}";
-    }
-
-    static bool IsLikelyEmailDomain(string domain)
-    {
-        return domain.Equals("gmail.com", StringComparison.OrdinalIgnoreCase)
-            || domain.Equals("outlook.com", StringComparison.OrdinalIgnoreCase)
-            || domain.Equals("hotmail.com", StringComparison.OrdinalIgnoreCase)
-            || domain.Equals("yahoo.com", StringComparison.OrdinalIgnoreCase)
-            || domain.Equals("icloud.com", StringComparison.OrdinalIgnoreCase)
-            || domain.Equals("proton.me", StringComparison.OrdinalIgnoreCase)
-            || domain.Equals("protonmail.com", StringComparison.OrdinalIgnoreCase);
-    }
-
-    List<Dictionary<string, object?>> BuildActivityPubTagObjects(IEnumerable<string?> sourceTexts)
-    {
-        var tags = new List<Dictionary<string, object?>>();
-        var seenMentions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var seenHashtags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var seenLinks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var mentionRegex = new Regex(@"(?<![\w/])@(?<user>[A-Za-z0-9_]+)@(?<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled);
-        var bareHandleRegex = new Regex(@"(?<![\w/@])(?<user>[A-Za-z0-9_]+)@(?<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled);
-        var emailRegex = new Regex(@"(?<![\w/@])(?<email>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-        var hashtagRegex = new Regex(@"(?<![\w&])#(?<tag>[A-Za-z0-9_]+)", RegexOptions.Compiled);
-        var linkRegex = new Regex(@"(?<url>https?://[^\s<""')]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-        foreach (var text in sourceTexts.Where(t => !string.IsNullOrWhiteSpace(t)))
-        {
-            foreach (Match match in mentionRegex.Matches(text!))
-            {
-                string username = match.Groups["user"].Value;
-                string domain = match.Groups["domain"].Value;
-                string handle = $"@{username}@{domain}";
-                if (seenMentions.Add(handle))
-                {
-                    tags.Add(new Dictionary<string, object?>
-                    {
-                        ["type"] = "Mention",
-                        ["name"] = handle,
-                        ["href"] = GuessMentionHref(username, domain)
-                    });
-                }
-            }
-
-            foreach (Match match in bareHandleRegex.Matches(text!))
-            {
-                string username = match.Groups["user"].Value;
-                string domain = match.Groups["domain"].Value;
-                if (IsLikelyEmailDomain(domain))
-                {
-                    continue;
-                }
-
-                string handle = $"@{username}@{domain}";
-                if (seenMentions.Add(handle))
-                {
-                    tags.Add(new Dictionary<string, object?>
-                    {
-                        ["type"] = "Mention",
-                        ["name"] = handle,
-                        ["href"] = GuessMentionHref(username, domain)
-                    });
-                }
-            }
-
-            foreach (Match match in emailRegex.Matches(text!))
-            {
-                string email = match.Groups["email"].Value;
-                if (!string.IsNullOrWhiteSpace(email) && seenLinks.Add($"mailto:{email}"))
-                {
-                    tags.Add(new Dictionary<string, object?>
-                    {
-                        ["type"] = "Link",
-                        ["name"] = email,
-                        ["href"] = $"mailto:{email}"
-                    });
-                }
-            }
-
-            foreach (Match match in hashtagRegex.Matches(text!))
-            {
-                string tag = match.Groups["tag"].Value.Trim();
-                if (!string.IsNullOrWhiteSpace(tag) && seenHashtags.Add(tag))
-                {
-                    tags.Add(new Dictionary<string, object?>
-                    {
-                        ["type"] = "Hashtag",
-                        ["name"] = $"#{tag}",
-                        ["href"] = GuessHashtagHref(tag)
-                    });
-                }
-            }
-
-            foreach (Match match in linkRegex.Matches(text!))
-            {
-                string url = match.Groups["url"].Value;
-                if (!string.IsNullOrWhiteSpace(url) && seenLinks.Add(url))
-                {
-                    tags.Add(new Dictionary<string, object?>
-                    {
-                        ["type"] = "Link",
-                        ["name"] = url,
-                        ["href"] = url
-                    });
-                }
-            }
-        }
-
-        return tags;
-    }
-
-    string LinkifyFediverseEntitiesInHtml(string html)
-    {
-        if (string.IsNullOrWhiteSpace(html))
-        {
-            return html;
-        }
-
-        var mentionRegex = new Regex(@"(?<![\w""'=/])@(?<user>[A-Za-z0-9_]+)@(?<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled);
-        var withMentions = mentionRegex.Replace(html, match =>
-        {
-            string username = match.Groups["user"].Value;
-            string domain = match.Groups["domain"].Value;
-            string href = GuessMentionHref(username, domain);
-            string handle = $"@{username}@{domain}";
-            return $"<span class=\"h-card\"><a href=\"{WebUtility.HtmlEncode(href)}\" class=\"u-url mention\" rel=\"nofollow noopener noreferrer\">{WebUtility.HtmlEncode(handle)}</a></span>";
-        });
-
-        var bareHandleRegex = new Regex(@"(?<![\w""'=/@])(?<user>[A-Za-z0-9_]+)@(?<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled);
-        var withBareMentions = bareHandleRegex.Replace(withMentions, match =>
-        {
-            string username = match.Groups["user"].Value;
-            string domain = match.Groups["domain"].Value;
-            if (IsLikelyEmailDomain(domain))
-            {
-                return match.Value;
-            }
-
-            string href = GuessMentionHref(username, domain);
-            string handle = $"@{username}@{domain}";
-            return $"<span class=\"h-card\"><a href=\"{WebUtility.HtmlEncode(href)}\" class=\"u-url mention\" rel=\"nofollow noopener noreferrer\">{WebUtility.HtmlEncode(handle)}</a></span>";
-        });
-
-        var hashtagRegex = new Regex(@"(?<![\w&/""'=])#(?<tag>[A-Za-z0-9_]+)(?![\w-])", RegexOptions.Compiled);
-        return hashtagRegex.Replace(withBareMentions, match =>
-        {
-            string tag = match.Groups["tag"].Value;
-            string href = GuessHashtagHref(tag);
-            return $"<a href=\"{WebUtility.HtmlEncode(href)}\" class=\"mention hashtag\" rel=\"tag\">#<span>{WebUtility.HtmlEncode(tag)}</span></a>";
-        });
-    }
-
-    string LinkifyEmailsInMarkdown(string markdown)
-    {
-        if (string.IsNullOrWhiteSpace(markdown))
-        {
-            return markdown;
-        }
-
-        var emailRegex = new Regex(@"(?<![\w/@\(:])(?<local>[A-Za-z0-9._%+-]+)@(?<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-        return emailRegex.Replace(markdown, match =>
-        {
-            string local = match.Groups["local"].Value;
-            string domain = match.Groups["domain"].Value;
-            if (!IsLikelyEmailDomain(domain))
-            {
-                return match.Value;
-            }
-
-            string email = $"{local}@{domain}";
-            return $"[{email}](mailto:{email})";
-        });
-    }
-
-    string actorId = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}";
-    string hostBase = (GlobalConfig.Hostname ?? string.Empty).TrimEnd('/');
-    string listBaseName = list.Name ?? $"list-{list.Id}";
-    string instanceUrl = $"{(GlobalConfig.Hostname ?? string.Empty).TrimEnd('/')}/";
-    const string projectHomepageUrl = "https://github.com/tezoatlipoca/GeFeSLE-server";
-    string iconUrl = string.IsNullOrWhiteSpace(hostBase) ? "/gefesleff.png" : $"{hostBase}/gefesleff.png";
-    string? FormatHelpContact(GeFeSLEUser? user)
-    {
-        if (user is null)
-        {
-            return null;
-        }
-
-        string? username = string.IsNullOrWhiteSpace(user.UserName) ? null : user.UserName.Trim();
-        string? email = string.IsNullOrWhiteSpace(user.Email) ? null : user.Email.Trim();
-        string? primary = username ?? email;
-
-        if (string.IsNullOrWhiteSpace(primary))
-        {
-            return null;
-        }
-
-        if (!string.IsNullOrWhiteSpace(username) && !username.Contains('@'))
-        {
-            if (!string.IsNullOrWhiteSpace(email) && email.Contains('@'))
-            {
-                return email;
-            }
-
-            // Local-only users without an external contact channel are not rendered.
-            return null;
-        }
-
-        if (!primary.Contains('@'))
-        {
-            return null;
-        }
-
-        if (primary.StartsWith("@", StringComparison.Ordinal))
-        {
-            return NormalizeHandle(primary);
-        }
-
-        if (!string.IsNullOrWhiteSpace(username) && username.Contains('@'))
-        {
-            return NormalizeHandle(username);
-        }
-
-        return email ?? primary;
-    }
-
-    var helpContacts = new List<string>();
-    var seenHelpContacts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    var seenUserIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    foreach (var userContact in list.ListOwners.Append(list.Creator).Where(u => u is not null))
-    {
-        if (!string.IsNullOrWhiteSpace(userContact!.Id) && !seenUserIds.Add(userContact.Id))
-        {
-            continue;
-        }
-
-        var contact = FormatHelpContact(userContact);
-        if (!string.IsNullOrWhiteSpace(contact) && seenHelpContacts.Add(contact))
-        {
-            helpContacts.Add(contact);
-        }
-    }
-
-    if (!string.IsNullOrWhiteSpace(GlobalConfig.owner)
-        && seenHelpContacts.Add(GlobalConfig.owner))
-    {
-        helpContacts.Add(GlobalConfig.owner);
-    }
-
-    string helpText = helpContacts.Count > 0
-        ? string.Join(", ", helpContacts)
-        : "the list creator or one of the list owners";
-    string ownerContactMarkdown = LinkifyEmailsInMarkdown($"For help ask {helpText}");
-    string visibilityStatusHtml = list.Visibility == GeListVisibility.Public
-        ? "<span style=\"color: green;\"><b>PUBLIC</b></span>"
-        : "<span style=\"color: red;\"><b>NOT PUBLIC</b> -- list items will not be visible.</span>";
-
-    var summaryMarkdownParts = new List<string>();
-    if (!string.IsNullOrWhiteSpace(list.Comment))
-    {
-        summaryMarkdownParts.Add(list.Comment);
-    }
-    summaryMarkdownParts.Add(ownerContactMarkdown);
-    summaryMarkdownParts.Add($"Status: {visibilityStatusHtml}");
-
-    string combinedSummaryMarkdown = string.Join("\n\n", summaryMarkdownParts);
-    string? actorSummary = string.IsNullOrWhiteSpace(combinedSummaryMarkdown)
-        ? null
-        : Markdown.ToHtml(combinedSummaryMarkdown, activityPubMarkdownPipeline);
-    actorSummary = string.IsNullOrWhiteSpace(actorSummary)
-        ? actorSummary
-        : LinkifyFediverseEntitiesInHtml(actorSummary);
-    var actorTags = BuildActivityPubTagObjects(new[] { list.Comment, ownerContactMarkdown });
-
-    string htmlFileName = $"{listBaseName}.html";
-    string rssFileName = $"rss-{listBaseName}.xml";
-    string jsonFileName = $"{listBaseName}.json";
-
-    string htmlUrl = $"{GlobalConfig.Hostname}/{Uri.EscapeDataString(htmlFileName)}";
-    string rssUrl = $"{GlobalConfig.Hostname}/{Uri.EscapeDataString(rssFileName)}";
-    string jsonUrl = $"{GlobalConfig.Hostname}/{Uri.EscapeDataString(jsonFileName)}";
-
-    bool hasHtmlFile = !string.IsNullOrWhiteSpace(GlobalConfig.wwwroot)
-        && File.Exists(Path.Combine(GlobalConfig.wwwroot, htmlFileName));
-    bool hasRssFile = !string.IsNullOrWhiteSpace(GlobalConfig.wwwroot)
-        && File.Exists(Path.Combine(GlobalConfig.wwwroot, rssFileName));
-    bool hasJsonFile = !string.IsNullOrWhiteSpace(GlobalConfig.wwwroot)
-        && File.Exists(Path.Combine(GlobalConfig.wwwroot, jsonFileName));
-
-    var attachments = new List<Dictionary<string, object?>>();
-    attachments.Add(new Dictionary<string, object?>
-    {
-        ["type"] = "PropertyValue",
-        ["name"] = "List Server/Instance",
-        ["value"] = $"<a href=\"{WebUtility.HtmlEncode(instanceUrl)}\" rel=\"nofollow noopener noreferrer\" target=\"_blank\">{WebUtility.HtmlEncode(instanceUrl)}</a>"
-    });
-    attachments.Add(new Dictionary<string, object?>
-    {
-        ["type"] = "PropertyValue",
-        ["name"] = "Project Homepage",
-        ["value"] = $"<a href=\"{WebUtility.HtmlEncode(projectHomepageUrl)}\" rel=\"nofollow noopener noreferrer\" target=\"_blank\">{WebUtility.HtmlEncode(projectHomepageUrl)}</a>"
-    });
-    if (hasHtmlFile)
-    {
-        attachments.Add(new Dictionary<string, object?>
-        {
-            ["type"] = "PropertyValue",
-            ["name"] = "Static HTML List Page",
-            ["value"] = $"<a href=\"{WebUtility.HtmlEncode(htmlUrl)}\" rel=\"nofollow noopener noreferrer\" target=\"_blank\">{WebUtility.HtmlEncode(htmlUrl)}</a>"
-        });
-    }
-    if (hasRssFile)
-    {
-        attachments.Add(new Dictionary<string, object?>
-        {
-            ["type"] = "PropertyValue",
-            ["name"] = "RSS Feed",
-            ["value"] = $"<a href=\"{WebUtility.HtmlEncode(rssUrl)}\" rel=\"nofollow noopener noreferrer\" target=\"_blank\">{WebUtility.HtmlEncode(rssUrl)}</a>"
-        });
-    }
-    if (hasJsonFile)
-    {
-        attachments.Add(new Dictionary<string, object?>
-        {
-            ["type"] = "PropertyValue",
-            ["name"] = "JSON Export",
-            ["value"] = $"<a href=\"{WebUtility.HtmlEncode(jsonUrl)}\" rel=\"nofollow noopener noreferrer\" target=\"_blank\">{WebUtility.HtmlEncode(jsonUrl)}</a>"
-        });
-    }
-
-    var actor = new Dictionary<string, object?>
-    {
-        ["@context"] = new object[]
-        {
-            "https://www.w3.org/ns/activitystreams",
-            "https://w3id.org/security/v1",
-            new Dictionary<string, object?>
-            {
-                ["schema"] = "http://schema.org#",
-                ["PropertyValue"] = "schema:PropertyValue",
-                ["value"] = "schema:value"
-            }
-        },
-        ["id"] = actorId,
-        ["type"] = "Group",
-        ["name"] = list.Name,
-        ["preferredUsername"] = list.ActivityPubId,
-        ["summary"] = actorSummary,
-        ["icon"] = new Dictionary<string, object?>
-        {
-            ["type"] = "Image",
-            ["mediaType"] = "image/png",
-            ["url"] = iconUrl
-        },
-        ["inbox"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/inbox",
-        ["outbox"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/outbox",
-        ["followers"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/followers"
-    };
-
-    if (hasHtmlFile)
-    {
-        actor["url"] = htmlUrl;
-    }
-
-    if (attachments.Count > 0)
-    {
-        actor["attachment"] = attachments;
-    }
-
-    if (actorTags.Count > 0)
-    {
-        actor["tag"] = actorTags;
-    }
-
-    if (!string.IsNullOrWhiteSpace(activityPubPublicKeyPem))
-    {
-        actor["publicKey"] = new Dictionary<string, object?>
-        {
-            ["id"] = ActivityPubKeyIdForActor(actorId),
-            ["owner"] = actorId,
-            ["publicKeyPem"] = activityPubPublicKeyPem
-        };
-    }
-    // debug .trace levle the actor before we return it
-    DBg.d(LogLevel.Trace, $"ActivityPub actor for list {list.Id}:\n{System.Text.Json.JsonSerializer.Serialize(actor, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })}");
-
-    return actor;
-}
-
-async Task<bool> SendSignedActivityPubMessageAsync(string inboxUrl, string actorUrl, object activityPayload, string successLogMessage)
-{
-    if (activityPubSigningKey is null)
-    {
-        DBg.d(LogLevel.Warning, $"Cannot send ActivityPub message to {inboxUrl}: signing key is not configured.");
-        return false;
-    }
-
-    if (!Uri.TryCreate(inboxUrl, UriKind.Absolute, out var inboxUri))
-    {
-        DBg.d(LogLevel.Warning, $"ActivityPub POST aborted: invalid inbox URL {inboxUrl}");
-        return false;
-    }
-
-    string payload = System.Text.Json.JsonSerializer.Serialize(activityPayload);
-    // TODO: add a config param that governs "Debug of ActivityPub content."
-    DBg.d(LogLevel.Trace,
-        $"ActivityPub outbound message to follower inbox {inboxUrl} from actor {actorUrl}:\n" +
-        System.Text.Json.JsonSerializer.Serialize(activityPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-    string digestHeader = ComputeBodyDigestSha256(payload);
-    string dateHeader = DateTimeOffset.UtcNow.ToString("r");
-
-    using var client = new HttpClient();
-    using var request = new HttpRequestMessage(HttpMethod.Post, inboxUri);
-    request.Content = new StringContent(payload, Encoding.UTF8, "application/activity+json");
-    request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse("application/activity+json");
-
-    string contentTypeHeader = request.Content.Headers.ContentType?.ToString() ?? "application/activity+json";
-
-    string signatureHeader;
-    try
-    {
-        signatureHeader = BuildActivityPubSignatureHeader(HttpMethod.Post, inboxUri, dateHeader, digestHeader, contentTypeHeader, actorUrl);
-    }
-    catch (Exception ex)
-    {
-        DBg.d(LogLevel.Warning, $"ActivityPub POST aborted: could not sign request for {inboxUrl}. {ex.Message}");
-        return false;
-    }
-
-    request.Headers.Host = inboxUri.IsDefaultPort ? inboxUri.Host : inboxUri.Authority;
-    request.Headers.TryAddWithoutValidation("Date", dateHeader);
-    request.Headers.TryAddWithoutValidation("Digest", digestHeader);
-    request.Headers.TryAddWithoutValidation("Signature", signatureHeader);
-    request.Headers.TryAddWithoutValidation("Authorization", $"Signature {signatureHeader}");
-
-    var response = await client.SendAsync(request);
-    if (!response.IsSuccessStatusCode)
-    {
-        var responseText = await response.Content.ReadAsStringAsync();
-        DBg.d(LogLevel.Warning, $"ActivityPub POST failed to {inboxUrl} ({(int)response.StatusCode} {response.StatusCode}): {responseText}");
-        return false;
-    }
-
-    DBg.d(LogLevel.Information, successLogMessage);
-    return true;
-}
-
-async Task BroadcastActivityPubItemToFollowersAsync(GeList list, GeFeSLEDb db, GeListItem item, string activityType, GeListFollower? onlyFollower = null)
-{
-    if (!string.Equals(activityType, "Delete", StringComparison.OrdinalIgnoreCase)
-        && list.Visibility != GeListVisibility.Public)
-    {
-        return;
-    }
-
-    if (!string.Equals(activityType, "Delete", StringComparison.OrdinalIgnoreCase)
-        && (item.IsDeleted || !item.Visible))
-    {
-        return;
-    }
-
-    var actorUrl = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}";
-    var note = BuildActivityPubItemNote(list, item);
-
-    var followers = onlyFollower is not null
-        ? new List<GeListFollower> { onlyFollower }
-        : await db.ListFollowers.Where(f => f.FollowingLists.Contains(list.Id)).ToListAsync();
-
-    foreach (var follower in followers.Where(f => !string.IsNullOrWhiteSpace(f.Id)))
-    {
-        string? followerInbox = await ResolveActorInboxAsync(follower.Id, follower);
-        if (string.IsNullOrWhiteSpace(followerInbox))
-        {
-            DBg.d(LogLevel.Warning, $"Skipping ActivityPub {activityType} for follower {follower.Id}: no inbox available.");
-            continue;
-        }
-
-        bool isCreateActivity = string.Equals(activityType, "Create", StringComparison.OrdinalIgnoreCase);
-        string[] activityTo = isCreateActivity
-            ? new[] { "https://www.w3.org/ns/activitystreams#Public", follower.Id }
-            : new[] { follower.Id };
-
-        var activityPayload = new Dictionary<string, object?>
-        {
-            ["@context"] = "https://www.w3.org/ns/activitystreams",
-            ["id"] = $"{GlobalConfig.Hostname}/apv1/activities/{Guid.NewGuid()}",
-            ["type"] = activityType,
-            ["actor"] = actorUrl,
-            ["object"] = note,
-            ["to"] = activityTo,
-            ["published"] = DateTimeOffset.UtcNow.ToString("o")
-        };
-
-        if (isCreateActivity)
-        {
-            activityPayload["cc"] = new[] { $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/followers" };
-        }
-
-        await SendSignedActivityPubMessageAsync(
-            followerInbox,
-            actorUrl,
-            activityPayload,
-            $"AP {activityType} sent to {followerInbox} for item {item.Id} on list {list.Id}");
-    }
-}
-
-async Task BroadcastAllActivityPubItemsToFollowersAsync(GeList list, GeFeSLEDb db, string activityType)
-{
-    var items = await db.Items
-        .Where(i => i.ListId == list.Id && i.Visible && !i.IsDeleted)
-        .ToListAsync();
-
-    foreach (var item in items)
-    {
-        await BroadcastActivityPubItemToFollowersAsync(list, db, item, activityType);
-    }
-}
-
-async Task RotateActivityPubItemIdsForListVisibilityDropAsync(GeList list, GeFeSLEDb db)
-{
-    string fn = "RotateActivityPubItemIdsForListVisibilityDropAsync";
-    var currentItems = await db.Items
-        .Where(i => i.ListId == list.Id && i.Visible && !i.IsDeleted)
-        .ToListAsync();
-
-    foreach (var current in currentItems)
-    {
-        var cloned = new GeListItem
-        {
-            ListId = current.ListId,
-            Name = current.Name,
-            Comment = current.Comment,
-            IsComplete = current.IsComplete,
-            Visible = true,
-            IsDeleted = false,
-            Tags = current.Tags?.ToList() ?? new List<string>(),
-            CreatedDate = current.CreatedDate,
-            ModifiedDate = current.ModifiedDate,
-            RedirectToItemId = null
-        };
-
-        db.Items.Add(cloned);
-        await db.SaveChangesAsync();
-
-        var predecessorIds = new HashSet<int> { current.Id };
-        bool discovered;
-        do
-        {
-            var moreIds = await db.Items
-                .Where(i => i.ListId == list.Id
-                    && i.RedirectToItemId.HasValue
-                    && predecessorIds.Contains(i.RedirectToItemId.Value)
-                    && !predecessorIds.Contains(i.Id))
-                .Select(i => i.Id)
-                .ToListAsync();
-
-            discovered = moreIds.Count > 0;
-            foreach (var id in moreIds)
-            {
-                predecessorIds.Add(id);
-            }
-        }
-        while (discovered);
-
-        var predecessors = await db.Items
-            .Where(i => i.ListId == list.Id && predecessorIds.Contains(i.Id))
-            .ToListAsync();
-
-        string replacementPath = $"{GlobalConfig.Hostname}/apv1/items/{cloned.Id}";
-        foreach (var predecessor in predecessors)
-        {
-            predecessor.Visible = false;
-            predecessor.IsDeleted = true;
-            predecessor.Comment = replacementPath;
-            predecessor.RedirectToItemId = cloned.Id;
-        }
-
-        await db.SaveChangesAsync();
-
-        DBg.d(LogLevel.Trace, $"{fn}: rotated item {current.Id} -> {cloned.Id} for list {list.Id}");
-        await BroadcastActivityPubItemToFollowersAsync(list, db, current, "Delete");
-    }
-}
-
-async Task BroadcastMovedItemToFollowersAsync(GeList oldList, GeList newList, GeFeSLEDb db, GeListItem item)
-{
-    var oldFollowers = await db.ListFollowers
-        .Where(f => f.FollowingLists.Contains(oldList.Id) && !string.IsNullOrWhiteSpace(f.Id))
-        .ToListAsync();
-    var newFollowers = await db.ListFollowers
-        .Where(f => f.FollowingLists.Contains(newList.Id) && !string.IsNullOrWhiteSpace(f.Id))
-        .ToListAsync();
-
-    var oldFollowerById = oldFollowers
-        .GroupBy(f => f.Id!, StringComparer.OrdinalIgnoreCase)
-        .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-    var newFollowerById = newFollowers
-        .GroupBy(f => f.Id!, StringComparer.OrdinalIgnoreCase)
-        .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-
-    // Followers only on source list should see item removal from their view.
-    foreach (var followerId in oldFollowerById.Keys.Except(newFollowerById.Keys, StringComparer.OrdinalIgnoreCase))
-    {
-        await BroadcastActivityPubItemToFollowersAsync(oldList, db, item, "Delete", oldFollowerById[followerId]);
-    }
-
-    // Followers only on destination list should see a create in their view.
-    foreach (var followerId in newFollowerById.Keys.Except(oldFollowerById.Keys, StringComparer.OrdinalIgnoreCase))
-    {
-        await BroadcastActivityPubItemToFollowersAsync(newList, db, item, "Create", newFollowerById[followerId]);
-    }
-
-    // Followers of both lists should see a modification/move.
-    foreach (var followerId in newFollowerById.Keys.Intersect(oldFollowerById.Keys, StringComparer.OrdinalIgnoreCase))
-    {
-        await BroadcastActivityPubItemToFollowersAsync(newList, db, item, "Update", newFollowerById[followerId]);
-    }
-}
-
-async Task BroadcastActivityPubActorUpdateToFollowersAsync(GeList list, GeFeSLEDb db)
-{
-    if (list.Creator is null || list.ListOwners.Count == 0)
-    {
-        list = await db.Lists
-            .Include(l => l.Creator)
-            .Include(l => l.ListOwners)
-            .FirstOrDefaultAsync(l => l.Id == list.Id) ?? list;
-    }
-
-    var actorUrl = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}";
-    var actorObject = BuildActivityPubListActor(list);
-    var followers = await db.ListFollowers.Where(f => f.FollowingLists.Contains(list.Id)).ToListAsync();
-
-    foreach (var follower in followers.Where(f => !string.IsNullOrWhiteSpace(f.Id)))
-    {
-        string? followerInbox = await ResolveActorInboxAsync(follower.Id, follower);
-        if (string.IsNullOrWhiteSpace(followerInbox))
-        {
-            DBg.d(LogLevel.Warning, $"Skipping ActivityPub actor Update for follower {follower.Id}: no inbox available.");
-            continue;
-        }
-
-        var activityPayload = new Dictionary<string, object?>
-        {
-            ["@context"] = "https://www.w3.org/ns/activitystreams",
-            ["id"] = $"{GlobalConfig.Hostname}/apv1/activities/{Guid.NewGuid()}",
-            ["type"] = "Update",
-            ["actor"] = actorUrl,
-            ["object"] = actorObject,
-            ["to"] = new[] { follower.Id },
-            ["published"] = DateTimeOffset.UtcNow.ToString("o")
-        };
-
-        await SendSignedActivityPubMessageAsync(
-            followerInbox,
-            actorUrl,
-            activityPayload,
-            $"AP Update sent to {followerInbox} for actor/list {list.Id}");
-    }
-}
+(activityPubSigningKey, activityPubPublicKeyPem) =
+    await ActivityPubKeyLoader.LoadFromConfigAsync(GlobalConfig.ActivityPubPrivateKeyPemFile);
 
 // webfinger. /.well-known/webfinger?resource=acct:username@hostname
 app.MapGet("/.well-known/webfinger", async (string resource, GeFeSLEDb db) =>
 {
     string fn = "/.well-known/webfinger (GET)"; DBg.d(LogLevel.Trace, fn);
-    if (!resource.StartsWith("acct:"))    {
-        return Results.BadRequest("Invalid resource format - must start with acct:");
-    }
-    string[] parts = resource.Substring(5).Split('@');
-    if (parts.Length != 2)    {
-        return Results.BadRequest("Invalid resource format - must be acct:username@hostname");
-    }
-    string listname = parts[0];
-    string hostname = parts[1];
-        
-    if (hostname != GlobalConfig.APDomain)    {
-        return Results.BadRequest($"Invalid hostname - must be {GlobalConfig.APDomain ?? "undefined"}");
-    }
-    // remember, Actors in our case are LIST names, not users. so we need to find the list with the name of listname
-    GeList? list = await db.Lists.FirstOrDefaultAsync(l => l.ActivityPubId == listname);
-    if (list == null)    {
-        return Results.NotFound($"No list found with AP handle/name {listname}");
-    }
-    // if we found the list, we can return a webfinger response with the list's URL and its ActivityPub actor URL (which will be /actors/{listname})
-    var response = new
-    {
-        subject = $"acct:{listname}@{GlobalConfig.APDomain}",
-        links = new[]        {
-            new {
-                rel = "self",
-                type = "application/activity+json",
-                href = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}"
-            }
-        }
-    };
-    return Results.Content(System.Text.Json.JsonSerializer.Serialize(response), "application/jrd+json");
+    return await ActivityPubEndpointService.GetWebfingerAsync(resource, db);
 });
 
 // GET /apv1/lists/{listId}
@@ -5108,17 +4130,10 @@ app.MapGet("/.well-known/webfinger", async (string resource, GeFeSLEDb db) =>
 app.MapGet("/apv1/lists/{listId:int}", async (int listId, GeFeSLEDb db) =>
 {
     string fn = "/apv1/lists/{listId} (GET)"; DBg.d(LogLevel.Trace, fn);
-    GeList? list = await db.Lists
-        .Include(l => l.Creator)
-        .Include(l => l.ListOwners)
-        .FirstOrDefaultAsync(l => l.Id == listId);
-    if (list == null)
-    {
-        return Results.NotFound($"List with id {listId} not found");
-    }
-    var actor = BuildActivityPubListActor(list);
-
-    return Results.Content(System.Text.Json.JsonSerializer.Serialize(actor), "application/activity+json");
+    return await ActivityPubEndpointService.GetListActorAsync(
+        listId,
+        db,
+        list => ActivityPubActorFactory.BuildActivityPubListActor(list, activityPubMarkdownPipeline, activityPubPublicKeyPem));
 });
 
 // GET /apv1/lists/{listId}/outbox
@@ -5128,35 +4143,7 @@ app.MapGet("/apv1/lists/{listId:int}", async (int listId, GeFeSLEDb db) =>
 app.MapGet("/apv1/lists/{listId:int}/outbox", async (int listId, GeFeSLEDb db) =>
 {
     string fn = "/apv1/lists/{listId}/outbox (GET)"; DBg.d(LogLevel.Trace, fn);
-    GeList? list = await db.Lists
-        .FirstOrDefaultAsync(l => l.Id == listId);
-    if (list == null)
-    {
-        return Results.NotFound($"List with id {listId} not found");
-    }
-    if (list.Visibility != GeListVisibility.Public)
-    {
-        return Results.StatusCode(403);
-    }
-    var items = await list.GetItems(db);
-
-    var outbox = new Dictionary<string, object?>
-    {
-        ["@context"] = "https://www.w3.org/ns/activitystreams",
-        ["id"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/outbox",
-        ["type"] = list.isOrdered ? "OrderedCollection" : "Collection",
-        ["totalItems"] = items.Count,
-        ["orderedItems"] = items.Select(i => new
-        {
-            id = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/items/{i.Id}",
-            type = "Note",
-            name = i.Name,
-            content = i.Comment,
-            // for simplicity, we'll just use the list's actor URL as the Note's attributedTo
-            attributedTo = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}"
-        })
-    };
-    return Results.Content(System.Text.Json.JsonSerializer.Serialize(outbox), "application/activity+json");
+    return await ActivityPubEndpointService.GetListOutboxAsync(listId, db);
 }).AllowAnonymous();
 
 // GET /apv1/lists/{listId}/items/{itemId}
@@ -5167,70 +4154,20 @@ app.MapGet("/apv1/lists/{listId:int}/outbox", async (int listId, GeFeSLEDb db) =
 app.MapGet("/apv1/lists/{listId:int}/items/{itemId:int}", async (int listId, int itemId, GeFeSLEDb db) =>
 {
     string fn = "/apv1/lists/{listId}/items/{itemId} (GET)"; DBg.d(LogLevel.Trace, fn);
-    GeList? list = await db.Lists
-        .FirstOrDefaultAsync(l => l.Id == listId);
-    if (list == null)
-    {
-        return Results.NotFound($"List with id {listId} not found");
-    }
-    GeListItem? item = await db.Items
-        .FirstOrDefaultAsync(i => i.Id == itemId);
-    if (item == null)
-    {
-        return Results.NotFound($"Item with id {itemId} not found");
-    }
-    if (item.ListId != listId)
-    {
-        return Results.BadRequest($"Item with id {itemId} does not belong to list with id {listId}");
-    }
-    if (item.RedirectToItemId.HasValue)
-    {
-        return Results.Redirect($"/apv1/lists/{listId}/items/{item.RedirectToItemId.Value}", permanent: true);
-    }
-    if (list.Visibility != GeListVisibility.Public)
-    {
-        return Results.StatusCode(403);
-    }
-    if (item.IsDeleted)
-    {
-        return Results.StatusCode(410); // Gone
-    }
-    
-    var note = BuildActivityPubItemNote(list, item);
-    return Results.Content(System.Text.Json.JsonSerializer.Serialize(note), "application/activity+json");
+    return await ActivityPubEndpointService.GetListItemAsync(
+        listId,
+        itemId,
+        db,
+        (list, item) => ActivityPubPayloadFactory.BuildActivityPubItemNote(list, item, activityPubMarkdownPipeline));
 });
 
 app.MapGet("/apv1/items/{itemId:int}", async (int itemId, GeFeSLEDb db) =>
 {
     string fn = "/apv1/items/{itemId} (GET)"; DBg.d(LogLevel.Trace, fn);
-    GeListItem? item = await db.Items.FirstOrDefaultAsync(i => i.Id == itemId);
-    if (item == null)
-    {
-        return Results.NotFound($"Item with id {itemId} not found");
-    }
-
-    if (item.RedirectToItemId.HasValue)
-    {
-        return Results.Redirect($"/apv1/items/{item.RedirectToItemId.Value}", permanent: true);
-    }
-
-    if (item.IsDeleted)
-    {
-        return Results.StatusCode(410); // Gone
-    }
-
-    GeList? list = await db.Lists.FirstOrDefaultAsync(l => l.Id == item.ListId);
-    if (list == null)
-    {
-        return Results.NotFound($"List with id {item.ListId} not found for item {itemId}");
-    }
-    if (list.Visibility != GeListVisibility.Public)
-    {
-        return Results.StatusCode(403);
-    }
-
-    var note = BuildActivityPubItemNote(list, item);
-    return Results.Content(System.Text.Json.JsonSerializer.Serialize(note), "application/activity+json");
+    return await ActivityPubEndpointService.GetItemAsync(
+        itemId,
+        db,
+        (list, item) => ActivityPubPayloadFactory.BuildActivityPubItemNote(list, item, activityPubMarkdownPipeline));
 }).AllowAnonymous();
 
 // GET /apv1/lists/{listId}/items
@@ -5249,409 +4186,43 @@ app.MapGet("/apv1/lists/{listId:int}/items", async (int listId, HttpContext http
 app.MapGet("/apv1/lists/{listId:int}/followers", async (int listId, GeFeSLEDb db) =>
 {
     string fn = "/apv1/lists/{listId}/followers (GET)"; DBg.d(LogLevel.Trace, fn);
-    GeList? list = await db.Lists
-        .FirstOrDefaultAsync(l => l.Id == listId);
-    if (list == null)
-    {
-        return Results.NotFound($"List with id {listId} not found");
-    }
-    if (list.Visibility != GeListVisibility.Public)
-    {
-        return Results.StatusCode(403);
-    }
-
-    // return all followers who follow listId
-    var followers = await db.ListFollowers
-        .Where(f => f.FollowingLists.Contains(listId)).ToListAsync();
-
-    // cast these to ActivityPub actor objects and de-duplicate by IRI
-    var followerDtos = followers
-        .Where(f => !string.IsNullOrWhiteSpace(f.Id))
-        .GroupBy(f => f.Id, StringComparer.OrdinalIgnoreCase)
-        .Select(g => g.First())
-        .Select(f => f.ToApActorDto())
-        .ToList();
-
-    var followerCollection = new Dictionary<string, object?>
-    {
-        ["@context"] = "https://www.w3.org/ns/activitystreams",
-        ["id"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/followers",
-        ["type"] = "Collection",
-        ["totalItems"] = followerDtos.Count,
-        ["items"] = followerDtos
-    };
-
-    return Results.Content(System.Text.Json.JsonSerializer.Serialize(followerCollection), "application/activity+json");
+    return await ActivityPubEndpointService.GetFollowersAsync(listId, db);
 });
-
-async Task<string?> ResolveActorInboxAsync(string actorIri, GeListFollower? knownFollower = null)
-{
-    if (knownFollower is not null && !string.IsNullOrWhiteSpace(knownFollower.Inbox))
-    {
-        return knownFollower.Inbox;
-    }
-
-    if (knownFollower is not null)
-    {
-        // Avoid refetching actor metadata in the same request path if we already tried.
-        var guessedInbox = GeListFollower.GuessInboxFromActorIri(actorIri);
-        if (!string.IsNullOrWhiteSpace(guessedInbox))
-        {
-            knownFollower.Inbox = guessedInbox;
-            return guessedInbox;
-        }
-
-        return null;
-    }
-
-    GeListFollower actorDetails = knownFollower ?? new GeListFollower
-    {
-        Id = actorIri,
-        Type = "Person"
-    };
-
-    await actorDetails.FetchActorInfoFromIriAsync();
-    if (!string.IsNullOrWhiteSpace(actorDetails.Inbox))
-    {
-        return actorDetails.Inbox;
-    }
-
-    var fallbackInbox = GeListFollower.GuessInboxFromActorIri(actorIri);
-    if (!string.IsNullOrWhiteSpace(fallbackInbox))
-    {
-        return fallbackInbox;
-    }
-
-    return null;
-}
-
-async Task<bool> SendActivityPubFollowAckAsync(
-    string inboxUrl,
-    string localActorUrl,
-    string sourceActivityId,
-    string sourceActivityType,
-    string sourceActorIri,
-    string? sourceObjectIri,
-    bool accepted,
-    string statusMessage)
-{
-    var ackActivity = new Dictionary<string, object?>
-    {
-        ["@context"] = "https://www.w3.org/ns/activitystreams",
-        ["id"] = $"{GlobalConfig.Hostname}/apv1/activities/{Guid.NewGuid()}",
-        ["type"] = accepted ? "Accept" : "Reject",
-        ["actor"] = localActorUrl,
-        ["object"] = new Dictionary<string, object?>
-        {
-            ["id"] = sourceActivityId,
-            ["type"] = sourceActivityType,
-            ["actor"] = sourceActorIri,
-            ["object"] = sourceObjectIri
-        },
-        ["summary"] = statusMessage,
-        ["published"] = DateTimeOffset.UtcNow.ToString("o")
-    };
-
-    return await SendSignedActivityPubMessageAsync(
-        inboxUrl,
-        localActorUrl,
-        ackActivity,
-        $"AP {(accepted ? "Accept" : "Reject")} sent to {inboxUrl} for activity {sourceActivityId}");
-}
-
-static string? ReadIriFromActivityPubNode(JsonElement node)
-{
-    if (node.ValueKind == JsonValueKind.String)
-    {
-        return node.GetString();
-    }
-
-    if (node.ValueKind == JsonValueKind.Object)
-    {
-        if (node.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String)
-        {
-            return idProp.GetString();
-        }
-
-        if (node.TryGetProperty("iri", out var iriProp) && iriProp.ValueKind == JsonValueKind.String)
-        {
-            return iriProp.GetString();
-        }
-    }
-
-    return null;
-}
 
 // POST /apv1/lists/{listId}/inbox
 // receives ActivityPub activities from other servers
 // via ApActivityDtos... actions like Create or Delete to Follow or unfollow.
 app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] JsonElement activityJson, GeFeSLEDb db) =>
 {
-    string fn = "/apv1/lists/{listId}/inbox (POST)"; DBg.d(LogLevel.Trace, fn);
-    GeList? list = await db.Lists
-        .FirstOrDefaultAsync(l => l.Id == listId);
-    string expectedActorUrl = $"{GlobalConfig.Hostname}/apv1/lists/{listId}";
-    if (list == null)
-    {
-        return Results.NotFound($"List with id {listId} not found"); 
-        // maybe this should be a 400 instead? dunno. 
-    }       
-    // list is ok
-
-    DBg.d(LogLevel.Trace, $"{fn} <-- {activityJson.GetRawText()}");
-
-    string incomingType = activityJson.TryGetProperty("type", out var typeProp) && typeProp.ValueKind == JsonValueKind.String
-        ? typeProp.GetString() ?? string.Empty
-        : string.Empty;
-    string incomingId = activityJson.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String
-        ? idProp.GetString() ?? $"{GlobalConfig.Hostname}/apv1/activities/unknown-{Guid.NewGuid()}"
-        : $"{GlobalConfig.Hostname}/apv1/activities/unknown-{Guid.NewGuid()}";
-    string? actorIri = activityJson.TryGetProperty("actor", out var actorProp)
-        ? ReadIriFromActivityPubNode(actorProp)
-        : null;
-
-    string? targetObject = null;
-    string? topLevelObjectIri = null;
-    string? nestedObjectType = null;
-    if (activityJson.TryGetProperty("object", out var objectProp))
-    {
-        topLevelObjectIri = ReadIriFromActivityPubNode(objectProp);
-        targetObject = topLevelObjectIri;
-
-        if (objectProp.ValueKind == JsonValueKind.Object)
-        {
-            if (objectProp.TryGetProperty("type", out var nestedTypeProp)
-                && nestedTypeProp.ValueKind == JsonValueKind.String)
-            {
-                nestedObjectType = nestedTypeProp.GetString();
-            }
-
-            // Create{object:{type:Follow,object:"..."}} and Undo/Delete {object:{type:Follow,object:"..."}}
-            if (objectProp.TryGetProperty("object", out var followTargetProp))
-            {
-                targetObject = ReadIriFromActivityPubNode(followTargetProp) ?? targetObject;
-            }
-
-            if (string.IsNullOrWhiteSpace(actorIri)
-                && objectProp.TryGetProperty("actor", out var nestedActorProp))
-            {
-                actorIri = ReadIriFromActivityPubNode(nestedActorProp);
-            }
-        }
-    }
-    
-    // now process the activity.
-    // from what I can tell in AP, follows/unfollow msgs can be direct or indirect:
-    // DIRECT (its just ): 
-    // {
-    // "type": "Follow",
-    // "id": "https://remote.example/activities/12346",
-    // "actor": "https://remote.example/users/alice",
-    // "object": "https://{hostname}/apv1/lists/{listId}",
-    // "to": ["https://{hostname}/apv1/lists/{listId}/followers"]
-    //}
-    // INDIRECT (where its buried within a Create or Delete activity object): 
-    // {                                                            <-- ApCreateFollowDto or ApActivityDto
-    // "type": "Create",
-    // "id": "https://remote.example/activities/12345",
-    // "actor": "https://remote.example/users/alice",
-    // "to": ["https://{hostname}/apv1/lists/{listId}/followers"],  
-    // "object": {                                                  <-- ApActivityFollowObjectDto
-    //   "type": "Follow",                
-    //  "id": "https://remote.example/activities/12345#follow",
-    //  "actor": "https://remote.example/users/alice",
-    //  "object": "https://{hostname}/apv1/lists/{listId}"
-    //  }
-    //}
-    //
-    // AN UNDO looks like:
-    //   {
-    // "@context": "https://www.w3.org/ns/activitystreams",
-    // "id": "https://mastodon.social/users/user123#follows/51971777/undo",
-    // "type": "Undo",
-    // "actor": "https://mastodon.social/users/user123",     
-    // "object": {
-    //   "id": "https://mastodon.social/f722c827-5a8a-4e94-b7c8-928cdcdf12a6",
-    //   "type": "Follow",
-    //   "actor": "https://mastodon.social/users/user123",
-    //   "object": "https://maho.dev/@blog"                         ,-- IRI
-    // }
-    //}
-
-    // if we get this far the deserialization to ApActivityDto worked.
-    expectedActorUrl = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}";
-    bool isDirectFollow = string.Equals(incomingType, "Follow", StringComparison.OrdinalIgnoreCase);
-    bool isDirectUnfollow = string.Equals(incomingType, "Unfollow", StringComparison.OrdinalIgnoreCase);
-    bool isCreateFollow = string.Equals(incomingType, "Create", StringComparison.OrdinalIgnoreCase)
-        && string.Equals(nestedObjectType, "Follow", StringComparison.OrdinalIgnoreCase);
-    bool isUndoFollow = string.Equals(incomingType, "Undo", StringComparison.OrdinalIgnoreCase)
-        && string.Equals(nestedObjectType, "Follow", StringComparison.OrdinalIgnoreCase);
-    bool isDeleteFollow = string.Equals(incomingType, "Delete", StringComparison.OrdinalIgnoreCase)
-        && string.Equals(nestedObjectType, "Follow", StringComparison.OrdinalIgnoreCase);
-    bool isFollow = isDirectFollow || isCreateFollow;
-    bool isUnfollow = isDirectUnfollow || isUndoFollow || isDeleteFollow;
-    bool isDeleteActor = string.Equals(incomingType, "Delete", StringComparison.OrdinalIgnoreCase)
-        && !string.IsNullOrWhiteSpace(actorIri)
-        && !string.IsNullOrWhiteSpace(topLevelObjectIri)
-        && string.Equals(topLevelObjectIri, actorIri, StringComparison.OrdinalIgnoreCase);
-
-    if (string.Equals(incomingType, "Delete", StringComparison.OrdinalIgnoreCase))
-    {
-        DBg.d(LogLevel.Debug,
-            $"{fn} -- Delete diagnostics: nestedObjectType={nestedObjectType ?? "(null)"}, targetObject={targetObject ?? "(null)"}, actorIri={actorIri ?? "(null)"}, topLevelObjectIri={topLevelObjectIri ?? "(null)"}, expectedActorUrl={expectedActorUrl}");
-    }
-
-    if (string.IsNullOrWhiteSpace(actorIri))
-    {
-        DBg.d(LogLevel.Warning, $"{fn} -- activity.actor is null or empty");
-        return Results.BadRequest($"activity.actor is null or empty");
-    }
-
-    // Handle actor self-delete payloads early, before follow/unfollow classification.
-    if (isDeleteActor)
-    {
-        GeListFollower? deletedFollower = await db.ListFollowers.FirstOrDefaultAsync(f => f.Id == actorIri);
-        if (deletedFollower is not null)
-        {
-            bool removed = deletedFollower.FollowingLists.RemoveAll(id => id == list.Id) > 0;
-            if (deletedFollower.FollowingLists.Count == 0)
-            {
-                db.ListFollowers.Remove(deletedFollower);
-            }
-            await db.SaveChangesAsync();
-            if (removed)
-            {
-                await list.RegenerateAllFiles(db);
-            }
-            DBg.d(LogLevel.Information, $"{fn} -- processed Delete actor cleanup for follower {actorIri} on list {list.Id}");
-        }
-        else
-        {
-            DBg.d(LogLevel.Information, $"{fn} -- Delete actor received for unknown follower {actorIri}; ignoring");
-        }
-
-        return Results.Ok($"Delete actor processed for {actorIri}");
-    }
-
-    if (!isFollow && !isUnfollow)
-    {
-        DBg.d(LogLevel.Information, $"{fn} -- ignoring unsupported activity type '{incomingType}' for list inbox");
-        return Results.Ok($"Ignored unsupported ActivityPub activity type: {incomingType}");
-    }
-
-    // Follow/Unfollow semantics must target this list actor.
-    if (string.IsNullOrWhiteSpace(targetObject) || !string.Equals(targetObject, expectedActorUrl, StringComparison.OrdinalIgnoreCase))
-    {
-        DBg.d(LogLevel.Warning, $"{fn} -- activity.object is null or does not match expected actor URL. Expected: {expectedActorUrl}, Actual: {targetObject ?? "(null)"}");
-        string? rejectInbox = await ResolveActorInboxAsync(actorIri);
-        if (!string.IsNullOrWhiteSpace(rejectInbox))
-        {
-            await SendActivityPubFollowAckAsync(rejectInbox, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, false,
-                $"Rejected: activity.object must match {expectedActorUrl}");
-        }
-        return Results.BadRequest($"activity.object is null or does not match expected actor URL. Expected: {expectedActorUrl}, Actual: {targetObject ?? "(null)"}");
-    }
-
-    {
-
-        // see if the follower is already in the table of followers (even if not a follower of THIS list)
-        // if not, create a new GeListFollower and add it to db. 
-        GeListFollower? follower = await db.ListFollowers.FirstOrDefaultAsync(f => f.Id == actorIri);
-
-        if (isUnfollow)
-        {
-            if (follower == null)
-            {
-                DBg.d(LogLevel.Information, $"{fn} -- ignoring unfollow for unknown follower {actorIri}");
-                string? rejectInbox = await ResolveActorInboxAsync(actorIri);
-                if (!string.IsNullOrWhiteSpace(rejectInbox))
-                {
-                    await SendActivityPubFollowAckAsync(rejectInbox, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, false,
-                        $"Unfollow rejected: follower {actorIri} is unknown for this list");
-                }
-                return Results.BadRequest($"Unfollow rejected: follower {actorIri} is unknown for this list");
-            }
-
-            bool removedFromList = follower.FollowingLists.RemoveAll(id => id == list.Id) > 0;
-            if (follower.FollowingLists.Count == 0)
-            {
-                db.ListFollowers.Remove(follower);
-            }
-
-            await db.SaveChangesAsync();
-            string? acceptInbox = await ResolveActorInboxAsync(actorIri, follower);
-            if (string.IsNullOrWhiteSpace(acceptInbox)
-                || !await SendActivityPubFollowAckAsync(acceptInbox, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, true,
-                    $"Unfollow accepted for list {list.Name} (id: {list.Id})"))
-            {
-                return Results.Problem($"Unfollow processed locally but failed to send ActivityPub Accept to {actorIri}", statusCode: 502);
-            }
-
-            if (removedFromList)
-            {
-                await list.RegenerateAllFiles(db);
-            }
-
-            DBg.d(LogLevel.Information, $"{fn} -- unfollow processed for list {list.Name} (id: {list.Id}) by follower {follower.Id}");
-            return Results.Ok($"Unfollow processed for list {list.Name} (id: {list.Id})");
-        }
-
-        if (follower == null)
-        {
-            follower = new GeListFollower
-            {
-                Id = actorIri,
-                Type = "Person"
-            };
-            db.ListFollowers.Add(follower);
-            DBg.d(LogLevel.Information, $"{fn} -- added new follower to DB {follower.Id}");
-        }
-        else
-        {
-            DBg.d(LogLevel.Information, $"{fn} -- found existing follower in DB {follower.Id}");
-        }
-
-        // actuall obtain the actor info from that IRI - should be castable to an ApActorDto
-        await follower.FetchActorInfoFromIriAsync();
-        // regardless of whether the fetch worked (and assuming the IRI is at least valid)
-        // add the new follower to the list's followers.
-        bool addedToList = false;
-        if (!follower.FollowingLists.Contains(list.Id))
-        {
-            follower.FollowingLists.Add(list.Id);
-            addedToList = true;
-            DBg.d(LogLevel.Information, $"{fn} -- added follower {follower.Id} to list {list.Name} (id: {list.Id})");
-        }
-        // save the db
-        await db.SaveChangesAsync();
-
-        string? acceptInboxForFollow = await ResolveActorInboxAsync(actorIri, follower);
-        if (string.IsNullOrWhiteSpace(acceptInboxForFollow)
-            || !await SendActivityPubFollowAckAsync(acceptInboxForFollow, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, true,
-                $"Follow accepted for list {list.Name} (id: {list.Id})"))
-        {
-            return Results.Problem($"Follow processed locally but failed to send ActivityPub Accept to {actorIri}", statusCode: 502);
-        }
-
-        var currentItems = await list.GetItems(db);
-        foreach (var currentItem in currentItems.Where(i => i.Visible && !i.IsDeleted))
-        {
-            await BroadcastActivityPubItemToFollowersAsync(list, db, currentItem, "Create", follower);
-        }
-
-        if (addedToList)
-        {
-            await list.RegenerateAllFiles(db);
-        }
-        
-    }       
-    
-    
-    // if we got this far everything worked great. 
-    return Results.Ok($"Activity received and processed for list {list.Name} (id: {list.Id})");
-    
-    
-    
+    return await ActivityPubInboxService.HandleListInboxAsync(
+        listId,
+        activityJson,
+        db,
+        ActivityPubPayloadFactory.ReadIriFromActivityPubNode,
+        ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+        (inboxUrl, localActorUrl, sourceActivityId, sourceActivityType, sourceActorIri, sourceObjectIri, accepted, statusMessage)
+            => ActivityPubInboxService.SendActivityPubFollowAckAsync(
+                inboxUrl,
+                localActorUrl,
+                sourceActivityId,
+                sourceActivityType,
+                sourceActorIri,
+                sourceObjectIri,
+                accepted,
+                statusMessage,
+                (targetInboxUrl, actorUrl, activityPayload, successLogMessage)
+                    => ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(targetInboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey)),
+        (listForBroadcast, dbForBroadcast, itemForBroadcast, activityTypeForBroadcast, onlyFollowerForBroadcast) =>
+            ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+                listForBroadcast,
+                dbForBroadcast,
+                itemForBroadcast,
+                activityTypeForBroadcast,
+                (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+                ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+                (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                    ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey),
+                onlyFollowerForBroadcast));
 }).AllowAnonymous();
 
 
@@ -5668,20 +4239,7 @@ app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] Json
 app.MapGet("/{actorName:regex(^[A-Za-z0-9_-]+$)}", async (string actorName, GeFeSLEDb db, HttpContext httpContext) =>
 {
     string fn = "/{actorName} (GET)"; DBg.d(LogLevel.Trace, fn);
-
-    if (string.IsNullOrWhiteSpace(actorName))
-    {
-        return Results.NotFound();
-    }
-
-    GeList? list = await db.Lists.FirstOrDefaultAsync(l => l.ActivityPubId == actorName);
-    if (list is null)
-    {
-        return Results.NotFound();
-    }
-
-    string target = $"https://{GlobalConfig.Hostname}/apv1/lists/{list.Id}";
-    return Results.Redirect(target);
+    return await ActivityPubEndpointService.GetActorNameRedirectAsync(actorName, db);
 }).AllowAnonymous();
 
 
