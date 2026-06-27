@@ -67,10 +67,23 @@ For `sitehead`, `bodyheader` and `bodyfooter`, these files should be HTML, but d
 
 ```
     "ActivityPub": {
-        "privateKeyPemFile": "/etc/gefesle/activitypub-private.pem"
+                "privateKeyPemFile": "/etc/gefesle/activitypub-private.pem",
+                "EnableAPActivityLogging": "Partial",
+        "activitiesFolder": "/var/lib/gefesle/activities",
+        "activityRetention": "forever"
     },
 ```
 * **ActivityPub:privateKeyPemFile** - absolute (or relative) path to an RSA private key PEM file used to sign outbound ActivityPub inbox deliveries (for example Accept/Reject responses to Follow/Undo). The matching public key is published from each ActivityPub actor endpoint as `publicKey.publicKeyPem` so remote servers can verify signatures. Without this key, some servers (including Mastodon) reject deliveries with `401 Request not signed`.
+* **ActivityPub:EnableAPActivityLogging** - controls how outbound ActivityPub activity payloads are logged:
+    * `Full` - write each outbound activity payload to `activitiesFolder/{activity-guid}.json`, and log a link to `/apv1/activities/{activity-guid}` instead of dumping full payload JSON. Startup fails if `activitiesFolder` is missing or not writable.
+    * `Partial` - do not write activity files; log payload JSON inline (legacy behavior). `/apv1/activities/{activity-guid}` returns `404`.
+    * `None` - do not write activity files and do not dump activity payload JSON. `/apv1/activities/{activity-guid}` returns `404`.
+* **ActivityPub:activitiesFolder** - filesystem folder used only when `EnableAPActivityLogging` is `Full`. If missing, GeFeSLE attempts to create it at startup. Startup fails if the directory cannot be created or is not writable.
+* **ActivityPub:activityRetention** - retention period for activity payload files in `activitiesFolder` when `EnableAPActivityLogging` is `Full`.
+    * `forever` - no cleanup task is scheduled.
+    * `<N>d` - retain for `N` days (example: `10d`).
+    * `<N>w` - retain for `N` weeks (example: `40w`).
+    * Cleanup is executed by the built-in maintenance scheduler as a recurring background task.
 
 ```
     "OtherSites": {

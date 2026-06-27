@@ -8,6 +8,14 @@ body {
     font-family: sans-serif;
     -webkit-text-size-adjust: 100%;
     -ms-text-size-adjust: 100%;
+    min-height: 100vh;
+}
+
+footer {
+    width: 100%;
+    max-width: 100%;
+    clear: both;
+    display: block;
 }
 
 /* Ensure all major containers are responsive */
@@ -810,10 +818,13 @@ td {
 }
 
 .searchbox {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
     gap: 6px;
     align-items: stretch;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
 
 }
 
@@ -823,8 +834,7 @@ td {
     display: flex;
     flex-direction: column;
     border-radius: 2px;
-    flex: 1 1 calc(50% - 3px);
-    min-width: 280px;
+    min-width: 0;
     width: auto;
     padding: 1px;
     background-color: lightgreen;
@@ -833,32 +843,35 @@ td {
 .textsearch form,
 .tagsearch form {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
 }
 
 
 .textsearch input[type="text"],
 .tagsearch input[type="text"] {
-    flex: 1 1 220px;
+    flex: 1 1 auto;
     box-sizing: border-box;
-    min-width: 220px;
+    min-width: 0;
+    width: 100%;
 }
 
 .result {
-    left: 5vw;
-    width: 100vw;
-    display: inline-block;
+    width: 100%;
+    max-width: 100%;
+    display: block;
     border-radius: 2px;
     padding: 1px;
+    box-sizing: border-box;
+    margin: 0 0 6px 0;
     background-color: lightblue
 }
 
 /* Mobile responsive search boxes */
 @media (max-width: 768px) {
     .searchbox {
-        flex-direction: column;
+        grid-template-columns: 1fr;
         gap: 8px;
     }
 

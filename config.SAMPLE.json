@@ -28,7 +28,10 @@
         "apiTokenSecretKey" : "IlikeBIGbuttsandIcannotlie!Youotherbrotherscan'tdeny!WhenagirlwalksinwithanittybittywaistandaroundthinginyourfaceyougetSPRUNG!"
     },
     "ActivityPub": {
-        "privateKeyPemFile": "/etc/gefesle/activitypub-private.pem"
+        "privateKeyPemFile": "/etc/gefesle/activitypub-private.pem",
+        "EnableAPActivityLogging": "Partial",
+        "activitiesFolder": "/var/lib/gefesle/activities",
+        "activityRetention": "forever"
     },
     "OtherSites": {
         "Google": {

@@ -2,6 +2,12 @@ using System.Net;
 using System.Reflection;
 using GeFeSLE;
 
+public enum APActivityLoggingMode
+{
+    Full,
+    Partial,
+    None
+}
 
 public static class GlobalConfig
 {
@@ -58,6 +64,9 @@ public static class GlobalConfig
 
     // Dedicated ActivityPub signing key (PEM private key file path).
     public static string? ActivityPubPrivateKeyPemFile { get; set; }
+    public static string? ActivityPubActivitiesFolder { get; set; }
+    public static APActivityLoggingMode EnableAPActivityLogging { get; set; } = APActivityLoggingMode.Partial;
+    public static string ActivityPubActivityRetention { get; set; } = "forever";
 
     public static string? googleClientID;
     public static string? googleClientSecret;
@@ -386,6 +395,79 @@ public static class GlobalConfig
             DBg.d(LogLevel.Debug, $"ActivityPub private key file configured: {ActivityPubPrivateKeyPemFile}");
         }
 
+        string? apActivityLoggingModeRaw = config.GetValue<string>("ActivityPub:EnableAPActivityLogging");
+        if (string.IsNullOrWhiteSpace(apActivityLoggingModeRaw))
+        {
+            EnableAPActivityLogging = APActivityLoggingMode.Partial;
+        }
+        else
+        {
+            switch (apActivityLoggingModeRaw.Trim().ToLowerInvariant())
+            {
+                case "full":
+                    EnableAPActivityLogging = APActivityLoggingMode.Full;
+                    break;
+                case "partial":
+                    EnableAPActivityLogging = APActivityLoggingMode.Partial;
+                    break;
+                case "none":
+                    EnableAPActivityLogging = APActivityLoggingMode.None;
+                    break;
+                default:
+                    DBg.d(LogLevel.Warning, $"Unknown ActivityPub:EnableAPActivityLogging value '{apActivityLoggingModeRaw}'. Defaulting to Partial.");
+                    EnableAPActivityLogging = APActivityLoggingMode.Partial;
+                    break;
+            }
+        }
+
+        ActivityPubActivitiesFolder = config.GetValue<string>("ActivityPub:activitiesFolder");
+        string? apActivityRetentionRaw = config.GetValue<string>("ActivityPub:activityRetention");
+        ActivityPubActivityRetention = string.IsNullOrWhiteSpace(apActivityRetentionRaw)
+            ? "forever"
+            : apActivityRetentionRaw.Trim().ToLowerInvariant();
+        if (!IsValidActivityRetentionSpec(ActivityPubActivityRetention))
+        {
+            DBg.d(LogLevel.Critical,
+                $"Invalid ActivityPub:activityRetention value '{apActivityRetentionRaw}'. Use 'forever' or a positive value ending with 'd' (days) or 'w' (weeks), e.g. 10d or 40w. Exiting.");
+            return null;
+        }
+
+        if (EnableAPActivityLogging == APActivityLoggingMode.Full)
+        {
+            if (string.IsNullOrWhiteSpace(ActivityPubActivitiesFolder))
+            {
+                DBg.d(LogLevel.Critical, "ActivityPub:activitiesFolder must be configured when ActivityPub:EnableAPActivityLogging is Full. Exiting.");
+                return null;
+            }
+
+            string activityFolderPath = Path.GetFullPath(ActivityPubActivitiesFolder);
+            try
+            {
+                if (!Directory.Exists(activityFolderPath))
+                {
+                    Directory.CreateDirectory(activityFolderPath);
+                    DBg.d(LogLevel.Information, $"Created ActivityPub activities folder: {activityFolderPath}");
+                }
+
+                string probeFile = Path.Combine(activityFolderPath, $".write-test-{Guid.NewGuid()}.tmp");
+                File.WriteAllText(probeFile, "ok");
+                File.Delete(probeFile);
+            }
+            catch (Exception ex)
+            {
+                DBg.d(LogLevel.Critical, $"ActivityPub activities folder '{activityFolderPath}' is not writable/usable: {ex.Message}. Exiting.");
+                return null;
+            }
+
+            ActivityPubActivitiesFolder = activityFolderPath;
+            DBg.d(LogLevel.Information, $"ActivityPub activity logging mode: {EnableAPActivityLogging}; folder: {ActivityPubActivitiesFolder}");
+        }
+        else
+        {
+            DBg.d(LogLevel.Information, $"ActivityPub activity logging mode: {EnableAPActivityLogging}");
+        }
+        DBg.d(LogLevel.Information, $"ActivityPub activity retention: {ActivityPubActivityRetention}");
+
         // read all of the API and OAuth2, 2nd party site settings
 
         googleClientID = config.GetValue<string>("OtherSites:Google:googleClientID");
@@ -508,6 +590,28 @@ public static class GlobalConfig
         return returnLevel;
 
 
+    }
+
+    private static bool IsValidActivityRetentionSpec(string value)
+    {
+        if (string.Equals(value, "forever", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(value) || value.Length < 2)
+        {
+            return false;
+        }
+
+        char unit = char.ToLowerInvariant(value[^1]);
+        if (unit != 'd' && unit != 'w')
+        {
+            return false;
+        }
+
+        string countPart = value[..^1];
+        return int.TryParse(countPart, out int count) && count > 0;
     }
 }
 

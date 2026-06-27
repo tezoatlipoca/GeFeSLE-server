@@ -396,6 +396,7 @@ builder.Services.AddSwaggerGen(c =>
 
 // Add Windows Service support
 builder.Services.AddWindowsService();
+builder.Services.AddHostedService<MaintenanceSchedulerService>();
 
 var app = builder.Build();
 
@@ -840,15 +841,15 @@ app.UseWhen(context => !GlobalStatic.IsFederationRequest(context.Request), appBr
 //     be able to do/obtain user information for users who are contributors on THEIR lists.
 
 
-app.MapPost("/users", async (GeFeSLEUser user, GeFeSLEDb db,
+app.MapPost("/users", async (UserCreateUpdateDto userDto, GeFeSLEDb db,
 
             HttpContext httpContext,
             UserManager<GeFeSLEUser> userManager,
             RoleManager<IdentityRole> roleManager) =>
 {
-    string fn = "/users (POST)"; DBg.d(LogLevel.Trace, $"{fn}: {user.UserName} {user.Email}");
+    string fn = "/users (POST)"; DBg.d(LogLevel.Trace, $"{fn}: {userDto.UserName} {userDto.Email}");
     // if username AND email are null, return bad request
-    if (string.IsNullOrEmpty(user.UserName) && string.IsNullOrEmpty(user.Email))
+    if (string.IsNullOrEmpty(userDto.UserName) && string.IsNullOrEmpty(userDto.Email))
     {
         DBg.d(LogLevel.Trace, $"{fn} username AND email are both null ==> 400");
         return Results.BadRequest();
@@ -856,10 +857,8 @@ app.MapPost("/users", async (GeFeSLEUser user, GeFeSLEDb db,
     else
     {
         // if the username is empty, use the email. This will cover for google and Microsoft accounts. 
-        if (string.IsNullOrEmpty(user.UserName))
-        {
-            user.UserName = user.Email;
-        }
+        string normalizedUserName = string.IsNullOrEmpty(userDto.UserName) ? userDto.Email : userDto.UserName;
+        var user = new GeFeSLEUser { UserName = normalizedUserName, Email = userDto.Email, PhoneNumber = userDto.PhoneNumber };
         try
         {
             var result = await userManager.CreateAsync(user);
@@ -868,7 +867,8 @@ app.MapPost("/users", async (GeFeSLEUser user, GeFeSLEDb db,
                 // var token = await userManager.GeneratePasswordResetTokenAsync(user);
                 // var result = await userManager.ResetPasswordAsync(user, token, newpassword!);
                 DBg.d(LogLevel.Trace, $"{fn} user created");
-                return Results.Created($"/users/{user.Id}", user);
+                var userRoles = await userManager.GetRolesAsync(user);
+                return Results.Created($"/users/{user.Id}", user.ToResponseDto(userRoles));
             }
             else
             {
@@ -900,7 +900,7 @@ app.MapPost("/users", async (GeFeSLEUser user, GeFeSLEDb db,
 // 404 - specified user not found by id
 // 200 - modified successfully
 // 400 - any other reason w/ error details
-app.MapPut("/users/{userid}", async (GeFeSLEUser user,
+app.MapPut("/users/{userid}", async (string userid, UserCreateUpdateDto userDto,
             GeFeSLEDb db,
             HttpContext httpContext,
             UserManager<GeFeSLEUser> userManager,
@@ -908,13 +908,12 @@ app.MapPut("/users/{userid}", async (GeFeSLEUser user,
 {
     string fn = "/users/{userid} (PUT)"; DBg.d(LogLevel.Trace, fn);
 
-    DBg.d(LogLevel.Trace, $"{fn}: {user}");
+    DBg.d(LogLevel.Trace, $"{fn}: {userDto}");
 
-    var moduser = await userManager.FindByIdAsync(user.Id);
+    var moduser = await userManager.FindByIdAsync(userid);
     if (moduser is null) return Results.NotFound();
 
-    moduser.UserName = user.UserName;
-    moduser.Email = user.Email;
+    moduser.UpdateFromDto(userDto);
 
 
     try
@@ -1020,7 +1019,8 @@ app.MapGet("/users/{username}", async (string username,
     var user = await userManager.FindByNameAsync(username.ToUpper());
     if (user is not null)
     {
-        return Results.Ok(user);
+        var userRoles = await userManager.GetRolesAsync(user);
+        return Results.Ok(user.ToResponseDto(userRoles));
     }
     else
     {
@@ -1054,7 +1054,13 @@ app.MapGet("/users", async (GeFeSLEDb db,
     }
     else
     {
-        return Results.Ok(users);
+        var userDtos = new List<UserResponseDto>();
+        foreach (var user in users)
+        {
+            var userRoles = await userManager.GetRolesAsync(user);
+            userDtos.Add(user.ToResponseDto(userRoles));
+        }
+        return Results.Ok(userDtos);
     }
 
 })
@@ -1431,7 +1437,8 @@ app.MapGet("/lists", async (GeFeSLEDb db,
             list.VisibleItemCount = itemCounts.TryGetValue(list.Id, out int count) ? count : 0;
         }
 
-        return Results.Ok(visibleLists);
+        var responseDtos = visibleLists.Select(l => l.ToResponseDto()).ToList();
+        return Results.Ok(responseDtos);
     }
 })
 .WithEndpointDocs("lists.get");
@@ -1464,7 +1471,7 @@ app.MapGet("/lists/{listid:int}", async (GeFeSLEDb db,
             {
                 DBg.d(LogLevel.Warning, $"{fn} SuperUser bypassed list permissions for {list.Name}");
             }
-            return Results.Ok(list);
+            return Results.Ok(list.ToResponseDto());
 
         }
         else
@@ -1485,7 +1492,7 @@ app.MapGet("/lists/{listid:int}", async (GeFeSLEDb db,
 // 400 - if bad characters in list name (ones that won't play nice with ActivityPub actor names or webfinger acct: handles)
 
 
-app.MapPost("/lists", async (GeList newlist,
+app.MapPost("/lists", async (GeListDto newlistDto,
     GeFeSLEDb db,
     HttpContext httpContext,
     UserManager<GeFeSLEUser> userManager,
@@ -1496,28 +1503,28 @@ app.MapPost("/lists", async (GeList newlist,
     // if the newlist.Name is null, return bad request
     // zTODO: extend with other checks - reserve dnames, bad characters that won't
     // play nice with ActivityPub actor names or webfinger acct: handles
-    if (string.IsNullOrEmpty(newlist.Name))
+    if (string.IsNullOrEmpty(newlistDto.Name))
     {
         return Results.BadRequest("Cannot have a list with no name. A Horse maybe... but not a list.");
     }
-    else if (newlist.Name == GlobalConfig.modListName)
+    else if (newlistDto.Name == GlobalConfig.modListName)
     {
         return Results.BadRequest($"List name {GlobalConfig.modListName} is RESERVED.");
     }
     else
     {
         // check for characters that will cause filesystem problems. 
-        var invalidIndex = newlist.Name.IndexOfAny(Path.GetInvalidFileNameChars());
+        var invalidIndex = newlistDto.Name.IndexOfAny(Path.GetInvalidFileNameChars());
         if (invalidIndex >= 0)
         {
-            return Results.BadRequest($"List name contains invalid character '{newlist.Name[invalidIndex]}' at position {invalidIndex}.");
+            return Results.BadRequest($"List name contains invalid character '{newlistDto.Name[invalidIndex]}' at position {invalidIndex}.");
         }
     }
-    DBg.d(LogLevel.Trace, $"{fn} - new list name: {newlist.Name}");
+    DBg.d(LogLevel.Trace, $"{fn} - new list name: {newlistDto.Name}");
 
     // if the newlist.Name is the same as an existing list, return bad request
-    var list = await db.Lists.Where(l => l.Name == newlist.Name).FirstOrDefaultAsync();
-    if (list is not null)
+    var existingList = await db.Lists.Where(l => l.Name == newlistDto.Name).FirstOrDefaultAsync();
+    if (existingList is not null)
     {
         return Results.BadRequest("List with that name already exists");
     }
@@ -1530,10 +1537,10 @@ app.MapPost("/lists", async (GeList newlist,
 
     // check for newlist.ActivityPubId against characters allowed in AP handles
     // as specified in GlobalConfig.validAPListNameChars
-    DBg.d(LogLevel.Trace, $"{fn} - new list AP id: {newlist.ActivityPubId}");
-    if (!string.IsNullOrEmpty(newlist.ActivityPubId))
+    DBg.d(LogLevel.Trace, $"{fn} - new list AP id: {newlistDto.ActivityPubId}");
+    if (!string.IsNullOrEmpty(newlistDto.ActivityPubId))
     {
-        var invalidActivityPubIdChar = newlist.ActivityPubId
+        var invalidActivityPubIdChar = newlistDto.ActivityPubId
             .Select((c, index) => new { c, index })
             .FirstOrDefault(item => !GlobalConfig.validAPListNameChars.Contains(item.c));
 
@@ -1545,6 +1552,9 @@ app.MapPost("/lists", async (GeList newlist,
     }
 
 
+
+    // Map DTO to domain object
+    var newlist = new GeList { Name = newlistDto.Name, Comment = newlistDto.Comment, ActivityPubId = newlistDto.ActivityPubId, Visibility = newlistDto.Visibility };
 
     newlist.Creator = me;
     newlist.ListOwners.Add(me);
@@ -1655,7 +1665,8 @@ app.MapGet("/lists/{listId:int}/items", async (int listId,
     if (list is null) return Results.NotFound("List not found");
     var items = await list.GetItems(db);
     // TODO: restrict access to items based on list permissions.
-    return Results.Ok(items);
+    var itemDtos = items.Select(i => i.ToResponseDto()).ToList();
+    return Results.Ok(itemDtos);
 })
 .WithEndpointDocs("lists.listid.items.get");
 // TODO: restreict access toitems based on list permissions. 
@@ -1683,7 +1694,7 @@ app.MapGet("/items/{id:int}", async (int id,
         {
             return Results.Redirect($"/items/{showitem.RedirectToItemId.Value}", permanent: true);
         }
-        return Results.Ok(showitem);
+        return Results.Ok(showitem.ToResponseDto());
     }
     else
     {
@@ -1772,20 +1783,22 @@ app.MapGet("/posts/{itemId:int}", async (int itemId, GeFeSLEDb db) =>
 }).AllowAnonymous();
 
 app.MapPost("/items", async (
-    [FromBody] GeListItem newitem,
+    [FromBody] GeListItemCreateUpdateDto itemDto,
     GeFeSLEDb db,
     UserManager<GeFeSLEUser> userManager,
     HttpContext httpContext,
     GeListFileController geListFileController) =>
 {
     string fn = "/items (POST)"; DBg.d(LogLevel.Trace, fn);
-    DBg.d(LogLevel.Trace, $"{fn} <- {System.Text.Json.JsonSerializer.Serialize(newitem)}");
+    DBg.d(LogLevel.Trace, $"{fn} <- {System.Text.Json.JsonSerializer.Serialize(itemDto)}");
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-    // if the ListId of newitem is 0 (which is ok - no value in json int is 0), then set it to listid
-    if (newitem.ListId == 0)
+    // if the ListId of itemDto is 0 (which is ok - no value in json int is 0), then set it to listid
+    if (itemDto.ListId == 0)
     {
         return Results.BadRequest("New item listID is invalid.");
     }
+    // Map DTO to domain object
+    var newitem = new GeListItem { ListId = itemDto.ListId, Name = itemDto.Name, Comment = itemDto.Comment, IsComplete = itemDto.IsComplete, Visible = itemDto.Visible, Tags = new List<string>(itemDto.Tags) };
     db.Items.Add(newitem);
     await db.SaveChangesAsync();
 
@@ -1817,7 +1830,7 @@ app.MapPost("/items", async (
         ActivityPubDeliveryUtils.ResolveActorInboxAsync,
         (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
             ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
-    return Results.Created($"/items/{newitem.Id}", newitem);
+    return Results.Created($"/items/{newitem.Id}", newitem.ToResponseDto());
 }).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
@@ -1826,20 +1839,17 @@ app.MapPost("/items", async (
 
 
 app.MapPut("/items/{itemId:int}", async (int itemId,
-        [FromBody] GeListItem inputItem,
+        [FromBody] GeListItemCreateUpdateDto inputItemDto,
         GeFeSLEDb db,
         UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext,
         GeListFileController geListFileController) =>
 {
     string fn = "/items/{itemId:int} (PUT)"; DBg.d(LogLevel.Trace, fn);
-    DBg.d(LogLevel.Trace, $"{fn} <- {System.Text.Json.JsonSerializer.Serialize(inputItem)}");
+    DBg.d(LogLevel.Trace, $"{fn} <- {System.Text.Json.JsonSerializer.Serialize(inputItemDto)}");
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-    // make sure the itemID in the URL matches the itemID in the body, if not return bad request
-    if (itemId != inputItem.Id)    {
-        return Results.BadRequest("Item ID in URL does not match item ID in inputItem.");
-    }
-    var moditem = await db.Items.FirstOrDefaultAsync(item => item.Id == inputItem.Id);
+    // Verify the item exists
+    var moditem = await db.Items.FirstOrDefaultAsync(item => item.Id == itemId);
     // check for listowner or contributor of the list this item belongs to
     if (moditem is null) return Results.NotFound();
     // if the item's listid is different from the inputItem's listid, then we have to make sure the 
@@ -1854,15 +1864,15 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
     // if the listid is changing, find the NEW list and check permissions on that too
     var itemMoved = false;
     GeList? destinationListForMove = null;
-    if (moditem.ListId != inputItem.ListId)
+    if (moditem.ListId != inputItemDto.ListId)
     {
         itemMoved = true;
         destinationListForMove = await db.Lists
             .Include(l => l.Creator)
             .Include(l => l.ListOwners)
             .Include(l => l.Contributors)
-            .FirstOrDefaultAsync(l => l.Id == inputItem.ListId);
-        if (destinationListForMove is null) return Results.NotFound($"New list {inputItem.ListId} not found");
+            .FirstOrDefaultAsync(l => l.Id == inputItemDto.ListId);
+        if (destinationListForMove is null) return Results.NotFound($"New list {inputItemDto.ListId} not found");
         (bool canModifyOld, string? ynotOld) = oldlist.IsUserAllowedToModify(user);
         (bool canModifyNew, string? ynotNew) = destinationListForMove.IsUserAllowedToModify(user);
         if (!canModifyOld || !canModifyNew)
@@ -1877,19 +1887,14 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
         }
     }
     // otherwise, modify away boyo. 
-    moditem.Name = inputItem.Name;
-    moditem.Comment = inputItem.Comment;
-    moditem.IsComplete = inputItem.IsComplete;
-    moditem.Tags = inputItem.Tags;
-    moditem.ModifiedDate = DateTime.Now;
-    moditem.Visible = inputItem.Visible;
-    moditem.ListId = inputItem.ListId;
+    moditem.UpdateFromDto(inputItemDto);
+    moditem.ListId = inputItemDto.ListId;
 
     await db.SaveChangesAsync();
     
     // "attachments" protection check - if the item references an upload we want to set the protection to match 
     // the list that its NOW .. CURRENTLY in -- IT MAY HAVE MOVED
-    var nowlist = destinationListForMove ?? await db.Lists.FindAsync(inputItem.ListId);
+    var nowlist = destinationListForMove ?? await db.Lists.FindAsync(inputItemDto.ListId);
     List<string> itemfiles = moditem.LocalFiles();
     if (nowlist.Visibility > GeListVisibility.Public)
     {
@@ -3040,10 +3045,10 @@ app.MapGet("/lists/{list:int}/users", async (int list,
     else
     {
         // take the list's .Creator, .ListOwners and .Contributors and return them as json
-        var creator = listObj.Creator;
-        var listowners = listObj.ListOwners;
-        var contributors = listObj.Contributors;
-        var result = new { creator, listowners, contributors };
+        var creatorDto = listObj.Creator?.ToSummaryDto();
+        var listownersDto = listObj.ListOwners.Select(u => u.ToSummaryDto()).ToList();
+        var contributorsDto = listObj.Contributors.Select(u => u.ToSummaryDto()).ToList();
+        var result = new GeListUsersDto { Creator = creatorDto, ListOwners = listownersDto, Contributors = contributorsDto };
         return Results.Ok(result);
     }
 
@@ -3955,15 +3960,17 @@ app.MapPost("/items/{itemid:int}/report", async (int itemid,
 }).AllowAnonymous();
 
 app.MapPost("/lists/{listid:int}/suggest", async (int listid,
-    GeListItem newitem,
+    GeListItemCreateUpdateDto itemDto,
     GeFeSLEDb db,
     UserManager<GeFeSLEUser> userManager,
     HttpContext httpContext,
     GeListFileController geListFileController) =>
 {
     string fn = "/lists/{listid:int}/suggest (POST)"; DBg.d(LogLevel.Trace, fn);
-    DBg.d(LogLevel.Trace, $"{fn} <- {System.Text.Json.JsonSerializer.Serialize(newitem)}");
+    DBg.d(LogLevel.Trace, $"{fn} <- {System.Text.Json.JsonSerializer.Serialize(itemDto)}");
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    // Map DTO to domain object
+    var newitem = new GeListItem { ListId = itemDto.ListId, Name = itemDto.Name, Comment = itemDto.Comment, IsComplete = itemDto.IsComplete, Visible = false, Tags = new List<string>(itemDto.Tags) };
     // if the ListId of newitem is 0 (which is ok - no value in json int is 0), then set it to listid
     if (newitem.ListId == 0)
     {
@@ -3973,9 +3980,6 @@ app.MapPost("/lists/{listid:int}/suggest", async (int listid,
     {
         if (newitem.ListId != listid) return Results.BadRequest("ListId does not match");
     }
-
-    // because this is a SUGGESTION, turn its visible to off:
-    newitem.Visible = false;
 
     GeList? newitemList = await db.Lists.FirstOrDefaultAsync(l => l.Id == newitem.ListId);
     if (newitemList is null)
@@ -4040,7 +4044,7 @@ app.MapPost("/lists/{listid:int}/suggest", async (int listid,
     await modlist.GenerateRSSFeed(db);
     await modlist.GenerateJSON(db);
 
-    return Results.Created($"/showitems/{newitem.ListId}/{newitem.Id}", newitem);
+    return Results.Created($"/showitems/{newitem.ListId}/{newitem.Id}", newitem.ToResponseDto());
 }).AllowAnonymous();
 
 app.MapGet("/lists/export", async (GeFeSLEDb db) =>
@@ -4112,6 +4116,7 @@ app.MapPost("/lists/import", async (IFormFile file,
 
 (activityPubSigningKey, activityPubPublicKeyPem) =
     await ActivityPubKeyLoader.LoadFromConfigAsync(GlobalConfig.ActivityPubPrivateKeyPemFile);
+ActivityPubActivityLogStore.RegisterMaintenanceTasks();
 
 // webfinger. /.well-known/webfinger?resource=acct:username@hostname
 app.MapGet("/.well-known/webfinger", async (string resource, GeFeSLEDb db) =>
@@ -4119,6 +4124,23 @@ app.MapGet("/.well-known/webfinger", async (string resource, GeFeSLEDb db) =>
     string fn = "/.well-known/webfinger (GET)"; DBg.d(LogLevel.Trace, fn);
     return await ActivityPubEndpointService.GetWebfingerAsync(resource, db);
 });
+
+app.MapGet("/apv1/activities/{activityId}", async (string activityId) =>
+{
+    string fn = "/apv1/activities/{activityId} (GET)"; DBg.d(LogLevel.Trace, fn);
+    var readResult = await ActivityPubActivityLogStore.TryReadActivityPayloadAsync(activityId);
+    if (readResult.Found && readResult.Payload is not null)
+    {
+        return Results.Content(readResult.Payload, "application/activity+json");
+    }
+
+    if (!string.IsNullOrWhiteSpace(readResult.Error))
+    {
+        DBg.d(LogLevel.Warning, $"{fn} failed reading activity payload for {activityId}: {readResult.Error}");
+    }
+
+    return Results.NotFound();
+}).AllowAnonymous();
 
 // GET /apv1/lists/{listId}
 // returns ActivityStreams Actor with: 

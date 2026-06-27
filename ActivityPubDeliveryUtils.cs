@@ -54,9 +54,12 @@ public static class ActivityPubDeliveryUtils
         }
 
         string payload = JsonSerializer.Serialize(activityPayload);
-        DBg.d(LogLevel.Trace,
-            $"ActivityPub outbound message to follower inbox {inboxUrl} from actor {actorUrl}:\n" +
-            JsonSerializer.Serialize(activityPayload, new JsonSerializerOptions { WriteIndented = true }));
+        if (ActivityPubActivityLogStore.IsPartialLoggingEnabled())
+        {
+            DBg.d(LogLevel.Trace,
+                $"ActivityPub outbound message to follower inbox {inboxUrl} from actor {actorUrl}:\n" +
+                JsonSerializer.Serialize(activityPayload, new JsonSerializerOptions { WriteIndented = true }));
+        }
         string digestHeader = ComputeBodyDigestSha256(payload);
         string dateHeader = DateTimeOffset.UtcNow.ToString("r");
 
@@ -92,7 +95,24 @@ public static class ActivityPubDeliveryUtils
             return false;
         }
 
-        DBg.d(LogLevel.Information, successLogMessage);
+        if (ActivityPubActivityLogStore.IsFullLoggingEnabled())
+        {
+            var writeResult = await ActivityPubActivityLogStore.TryWriteActivityPayloadAsync(payload);
+            if (writeResult.Wrote && !string.IsNullOrWhiteSpace(writeResult.ActivityUrl))
+            {
+                DBg.d(LogLevel.Information, $"{successLogMessage} | Activity: {writeResult.ActivityUrl}");
+            }
+            else
+            {
+                DBg.d(LogLevel.Warning,
+                    $"{successLogMessage} | Failed to persist ActivityPub activity payload: {writeResult.Error ?? "unknown error"}");
+            }
+        }
+        else
+        {
+            DBg.d(LogLevel.Information, successLogMessage);
+        }
+
         return true;
     }
 
