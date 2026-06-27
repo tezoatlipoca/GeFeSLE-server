@@ -1659,6 +1659,85 @@ app.MapGet("/items/{id:int}", async (int id,
 })
 .WithEndpointDocs("items.id.get");
 
+app.MapGet("/posts/{itemId:int}", async (int itemId, GeFeSLEDb db) =>
+{
+    string fn = "/posts/{itemId:int} (GET)"; DBg.d(LogLevel.Trace, fn);
+
+    GeListItem? item = await db.Items.FirstOrDefaultAsync(i => i.Id == itemId);
+    if (item == null)
+    {
+        return Results.NotFound($"Item with id {itemId} not found");
+    }
+
+    if (item.RedirectToItemId.HasValue)
+    {
+        return Results.Redirect($"/posts/{item.RedirectToItemId.Value}", permanent: true);
+    }
+
+    if (item.IsDeleted)
+    {
+        return Results.StatusCode(410);
+    }
+
+    GeList? list = await db.Lists.FirstOrDefaultAsync(l => l.Id == item.ListId);
+    if (list == null)
+    {
+        return Results.NotFound($"List with id {item.ListId} not found for item {itemId}");
+    }
+
+    if (list.Visibility != GeListVisibility.Public)
+    {
+        return Results.StatusCode(403);
+    }
+
+    string hostBase = (GlobalConfig.Hostname ?? string.Empty).TrimEnd('/');
+    string canonicalUrl = $"{hostBase}/posts/{item.Id}";
+    string listFileName = $"{list.Name}.html";
+    string listAnchorUrl = $"{hostBase}/{Uri.EscapeDataString(listFileName)}#{item.Id}";
+
+    string title = string.IsNullOrWhiteSpace(item.Name) ? $"List item {item.Id}" : item.Name;
+    string descriptionRaw = string.IsNullOrWhiteSpace(item.Comment) ? title : item.Comment;
+    string description = descriptionRaw.Replace("\r", " ").Replace("\n", " ").Trim();
+    if (description.Length > 280)
+    {
+        description = description.Substring(0, 277) + "...";
+    }
+
+    string contentHtml = string.Empty;
+    if (!string.IsNullOrWhiteSpace(item.Comment))
+    {
+        contentHtml = Markdown.ToHtml(item.Comment, activityPubMarkdownPipeline);
+    }
+
+    var sb = new StringBuilder();
+    sb.AppendLine("<!DOCTYPE html>");
+    sb.AppendLine("<html>");
+    sb.AppendLine("<head>");
+    sb.AppendLine("<meta charset=\"utf-8\">");
+    sb.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
+    sb.AppendLine($"<title>{WebUtility.HtmlEncode(title)}</title>");
+    sb.AppendLine($"<link rel=\"canonical\" href=\"{WebUtility.HtmlEncode(canonicalUrl)}\">");
+    sb.AppendLine("<meta property=\"og:type\" content=\"article\">");
+    sb.AppendLine($"<meta property=\"og:title\" content=\"{WebUtility.HtmlEncode(title)}\">");
+    sb.AppendLine($"<meta property=\"og:description\" content=\"{WebUtility.HtmlEncode(description)}\">");
+    sb.AppendLine($"<meta property=\"og:url\" content=\"{WebUtility.HtmlEncode(canonicalUrl)}\">");
+    sb.AppendLine("<meta name=\"twitter:card\" content=\"summary\">");
+    sb.AppendLine($"<meta name=\"twitter:title\" content=\"{WebUtility.HtmlEncode(title)}\">");
+    sb.AppendLine($"<meta name=\"twitter:description\" content=\"{WebUtility.HtmlEncode(description)}\">");
+    sb.AppendLine("</head>");
+    sb.AppendLine("<body>");
+    sb.AppendLine($"<h1>{WebUtility.HtmlEncode(title)}</h1>");
+    if (!string.IsNullOrWhiteSpace(contentHtml))
+    {
+        sb.AppendLine($"<div>{contentHtml}</div>");
+    }
+    sb.AppendLine($"<p><a href=\"{WebUtility.HtmlEncode(listAnchorUrl)}\">View in list</a></p>");
+    sb.AppendLine("</body>");
+    sb.AppendLine("</html>");
+
+    return Results.Content(sb.ToString(), "text/html");
+}).AllowAnonymous();
+
 app.MapPost("/items", async (
     [FromBody] GeListItem newitem,
     GeFeSLEDb db,
@@ -4141,6 +4220,7 @@ Dictionary<string, object?> BuildActivityPubItemNote(GeList list, GeListItem ite
     string hostBase = (GlobalConfig.Hostname ?? string.Empty).TrimEnd('/');
     string listFileName = $"{list.Name}.html";
     string staticItemUrl = $"{hostBase}/{Uri.EscapeDataString(listFileName)}#{item.Id}";
+    string activityPubItemUrl = $"{hostBase}/apv1/items/{item.Id}";
 
     contentMarkdownParts.Add($"[View in list]({staticItemUrl})");
 
@@ -4154,12 +4234,14 @@ Dictionary<string, object?> BuildActivityPubItemNote(GeList list, GeListItem ite
     var note = new Dictionary<string, object?>
     {
         ["@context"] = "https://www.w3.org/ns/activitystreams",
-        ["id"] = $"{GlobalConfig.Hostname}/apv1/items/{item.Id}",
+        ["id"] = activityPubItemUrl,
         ["type"] = item.IsDeleted ? "Tombstone" : "Note",
         ["name"] = item.Name,
         ["content"] = renderedContentHtml,
         ["url"] = staticItemUrl,
         ["attributedTo"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}",
+        ["to"] = new[] { "https://www.w3.org/ns/activitystreams#Public" },
+        ["cc"] = new[] { "https://www.w3.org/ns/activitystreams#Public" },
         ["published"] = item.CreatedDate.ToUniversalTime().ToString("o"),
         ["updated"] = item.ModifiedDate.ToUniversalTime().ToString("o")
     };
@@ -5188,12 +5270,21 @@ app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] Json
         : null;
 
     string? targetObject = null;
+    string? topLevelObjectIri = null;
+    string? nestedObjectType = null;
     if (activityJson.TryGetProperty("object", out var objectProp))
     {
-        targetObject = ReadIriFromActivityPubNode(objectProp);
+        topLevelObjectIri = ReadIriFromActivityPubNode(objectProp);
+        targetObject = topLevelObjectIri;
 
         if (objectProp.ValueKind == JsonValueKind.Object)
         {
+            if (objectProp.TryGetProperty("type", out var nestedTypeProp)
+                && nestedTypeProp.ValueKind == JsonValueKind.String)
+            {
+                nestedObjectType = nestedTypeProp.GetString();
+            }
+
             // Create{object:{type:Follow,object:"..."}} and Undo/Delete {object:{type:Follow,object:"..."}}
             if (objectProp.TryGetProperty("object", out var followTargetProp))
             {
@@ -5246,47 +5337,74 @@ app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] Json
     // }
     //}
 
-    // if we get this far the deserialization to ApActivityDto worked. 
-    // 1. check that the activity.object is a valid URL that points to this list's actor URL
+    // if we get this far the deserialization to ApActivityDto worked.
     expectedActorUrl = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}";
-    if (string.IsNullOrWhiteSpace(targetObject) || !string.Equals(targetObject, expectedActorUrl, StringComparison.OrdinalIgnoreCase))
-    {
-        DBg.d(LogLevel.Warning, $"{fn} -- activity.object is null or does not match expected actor URL. Expected: {expectedActorUrl}, Actual: {targetObject ?? "(null)"}");
-        if (!string.IsNullOrWhiteSpace(actorIri))
-        {
-            string? rejectInbox = await ResolveActorInboxAsync(actorIri);
-            if (!string.IsNullOrWhiteSpace(rejectInbox))
-            {
-                await SendActivityPubFollowAckAsync(rejectInbox, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, false,
-                    $"Rejected: activity.object must match {expectedActorUrl}");
-            }
-        }
-        return Results.BadRequest($"activity.object is null or does not match expected actor URL. Expected: {expectedActorUrl}, Actual: {targetObject ?? "(null)"}");
-    }
-    // 2. check that the activity.actor is a valid URL that points to a valid actor on the remote server
+    bool isDirectFollow = string.Equals(incomingType, "Follow", StringComparison.OrdinalIgnoreCase);
+    bool isDirectUnfollow = string.Equals(incomingType, "Unfollow", StringComparison.OrdinalIgnoreCase);
+    bool isCreateFollow = string.Equals(incomingType, "Create", StringComparison.OrdinalIgnoreCase)
+        && string.Equals(nestedObjectType, "Follow", StringComparison.OrdinalIgnoreCase);
+    bool isUndoFollow = string.Equals(incomingType, "Undo", StringComparison.OrdinalIgnoreCase)
+        && string.Equals(nestedObjectType, "Follow", StringComparison.OrdinalIgnoreCase);
+    bool isDeleteFollow = string.Equals(incomingType, "Delete", StringComparison.OrdinalIgnoreCase)
+        && string.Equals(nestedObjectType, "Follow", StringComparison.OrdinalIgnoreCase);
+    bool isFollow = isDirectFollow || isCreateFollow;
+    bool isUnfollow = isDirectUnfollow || isUndoFollow || isDeleteFollow;
+    bool isDeleteActor = string.Equals(incomingType, "Delete", StringComparison.OrdinalIgnoreCase)
+        && !string.IsNullOrWhiteSpace(actorIri)
+        && !string.IsNullOrWhiteSpace(topLevelObjectIri)
+        && string.Equals(topLevelObjectIri, actorIri, StringComparison.OrdinalIgnoreCase);
+
     if (string.IsNullOrWhiteSpace(actorIri))
     {
         DBg.d(LogLevel.Warning, $"{fn} -- activity.actor is null or empty");
         return Results.BadRequest($"activity.actor is null or empty");
     }
-    else {
-        bool isUnfollow = string.Equals(incomingType, "Undo", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(incomingType, "Delete", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(incomingType, "Unfollow", StringComparison.OrdinalIgnoreCase);
-        bool isFollow = string.Equals(incomingType, "Follow", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(incomingType, "Create", StringComparison.OrdinalIgnoreCase);
 
-        if (!isFollow && !isUnfollow)
+    if (!isFollow && !isUnfollow)
+    {
+        if (isDeleteActor)
         {
-            var unsupportedMsg = $"Unsupported ActivityPub activity type: {incomingType}";
-            DBg.d(LogLevel.Warning, $"{fn} -- {unsupportedMsg}");
-            string? rejectInbox = await ResolveActorInboxAsync(actorIri);
-            if (!string.IsNullOrWhiteSpace(rejectInbox))
+            GeListFollower? deletedFollower = await db.ListFollowers.FirstOrDefaultAsync(f => f.Id == actorIri);
+            if (deletedFollower is not null)
             {
-                await SendActivityPubFollowAckAsync(rejectInbox, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, false, unsupportedMsg);
+                bool removed = deletedFollower.FollowingLists.RemoveAll(id => id == list.Id) > 0;
+                if (deletedFollower.FollowingLists.Count == 0)
+                {
+                    db.ListFollowers.Remove(deletedFollower);
+                }
+                await db.SaveChangesAsync();
+                if (removed)
+                {
+                    await list.RegenerateAllFiles(db);
+                }
+                DBg.d(LogLevel.Information, $"{fn} -- processed Delete actor cleanup for follower {actorIri} on list {list.Id}");
             }
-            return Results.BadRequest(unsupportedMsg);
+            else
+            {
+                DBg.d(LogLevel.Information, $"{fn} -- Delete actor received for unknown follower {actorIri}; ignoring");
+            }
+
+            return Results.Ok($"Delete actor processed for {actorIri}");
         }
+
+        DBg.d(LogLevel.Information, $"{fn} -- ignoring unsupported activity type '{incomingType}' for list inbox");
+        return Results.Ok($"Ignored unsupported ActivityPub activity type: {incomingType}");
+    }
+
+    // Follow/Unfollow semantics must target this list actor.
+    if (string.IsNullOrWhiteSpace(targetObject) || !string.Equals(targetObject, expectedActorUrl, StringComparison.OrdinalIgnoreCase))
+    {
+        DBg.d(LogLevel.Warning, $"{fn} -- activity.object is null or does not match expected actor URL. Expected: {expectedActorUrl}, Actual: {targetObject ?? "(null)"}");
+        string? rejectInbox = await ResolveActorInboxAsync(actorIri);
+        if (!string.IsNullOrWhiteSpace(rejectInbox))
+        {
+            await SendActivityPubFollowAckAsync(rejectInbox, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, false,
+                $"Rejected: activity.object must match {expectedActorUrl}");
+        }
+        return Results.BadRequest($"activity.object is null or does not match expected actor URL. Expected: {expectedActorUrl}, Actual: {targetObject ?? "(null)"}");
+    }
+
+    {
 
         // see if the follower is already in the table of followers (even if not a follower of THIS list)
         // if not, create a new GeListFollower and add it to db. 

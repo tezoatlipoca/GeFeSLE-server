@@ -823,8 +823,8 @@ td {
     display: flex;
     flex-direction: column;
     border-radius: 2px;
-    flex: 1 1 420px;
-    min-width: 320px;
+    flex: 1 1 calc(50% - 3px);
+    min-width: 280px;
     width: auto;
     padding: 1px;
     background-color: lightgreen;
@@ -833,6 +833,7 @@ td {
 .textsearch form,
 .tagsearch form {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
 }
@@ -840,9 +841,9 @@ td {
 
 .textsearch input[type="text"],
 .tagsearch input[type="text"] {
-    flex: 1;
+    flex: 1 1 220px;
     box-sizing: border-box;
-    min-width: 150px;
+    min-width: 220px;
 }
 
 .result {
