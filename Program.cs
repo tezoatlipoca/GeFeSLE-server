@@ -4238,7 +4238,7 @@ Dictionary<string, object?> BuildActivityPubItemNote(GeList list, GeListItem ite
         ["type"] = item.IsDeleted ? "Tombstone" : "Note",
         ["name"] = item.Name,
         ["content"] = renderedContentHtml,
-        ["url"] = staticItemUrl,
+        ["url"] = activityPubItemUrl,
         ["attributedTo"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}",
         ["to"] = new[] { "https://www.w3.org/ns/activitystreams#Public" },
         ["cc"] = new[] { "https://www.w3.org/ns/activitystreams#Public" },
