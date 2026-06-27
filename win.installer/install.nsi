@@ -37,10 +37,10 @@ Section "Install"
   SetOutPath "$INSTDIR"
 
   ; Add files - copy all files from publish folder
-  File "..\bin\Release\net8.0\win-x64\publish\GeFeSLE.exe"
-  File "..\bin\Release\net8.0\win-x64\publish\*.dll"
-  File "..\bin\Release\net8.0\win-x64\publish\appsettings.json"
-  File "..\bin\Release\net8.0\win-x64\publish\config.SAMPLE.json"
+  File "..\bin\Release\net10.0\win-x64\publish\GeFeSLE.exe"
+  File "..\bin\Release\net10.0\win-x64\publish\*.dll"
+  File "..\bin\Release\net10.0\win-x64\publish\appsettings.json"
+  File "..\bin\Release\net10.0\win-x64\publish\config.SAMPLE.json"
   
   ; Add service installation scripts
   File "install-service.ps1"
