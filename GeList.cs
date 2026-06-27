@@ -295,7 +295,7 @@ public class GeList
             ownerDisplay = "none";
         }
 
-        string contributorDisplay = string.Join(", ", FormatDistinctUsers(Contributors, ownerIds.Concat(new[] { CreatorId }).ToArray()));
+        string contributorDisplay = string.Join(", ", FormatDistinctUsers(Contributors));
         if (string.IsNullOrWhiteSpace(contributorDisplay))
         {
             contributorDisplay = "none";

@@ -3265,6 +3265,7 @@ app.MapPost("/lists/{list:int}/owners", async (int list,
 
     targetList.ListOwners.Add(user);
     await db.SaveChangesAsync();
+    await targetList.RegenerateAllFiles(db);
     await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
     await ActivityPubBroadcastService.BroadcastActivityPubActorUpdateToFollowersAsync(
         targetList,
@@ -3392,6 +3393,7 @@ app.MapPost("/lists/{list:int}/contributors", async (int list,
 
     targetList.Contributors.Add(user);
     await db.SaveChangesAsync();
+    await targetList.RegenerateAllFiles(db);
     await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
     await ActivityPubBroadcastService.BroadcastActivityPubActorUpdateToFollowersAsync(
         targetList,
@@ -3517,6 +3519,7 @@ app.MapDelete("/lists/{list:int}/owners", async (int list,
 
     targetList.ListOwners.Remove(user);
     await db.SaveChangesAsync();
+    await targetList.RegenerateAllFiles(db);
     await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
     await ActivityPubBroadcastService.BroadcastActivityPubActorUpdateToFollowersAsync(
         targetList,
@@ -3643,6 +3646,7 @@ app.MapDelete("/lists/{list:int}/contributors", async (int list,
 
     targetList.Contributors.Remove(user);
     await db.SaveChangesAsync();
+    await targetList.RegenerateAllFiles(db);
     await ProtectedFiles.RefreshListCacheAsync(db, targetList.Id);
     await ActivityPubBroadcastService.BroadcastActivityPubActorUpdateToFollowersAsync(
         targetList,

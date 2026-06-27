@@ -299,31 +299,42 @@ async function getListUsers() {
         .then(handleResponse)
         .then(response => response.json())
         .then(json => {
+            const displayUser = (u) => {
+                const name = (u && (u.userName || u.UserName)) || "<unknown user>";
+                const email = (u && (u.email || u.Email)) || "<no email>";
+                return name + " (" + email + ")";
+            };
+
             // json is a list of users. Put userName and email values into a dictionary
             // structure of json is: {creator, listowners[], contributors[]} and each of these is a user object
-            // get the creator
-            let creator = json.creator;
+            // tolerate old/new DTO key casing
+            let creator = json.creator || json.Creator || null;
             // display creator.userName (creator.email) in the list.creator span
-            document.getElementById('listcreator').innerText = creator.userName + " (" + (creator.email || "<no email>") + ")";
+            if (creator) {
+                document.getElementById('listcreator').innerText = displayUser(creator);
+            }
+            else {
+                document.getElementById('listcreator').innerText = "Unknown creator";
+            }
             
-            let listowners = json.listowners;
+            let listowners = json.listowners || json.listOwners || json.ListOwners || [];
             let listownersVar = "";
             // iterate over every listowner in the listowners array
             for (let i = 0; i < listowners.length; i++) {
                 // add each listowner to the listowners span; 
-                listownersVar += listowners[i].userName + " (" + (listowners[i].email || "<no email>") + ") ";
+                listownersVar += displayUser(listowners[i]) + " ";
             }
             if(listownersVar.length == 0) {
                 listownersVar = "No listowners yet!";
             }
             document.getElementById('listowners').innerText = listownersVar;
             
-            let contributors = json.contributors;
+            let contributors = json.contributors || json.Contributors || [];
             let contributorsVar = "";
             // iterate over every contributor in the contributors array
             for (let i = 0; i < contributors.length; i++) {
                 // add each contributor to the contributors span; 
-                contributorsVar += contributors[i].userName + " (" + (contributors[i].email|| "<no email>") + ") ";
+                contributorsVar += displayUser(contributors[i]) + " ";
             }
             if(contributorsVar.length == 0) {
                 contributorsVar = "No contributors yet!";
