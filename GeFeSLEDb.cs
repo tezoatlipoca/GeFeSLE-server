@@ -55,6 +55,10 @@ protected override void OnModelCreating(ModelBuilder builder)
         .HasOne(g => g.Creator)
         .WithMany()
         .HasForeignKey(g => g.CreatorId);
+
+    builder.Entity<GeFeSLEUser>()
+        .HasIndex(u => u.UploadsPath)
+        .IsUnique();
 }
 
 public DbSet<GeListItem> Items => Set<GeListItem>();

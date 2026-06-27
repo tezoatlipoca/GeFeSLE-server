@@ -538,6 +538,7 @@ using (var scope = app.Services.CreateScope())
             {
                 DBg.d(LogLevel.Trace, "backdoorAdmin not found in database, adding");
                 DBg.d(LogLevel.Trace, "backdoorAdmin from config: " + GlobalConfig.backdoorAdmin.UserName);
+                GlobalConfig.backdoorAdmin.UploadsPath = GeFeSLEUser.GetUploadsPath(GlobalConfig.backdoorAdmin.UserName, GlobalConfig.backdoorAdmin.Id, GlobalConfig.backdoorAdmin.Email);
                 var result = await userManager.CreateAsync(GlobalConfig.backdoorAdmin);
                 if (result.Succeeded)
                 {
@@ -858,7 +859,13 @@ app.MapPost("/users", async (UserCreateUpdateDto userDto, GeFeSLEDb db,
     {
         // if the username is empty, use the email. This will cover for google and Microsoft accounts. 
         string normalizedUserName = string.IsNullOrEmpty(userDto.UserName) ? userDto.Email : userDto.UserName;
-        var user = new GeFeSLEUser { UserName = normalizedUserName, Email = userDto.Email, PhoneNumber = userDto.PhoneNumber };
+        string uploadsPath = GeFeSLEUser.GetUploadsPath(normalizedUserName, null, userDto.Email);
+        var existingUsers = await userManager.Users.ToListAsync();
+        if (existingUsers.Any(existingUser => string.Equals(existingUser.UploadsPath, uploadsPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Results.BadRequest($"A user already exists whose uploads folder would resolve to '{uploadsPath}'. Please choose a different username.");
+        }
+        var user = new GeFeSLEUser { UserName = normalizedUserName, Email = userDto.Email, PhoneNumber = userDto.PhoneNumber, UploadsPath = uploadsPath };
         try
         {
             var result = await userManager.CreateAsync(user);
@@ -912,6 +919,20 @@ app.MapPut("/users/{userid}", async (string userid, UserCreateUpdateDto userDto,
 
     var moduser = await userManager.FindByIdAsync(userid);
     if (moduser is null) return Results.NotFound();
+
+    if (string.IsNullOrWhiteSpace(moduser.UploadsPath))
+    {
+        string proposedUserName = string.IsNullOrWhiteSpace(userDto.UserName) ? userDto.Email ?? moduser.UserName : userDto.UserName;
+        string proposedEmail = userDto.Email ?? moduser.Email;
+        string proposedUploadsPath = GeFeSLEUser.GetUploadsPath(proposedUserName, moduser.Id, proposedEmail);
+        var otherUsers = await userManager.Users.Where(user => user.Id != moduser.Id).ToListAsync();
+        if (otherUsers.Any(existingUser => string.Equals(existingUser.UploadsPath, proposedUploadsPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Results.BadRequest($"Another user already uses uploads folder '{proposedUploadsPath}'. Please choose a different username.");
+        }
+
+        moduser.UploadsPath = proposedUploadsPath;
+    }
 
     moduser.UpdateFromDto(userDto);
 
@@ -3685,8 +3706,21 @@ app.MapPost("/files", async (IFormFile file,
     if (file is null) return Results.BadRequest("No file uploaded");
     if (file.Length > 0)
     {
+        if (string.IsNullOrWhiteSpace(user.UploadsPath))
+        {
+            string candidateUploadsPath = GeFeSLEUser.GetUploadsPath(user.UserName, user.Id, user.Email);
+            var otherUsers = await userManager.Users.Where(existingUser => existingUser.Id != user.Id).ToListAsync();
+            if (otherUsers.Any(existingUser => string.Equals(existingUser.UploadsPath, candidateUploadsPath, StringComparison.OrdinalIgnoreCase)))
+            {
+                return Results.BadRequest($"Another user already uses uploads folder '{candidateUploadsPath}'. Please choose a different username.");
+            }
+
+            user.UploadsPath = candidateUploadsPath;
+            await userManager.UpdateAsync(user);
+        }
+
         // the filepath will be wwwroot/uploads/user/filename
-        string filePath = Path.Combine(GlobalConfig.wwwroot, GlobalStatic.uploadsFolder, user.UserName, file.FileName);
+        string filePath = Path.Combine(GlobalConfig.wwwroot, GlobalStatic.uploadsFolder, user.UploadsPath, file.FileName);
         DBg.d(LogLevel.Trace, $"fileupload - file will be saved at (filepath): {filePath}");
         //creates the folder if it doesn't exist
         Directory.CreateDirectory(Path.GetDirectoryName(filePath));
@@ -3696,7 +3730,7 @@ app.MapPost("/files", async (IFormFile file,
             await file.CopyToAsync(stream);
         }
         // we want to return the URL of the file that was uploaded
-        string relpath = $"{GlobalStatic.uploadsFolder}/{user.UserName}/{file.FileName}";
+        string relpath = $"{GlobalStatic.uploadsFolder}/{user.UploadsPath}/{file.FileName}";
         string url = $"{GlobalConfig.Hostname}/{relpath}";
         // proactively protect the file until the item it is registered in is added
 
@@ -4088,8 +4122,21 @@ app.MapPost("/lists/import", async (IFormFile file,
     if (file is null) return Results.BadRequest("No file uploaded");
     if (file.Length > 0)
     {
+        if (string.IsNullOrWhiteSpace(user.UploadsPath))
+        {
+            string candidateUploadsPath = GeFeSLEUser.GetUploadsPath(user.UserName, user.Id, user.Email);
+            var otherUsers = await userManager.Users.Where(existingUser => existingUser.Id != user.Id).ToListAsync();
+            if (otherUsers.Any(existingUser => string.Equals(existingUser.UploadsPath, candidateUploadsPath, StringComparison.OrdinalIgnoreCase)))
+            {
+                return Results.BadRequest($"Another user already uses uploads folder '{candidateUploadsPath}'. Please choose a different username.");
+            }
+
+            user.UploadsPath = candidateUploadsPath;
+            await userManager.UpdateAsync(user);
+        }
+
         // the filepath will be wwwroot/uploads/user/filename
-        string filePath = Path.Combine(GlobalConfig.wwwroot, GlobalStatic.uploadsFolder, user.UserName, file.FileName);
+        string filePath = Path.Combine(GlobalConfig.wwwroot, GlobalStatic.uploadsFolder, user.UploadsPath, file.FileName);
         DBg.d(LogLevel.Trace, $"fileupload - file will be saved at (filepath): {filePath}");
         //creates the folder if it doesn't exist
         Directory.CreateDirectory(Path.GetDirectoryName(filePath));
