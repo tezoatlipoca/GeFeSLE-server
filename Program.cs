@@ -4191,6 +4191,131 @@ Dictionary<string, object?> BuildActivityPubItemNote(GeList list, GeListItem ite
         });
     }
 
+    static string ResolveImageUrl(string rawUrl, string hostBase)
+    {
+        if (string.IsNullOrWhiteSpace(rawUrl))
+        {
+            return string.Empty;
+        }
+
+        string trimmed = rawUrl.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absoluteUri))
+        {
+            return absoluteUri.ToString();
+        }
+
+        if (trimmed.StartsWith("//", StringComparison.Ordinal))
+        {
+            return $"https:{trimmed}";
+        }
+
+        if (trimmed.StartsWith("/", StringComparison.Ordinal))
+        {
+            return $"{hostBase}{trimmed}";
+        }
+
+        return $"{hostBase}/{trimmed.TrimStart('/')}";
+    }
+
+    static string GuessImageMediaType(string imageUrl)
+    {
+        if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var uri))
+        {
+            return "image/*";
+        }
+
+        string ext = Path.GetExtension(uri.AbsolutePath).ToLowerInvariant();
+        return ext switch
+        {
+            ".png" => "image/png",
+            ".jpg" => "image/jpeg",
+            ".jpeg" => "image/jpeg",
+            ".gif" => "image/gif",
+            ".webp" => "image/webp",
+            ".avif" => "image/avif",
+            ".svg" => "image/svg+xml",
+            _ => "image/*"
+        };
+    }
+
+    static (string SanitizedComment, List<Dictionary<string, object?>> Attachments) ExtractActivityPubImageAttachments(string? comment, string hostBase)
+    {
+        string working = comment ?? string.Empty;
+        var attachments = new List<Dictionary<string, object?>>();
+        var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var htmlImgRegex = new Regex(@"<img\b[^>]*>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        var htmlSrcRegex = new Regex(@"src\s*=\s*[\""'](?<url>[^\""']+)[\""']", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        var htmlAltRegex = new Regex(@"alt\s*=\s*[\""'](?<alt>[^\""']*)[\""']", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        working = htmlImgRegex.Replace(working, match =>
+        {
+            string tag = match.Value;
+            var srcMatch = htmlSrcRegex.Match(tag);
+            if (!srcMatch.Success)
+            {
+                return string.Empty;
+            }
+
+            string resolvedUrl = ResolveImageUrl(srcMatch.Groups["url"].Value, hostBase);
+            if (string.IsNullOrWhiteSpace(resolvedUrl) || !seenUrls.Add(resolvedUrl))
+            {
+                return string.Empty;
+            }
+
+            string altText = string.Empty;
+            var altMatch = htmlAltRegex.Match(tag);
+            if (altMatch.Success)
+            {
+                altText = altMatch.Groups["alt"].Value.Trim();
+            }
+
+            var attachment = new Dictionary<string, object?>
+            {
+                ["type"] = "Document",
+                ["mediaType"] = GuessImageMediaType(resolvedUrl),
+                ["url"] = resolvedUrl
+            };
+            if (!string.IsNullOrWhiteSpace(altText))
+            {
+                attachment["name"] = altText;
+            }
+            attachments.Add(attachment);
+            return string.Empty;
+        });
+
+        var markdownImgRegex = new Regex(@"!\[(?<alt>[^\]]*)\]\((?<url>[^\)\s]+)(?:\s+\""[^\""\)]*\"")?\)", RegexOptions.Compiled);
+        working = markdownImgRegex.Replace(working, match =>
+        {
+            string resolvedUrl = ResolveImageUrl(match.Groups["url"].Value, hostBase);
+            if (string.IsNullOrWhiteSpace(resolvedUrl) || !seenUrls.Add(resolvedUrl))
+            {
+                return string.Empty;
+            }
+
+            string altText = match.Groups["alt"].Value.Trim();
+            var attachment = new Dictionary<string, object?>
+            {
+                ["type"] = "Document",
+                ["mediaType"] = GuessImageMediaType(resolvedUrl),
+                ["url"] = resolvedUrl
+            };
+            if (!string.IsNullOrWhiteSpace(altText))
+            {
+                attachment["name"] = altText;
+            }
+            attachments.Add(attachment);
+            return string.Empty;
+        });
+
+        return (working.Trim(), attachments);
+    }
+
+    string hostBase = (GlobalConfig.Hostname ?? string.Empty).TrimEnd('/');
+    var extractedMedia = ExtractActivityPubImageAttachments(item.Comment, hostBase);
+    string sanitizedComment = extractedMedia.SanitizedComment;
+    var noteAttachments = extractedMedia.Attachments;
+
     string? hashtagLine = null;
     var renderedHashtags = item.Tags
         .Where(tag => !string.IsNullOrWhiteSpace(tag))
@@ -4208,16 +4333,15 @@ Dictionary<string, object?> BuildActivityPubItemNote(GeList list, GeListItem ite
     {
         contentMarkdownParts.Add(item.Name.Trim());
     }
-    if (!string.IsNullOrWhiteSpace(item.Comment))
+    if (!string.IsNullOrWhiteSpace(sanitizedComment))
     {
-        contentMarkdownParts.Add(item.Comment);
+        contentMarkdownParts.Add(sanitizedComment);
     }
     if (!string.IsNullOrWhiteSpace(hashtagLine))
     {
         contentMarkdownParts.Add(hashtagLine);
     }
 
-    string hostBase = (GlobalConfig.Hostname ?? string.Empty).TrimEnd('/');
     string listFileName = $"{list.Name}.html";
     string staticItemUrl = $"{hostBase}/{Uri.EscapeDataString(listFileName)}#{item.Id}";
     string activityPubItemUrl = $"{hostBase}/apv1/items/{item.Id}";
@@ -4225,7 +4349,8 @@ Dictionary<string, object?> BuildActivityPubItemNote(GeList list, GeListItem ite
     contentMarkdownParts.Add($"[View in list]({staticItemUrl})");
 
     string renderedContent = string.Join("\n\n", contentMarkdownParts);
-    var noteTags = BuildActivityPubTagObjects(new[] { item.Name, item.Comment, hashtagLine }, item.Tags);
+    var noteTags = BuildActivityPubTagObjects(new[] { item.Name, sanitizedComment, hashtagLine }, item.Tags);
+    string noteSummary = string.IsNullOrWhiteSpace(item.Name) ? string.Empty : item.Name.Trim();
     string renderedContentHtml = string.IsNullOrWhiteSpace(renderedContent)
         ? string.Empty
         : Markdown.ToHtml(renderedContent, activityPubMarkdownPipeline);
@@ -4237,6 +4362,7 @@ Dictionary<string, object?> BuildActivityPubItemNote(GeList list, GeListItem ite
         ["id"] = activityPubItemUrl,
         ["type"] = item.IsDeleted ? "Tombstone" : "Note",
         ["name"] = item.Name,
+        //["summary"] = noteSummary, // this appears to add a content warning
         ["content"] = renderedContentHtml,
         ["url"] = activityPubItemUrl,
         ["attributedTo"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}",
@@ -4249,6 +4375,11 @@ Dictionary<string, object?> BuildActivityPubItemNote(GeList list, GeListItem ite
     if (noteTags.Count > 0)
     {
         note["tag"] = noteTags;
+    }
+
+    if (noteAttachments.Count > 0)
+    {
+        note["attachment"] = noteAttachments;
     }
 
     return note;
@@ -4746,6 +4877,11 @@ async Task BroadcastActivityPubItemToFollowersAsync(GeList list, GeFeSLEDb db, G
             continue;
         }
 
+        bool isCreateActivity = string.Equals(activityType, "Create", StringComparison.OrdinalIgnoreCase);
+        string[] activityTo = isCreateActivity
+            ? new[] { "https://www.w3.org/ns/activitystreams#Public", follower.Id }
+            : new[] { follower.Id };
+
         var activityPayload = new Dictionary<string, object?>
         {
             ["@context"] = "https://www.w3.org/ns/activitystreams",
@@ -4753,9 +4889,14 @@ async Task BroadcastActivityPubItemToFollowersAsync(GeList list, GeFeSLEDb db, G
             ["type"] = activityType,
             ["actor"] = actorUrl,
             ["object"] = note,
-            ["to"] = new[] { follower.Id },
+            ["to"] = activityTo,
             ["published"] = DateTimeOffset.UtcNow.ToString("o")
         };
+
+        if (isCreateActivity)
+        {
+            activityPayload["cc"] = new[] { $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}/followers" };
+        }
 
         await SendSignedActivityPubMessageAsync(
             followerInbox,
@@ -5354,39 +5495,46 @@ app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] Json
         && !string.IsNullOrWhiteSpace(topLevelObjectIri)
         && string.Equals(topLevelObjectIri, actorIri, StringComparison.OrdinalIgnoreCase);
 
+    if (string.Equals(incomingType, "Delete", StringComparison.OrdinalIgnoreCase))
+    {
+        DBg.d(LogLevel.Debug,
+            $"{fn} -- Delete diagnostics: nestedObjectType={nestedObjectType ?? "(null)"}, targetObject={targetObject ?? "(null)"}, actorIri={actorIri ?? "(null)"}, topLevelObjectIri={topLevelObjectIri ?? "(null)"}, expectedActorUrl={expectedActorUrl}");
+    }
+
     if (string.IsNullOrWhiteSpace(actorIri))
     {
         DBg.d(LogLevel.Warning, $"{fn} -- activity.actor is null or empty");
         return Results.BadRequest($"activity.actor is null or empty");
     }
 
-    if (!isFollow && !isUnfollow)
+    // Handle actor self-delete payloads early, before follow/unfollow classification.
+    if (isDeleteActor)
     {
-        if (isDeleteActor)
+        GeListFollower? deletedFollower = await db.ListFollowers.FirstOrDefaultAsync(f => f.Id == actorIri);
+        if (deletedFollower is not null)
         {
-            GeListFollower? deletedFollower = await db.ListFollowers.FirstOrDefaultAsync(f => f.Id == actorIri);
-            if (deletedFollower is not null)
+            bool removed = deletedFollower.FollowingLists.RemoveAll(id => id == list.Id) > 0;
+            if (deletedFollower.FollowingLists.Count == 0)
             {
-                bool removed = deletedFollower.FollowingLists.RemoveAll(id => id == list.Id) > 0;
-                if (deletedFollower.FollowingLists.Count == 0)
-                {
-                    db.ListFollowers.Remove(deletedFollower);
-                }
-                await db.SaveChangesAsync();
-                if (removed)
-                {
-                    await list.RegenerateAllFiles(db);
-                }
-                DBg.d(LogLevel.Information, $"{fn} -- processed Delete actor cleanup for follower {actorIri} on list {list.Id}");
+                db.ListFollowers.Remove(deletedFollower);
             }
-            else
+            await db.SaveChangesAsync();
+            if (removed)
             {
-                DBg.d(LogLevel.Information, $"{fn} -- Delete actor received for unknown follower {actorIri}; ignoring");
+                await list.RegenerateAllFiles(db);
             }
-
-            return Results.Ok($"Delete actor processed for {actorIri}");
+            DBg.d(LogLevel.Information, $"{fn} -- processed Delete actor cleanup for follower {actorIri} on list {list.Id}");
+        }
+        else
+        {
+            DBg.d(LogLevel.Information, $"{fn} -- Delete actor received for unknown follower {actorIri}; ignoring");
         }
 
+        return Results.Ok($"Delete actor processed for {actorIri}");
+    }
+
+    if (!isFollow && !isUnfollow)
+    {
         DBg.d(LogLevel.Information, $"{fn} -- ignoring unsupported activity type '{incomingType}' for list inbox");
         return Results.Ok($"Ignored unsupported ActivityPub activity type: {incomingType}");
     }
