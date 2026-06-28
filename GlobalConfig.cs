@@ -68,6 +68,9 @@ public static class GlobalConfig
     public static APActivityLoggingMode EnableAPActivityLogging { get; set; } = APActivityLoggingMode.Partial;
     public static string ActivityPubActivityRetention { get; set; } = "forever";
 
+    public static bool LogDTOsIn { get; set; } = false; // if true, log all DTOs received in POST/PUT requests to STDOUT. 
+    public static bool LogDTOsOut { get; set; } = false; // if true, log all DTOs sent in responses to STDOUT.
+    public static int LogDTOsTrimCharacters { get; set; } = 400; // if logging DTOS in or our, trim them to this many deserialized chars to prevent log mess.
     public static string? googleClientID;
     public static string? googleClientSecret;
 
@@ -490,6 +493,17 @@ public static class GlobalConfig
             DBg.d(LogLevel.Warning, "Mastodon OAuth2/Import settings not found in config file.");
         }
         
+        // read in the DTO logging settings
+        LogDTOsIn = config.GetValue<bool>("ServerSettings:LogDTOsIn", false);
+        LogDTOsOut = config.GetValue<bool>("ServerSettings:LogDTOsOut", false);
+        DBg.d(LogLevel.Debug, $"LogDTOsIn: {LogDTOsIn}");
+        DBg.d(LogLevel.Debug, $"LogDTOsOut: {LogDTOsOut}");
+        LogDTOsTrimCharacters = config.GetValue<int>("ServerSettings:LogDTOsTrimCharacters", 400);
+        if (LogDTOsTrimCharacters <= 0 || LogDTOsTrimCharacters > 10000)
+        {
+            DBg.d(LogLevel.Warning, $"Invalid value for ServerSettings:LogDTOsTrimCharacters. Using default value of 400.");
+            LogDTOsTrimCharacters = 400;
+        }
 
         // lastly, the ONE thing we MUST get from the config file is the db file:
         // its an absolute path

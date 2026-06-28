@@ -33,6 +33,7 @@ using System.Security.Cryptography;
 using System.Net.Http.Headers;
 using Markdig;
 using System.Text.RegularExpressions;
+using static EndpointLoggingHelpers;
 
 
 // check a bunch of stuff; we MUST have a configuration file AND
@@ -848,11 +849,13 @@ app.MapPost("/users", async (UserCreateUpdateDto userDto, GeFeSLEDb db,
             UserManager<GeFeSLEUser> userManager,
             RoleManager<IdentityRole> roleManager) =>
 {
-    string fn = "/users (POST)"; DBg.d(LogLevel.Trace, $"{fn}: {userDto.UserName} {userDto.Email}");
+    string fn = "/users (POST)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(UserCreateUpdateDto), userDto);
     // if username AND email are null, return bad request
     if (string.IsNullOrEmpty(userDto.UserName) && string.IsNullOrEmpty(userDto.Email))
     {
-        DBg.d(LogLevel.Trace, $"{fn} username AND email are both null ==> 400");
+        string msg = "username AND email are both null";
+        DBg.d(LogLevel.Trace, $"{fn} --> 400: {msg}");
         return Results.BadRequest();
     }
     else
@@ -863,7 +866,8 @@ app.MapPost("/users", async (UserCreateUpdateDto userDto, GeFeSLEDb db,
         var existingUsers = await userManager.Users.ToListAsync();
         if (existingUsers.Any(existingUser => string.Equals(existingUser.UploadsPath, uploadsPath, StringComparison.OrdinalIgnoreCase)))
         {
-            return Results.BadRequest($"A user already exists whose uploads folder would resolve to '{uploadsPath}'. Please choose a different username.");
+            string msg = $"A user already exists whose uploads folder would resolve to '{uploadsPath}'. Please choose a different username.";
+            return BadRequestWithTrace(fn, msg);
         }
         var user = new GeFeSLEUser { UserName = normalizedUserName, Email = userDto.Email, PhoneNumber = userDto.PhoneNumber, UploadsPath = uploadsPath };
         try
@@ -873,25 +877,27 @@ app.MapPost("/users", async (UserCreateUpdateDto userDto, GeFeSLEDb db,
             {
                 // var token = await userManager.GeneratePasswordResetTokenAsync(user);
                 // var result = await userManager.ResetPasswordAsync(user, token, newpassword!);
-                DBg.d(LogLevel.Trace, $"{fn} user created");
+                DBg.d(LogLevel.Trace, $"{fn} --> 200: user created");
                 var userRoles = await userManager.GetRolesAsync(user);
-                return Results.Created($"/users/{user.Id}", user.ToResponseDto(userRoles));
+                var createdUserDto = user.ToResponseDto(userRoles);
+                LogDtoOut(fn, nameof(UserResponseDto), createdUserDto);
+                return Results.Created($"User created: {user.Id}", createdUserDto);
             }
             else
             {
                 foreach (var error in result.Errors)
                 {
-                    DBg.d(LogLevel.Trace, $"{fn} - Error: {error.Code}, Description: {error.Description}");
+                    DBg.d(LogLevel.Trace, $"{fn} --> 400: Error: {error.Code}, Description: {error.Description}");
                 }
                 return Results.BadRequest(result.Errors);
             }
         }
         catch (Exception e)
         {
-            return Results.BadRequest($"adduser - Error: {e.Message}");
+            string msg = $"User NOT created: {e.Message}";
+            return BadRequestWithTrace(fn, msg);
         }
     }
-
 })
 .WithEndpointDocs("users.post")
 .RequireAuthorization(new AuthorizeAttribute
@@ -913,12 +919,15 @@ app.MapPut("/users/{userid}", async (string userid, UserCreateUpdateDto userDto,
             UserManager<GeFeSLEUser> userManager,
             RoleManager<IdentityRole> roleManager) =>
 {
-    string fn = "/users/{userid} (PUT)"; DBg.d(LogLevel.Trace, fn);
-
-    DBg.d(LogLevel.Trace, $"{fn}: {userDto}");
+    string fn = $"/users/{userid} (PUT)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(UserCreateUpdateDto), userDto);
 
     var moduser = await userManager.FindByIdAsync(userid);
-    if (moduser is null) return Results.NotFound();
+    if (moduser is null)
+    {
+        string msg = $"user {userid} not found";
+        return NotFoundNoMessageWithTrace(fn, msg);
+    }
 
     if (string.IsNullOrWhiteSpace(moduser.UploadsPath))
     {
@@ -928,7 +937,8 @@ app.MapPut("/users/{userid}", async (string userid, UserCreateUpdateDto userDto,
         var otherUsers = await userManager.Users.Where(user => user.Id != moduser.Id).ToListAsync();
         if (otherUsers.Any(existingUser => string.Equals(existingUser.UploadsPath, proposedUploadsPath, StringComparison.OrdinalIgnoreCase)))
         {
-            return Results.BadRequest($"Another user already uses uploads folder '{proposedUploadsPath}'. Please choose a different username.");
+            string msg = $"Another user already uses uploads folder '{proposedUploadsPath}'. Please choose a different username.";
+            return BadRequestWithTrace(fn, msg);
         }
 
         moduser.UploadsPath = proposedUploadsPath;
@@ -942,8 +952,8 @@ app.MapPut("/users/{userid}", async (string userid, UserCreateUpdateDto userDto,
         var result = await userManager.UpdateAsync(moduser);
         if (result.Succeeded)
         {
-            DBg.d(LogLevel.Trace, $"{fn} user modified");
-            return Results.Ok();
+            string msg = "user modified";
+            return OkWithTrace(fn, msg);
         }
         else
         {
@@ -957,7 +967,8 @@ app.MapPut("/users/{userid}", async (string userid, UserCreateUpdateDto userDto,
     }
     catch (Exception e)
     {
-        return Results.BadRequest(e);
+        string msg = e.Message;
+        return BadRequestWithTrace(fn, msg);
     }
 
 
@@ -980,18 +991,21 @@ app.MapDelete("/users/{userid}", async (string userid,
             UserManager<GeFeSLEUser> userManager,
             RoleManager<IdentityRole> roleManager) =>
 {
-    string fn = "/users/{userid} (DEL)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/users/{userid} (DEL)"; DBg.d(LogLevel.Trace, fn);
 
     var deluser = await userManager.FindByIdAsync(userid);
-    if (deluser is null) return Results.NotFound();
+    if (deluser is null)
+    {
+        string msg = $"user {userid} not found";
+        return NotFoundNoMessageWithTrace(fn, msg);
+    }
 
     try
     {
         var result = await userManager.DeleteAsync(deluser);
         if (result.Succeeded)
         {
-            DBg.d(LogLevel.Trace, $"{fn} user deleted successfully");
-            return Results.Ok();
+            return OkWithTrace(fn, "user deleted successfully");
         }
         else
         {
@@ -1005,7 +1019,8 @@ app.MapDelete("/users/{userid}", async (string userid,
     }
     catch (Exception e)
     {
-        return Results.BadRequest($"Error occurred: {e.Message}");
+        string msg = $"Error occurred: {e.Message}";
+        return BadRequestWithTrace(fn, msg);
     }
 
 })
@@ -1034,18 +1049,20 @@ app.MapGet("/users/{username}", async (string username,
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager) =>
 {
-    string fn = "/users/{username} (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/users/{username} (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     var user = await userManager.FindByNameAsync(username.ToUpper());
     if (user is not null)
     {
         var userRoles = await userManager.GetRolesAsync(user);
-        return Results.Ok(user.ToResponseDto(userRoles));
+        var userDto = user.ToResponseDto(userRoles);
+        LogDtoOut(fn, nameof(UserResponseDto), userDto);
+        return OkPayloadWithTrace(fn, userDto, $"user {username} returned");
     }
     else
     {
-        return Results.NotFound();
+        return NotFoundNoMessageWithTrace(fn, $"user {username} not found");
     }
 
 })
@@ -1071,7 +1088,7 @@ app.MapGet("/users", async (GeFeSLEDb db,
     // if there are no users,
     if (users.Count == 0)
     {
-        return Results.NoContent();
+        return NoContentWithTrace(fn, "no users found");
     }
     else
     {
@@ -1081,7 +1098,8 @@ app.MapGet("/users", async (GeFeSLEDb db,
             var userRoles = await userManager.GetRolesAsync(user);
             userDtos.Add(user.ToResponseDto(userRoles));
         }
-        return Results.Ok(userDtos);
+        LogDtoOut(fn, "List<UserResponseDto>", userDtos);
+        return OkPayloadWithTrace(fn, userDtos, $"{userDtos.Count} users returned");
     }
 
 })
@@ -1105,19 +1123,19 @@ app.MapGet("/users/{userid}/password", async (string userid,
     GeFeSLEDb db,
     UserManager<GeFeSLEUser> userManager) =>
 {
-    string fn = "/users/{userid}/password (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/users/{userid}/password (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
 
     var user = await userManager.FindByIdAsync(userid);
     if (user is null)
     {
-        DBg.d(LogLevel.Trace, $"{fn} user {userid} not found");
-        return Results.NotFound();
+        string msg = $"user {userid} not found";
+        return NotFoundWithTrace(fn, msg);
     }
     else
     {
         var token = await userManager.GeneratePasswordResetTokenAsync(user);
-        return Results.Ok(token);
+        return OkPayloadWithTrace(fn, token, "password reset token generated");
     }
 })
 .WithEndpointDocs("users.userid.password.get")
@@ -1135,21 +1153,20 @@ app.MapDelete("/users/{userid}/password", async (string userid,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    string fn = "/users/{userid}/password (DEL)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/users/{userid}/password (DEL)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(PasswordChangeDto), passwordChangeDto);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     string msg;
     var user = await userManager.FindByIdAsync(userid);
     if (user is null)
     {
-        msg = $"{fn} user {userid} not found";
-        DBg.d(LogLevel.Trace, msg);
-        return Results.NotFound();
+        msg = $"user {userid} not found";
+        return NotFoundWithTrace(fn, msg);
     }
     else if (string.IsNullOrEmpty(passwordChangeDto.NewPassword))
     {
-        msg = $"{fn} new password is null";
-        DBg.d(LogLevel.Trace, msg);
-        return Results.BadRequest(msg);
+        msg = "new password is null";
+        return BadRequestWithTrace(fn, msg);
     }
     // else if (passwordChangeDto.ResetToken.IsNullOrEmpty())
     // {
@@ -1163,7 +1180,7 @@ app.MapDelete("/users/{userid}/password", async (string userid,
         var result = await userManager.ResetPasswordAsync(user, token, passwordChangeDto.NewPassword);
         if (result.Succeeded)
         {
-            return Results.Ok();
+            return OkWithTrace(fn, "password reset successful");
         }
         else
         {
@@ -1195,34 +1212,32 @@ app.MapPost("/users/{userid}/password", async (string userid,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    string fn = "/users/{userid}/password (POST)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/users/{userid}/password (POST)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(PasswordChangeDto), passwordChangeDto);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     string msg;
     var user = await userManager.FindByIdAsync(userid);
     if (user is null)
     {
-        msg = $"{fn} user {userid} not found";
-        DBg.d(LogLevel.Trace, msg);
-        return Results.NotFound();
+        msg = $"user {userid} not found";
+        return NotFoundWithTrace(fn, msg);
     }
     else if (string.IsNullOrEmpty(passwordChangeDto.NewPassword))
     {
-        msg = $"{fn} new password is null";
-        DBg.d(LogLevel.Trace, msg);
-        return Results.BadRequest(msg);
+        msg = "new password is null";
+        return BadRequestWithTrace(fn, msg);
     }
     else if (string.IsNullOrEmpty(passwordChangeDto.ResetToken))
     {
-        msg = $"{fn} reset token is null";
-        DBg.d(LogLevel.Trace, msg);
-        return Results.BadRequest(msg);
+        msg = "reset token is null";
+        return BadRequestWithTrace(fn, msg);
     }
     else
     {
         var result = await userManager.ResetPasswordAsync(user, passwordChangeDto.ResetToken, passwordChangeDto.NewPassword);
         if (result.Succeeded)
         {
-            return Results.Ok();
+            return OkWithTrace(fn, "password changed successfully");
         }
         else
         {
@@ -1251,28 +1266,25 @@ app.MapGet("/users/{userid}/roles", async (string userid,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    string fn = "/users/{userid}/roles (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/users/{userid}/roles (GET)"; DBg.d(LogLevel.Trace, fn);
 
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     var user = await userManager.FindByIdAsync(userid);
     if (user is null)
     {
-        DBg.d(LogLevel.Information, $"{fn} --> {userid} not found");
-        return Results.NotFound();
+        return NotFoundNoMessageWithTrace(fn, $"user {userid} not found");
     }
     else
     {
         IList<string> roles = await userManager.GetRolesAsync(user);
         if (roles.Count == 0)
         {
-            DBg.d(LogLevel.Information, $"{fn} --> {user.UserName} has no role");
-            return Results.NoContent();
+            return NoContentWithTrace(fn, $"user {user.UserName} has no role");
         }
         else
         {
-            DBg.d(LogLevel.Information, $"{fn} --> {user.UserName} has roles {System.Text.Json.JsonSerializer.Serialize(roles)}");
-            return Results.Ok(roles);
+            return OkPayloadWithTrace(fn, roles, $"user {user.UserName} has roles {System.Text.Json.JsonSerializer.Serialize(roles)}");
         }
     }
 
@@ -1294,16 +1306,16 @@ app.MapPost("/users/{userid}/roles", async (string userid,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    string fn = "/users/{userid}/roles (POST)";
-    DBg.d(LogLevel.Trace, fn);
+    string fn = $"/users/{userid}/roles (POST)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, "List<string>", roles);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var sessionUser = UserSessionService.amILoggedIn(httpContext);
 
     var user = await userManager.FindByIdAsync(userid);
     if (user is null)
     {
-        DBg.d(LogLevel.Trace, $"{fn} user {userid} not found");
-        return Results.NotFound();
+        string msg = $"user {userid} not found";
+        return NotFoundWithTrace(fn, msg);
     }
     else
     {
@@ -1346,7 +1358,7 @@ app.MapPost("/users/{userid}/roles", async (string userid,
         if (success)
         {
             DBg.d(LogLevel.Information, $"{fn} -> user {userid} assigned to roles {System.Text.Json.JsonSerializer.Serialize(added)}");
-            return Results.Ok();
+            return OkWithTrace(fn, $"user {userid} assigned to roles {System.Text.Json.JsonSerializer.Serialize(added)}");
         }
         else
         {
@@ -1370,8 +1382,7 @@ app.MapDelete("/users/{userid}/roles/{role}", async (string userid,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    string fn = "/users/{userid}/roles (DEL)";
-    DBg.d(LogLevel.Trace, fn);
+    string fn = $"/users/{userid}/roles/{role} (DEL)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var sessionUser = UserSessionService.amILoggedIn(httpContext);
 
@@ -1379,23 +1390,22 @@ app.MapDelete("/users/{userid}/roles/{role}", async (string userid,
     var user = await userManager.FindByIdAsync(userid);
     if (user is null)
     {
-        DBg.d(LogLevel.Trace, $"{fn} user {userid} not found");
-        return Results.NotFound();
+        return NotFoundNoMessageWithTrace(fn, $"user {userid} not found");
     }
     else
     {
         // get the sessionUser's role
         if (sessionUser.Role != "SuperUser" && role == "SuperUser")
         {
-            DBg.d(LogLevel.Trace, $"{fn} user {userid} NOT UNASSIGNED from role {role}: Insufficient permissions");
-            return Results.BadRequest("Insufficient permissions");
+            string msg = "Insufficient permissions";
+            return BadRequestWithTrace(fn, msg);
         }
 
         var result = await userManager.RemoveFromRoleAsync(user, role);
         if (result.Succeeded)
         {
             DBg.d(LogLevel.Trace, $"deleterole: user {userid} UNASSIGNED from role {role}");
-            return Results.Ok();
+            return OkWithTrace(fn, $"user {userid} unassigned from role {role}");
         }
         else
         {
@@ -1442,7 +1452,7 @@ app.MapGet("/lists", async (GeFeSLEDb db,
     }
     if (visibleLists.Count == 0)
     {
-        return Results.NoContent();
+        return NoContentWithTrace(fn, "no lists visible to user");
     }
     else
     {
@@ -1459,7 +1469,8 @@ app.MapGet("/lists", async (GeFeSLEDb db,
         }
 
         var responseDtos = visibleLists.Select(l => l.ToResponseDto()).ToList();
-        return Results.Ok(responseDtos);
+        LogDtoOut(fn, "List<GeListResponseDto>", responseDtos);
+        return OkPayloadWithTrace(fn, responseDtos, $"{responseDtos.Count} lists returned");
     }
 })
 .WithEndpointDocs("lists.get");
@@ -1468,7 +1479,7 @@ app.MapGet("/lists/{listid:int}", async (GeFeSLEDb db,
     int listid,
     HttpContext httpContext) =>
 {
-    string fn = "/lists/{listid:int} (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/lists/{listid} (GET)"; DBg.d(LogLevel.Trace, fn);
 
     var userManager = httpContext.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
@@ -1481,7 +1492,7 @@ app.MapGet("/lists/{listid:int}", async (GeFeSLEDb db,
         .FirstOrDefaultAsync(l => l.Id == listid);
     if (list is null)
     {
-        return Results.NotFound();
+        return NotFoundNoMessageWithTrace(fn, $"list {listid} not found");
     }
     else
     {
@@ -1492,13 +1503,15 @@ app.MapGet("/lists/{listid:int}", async (GeFeSLEDb db,
             {
                 DBg.d(LogLevel.Warning, $"{fn} SuperUser bypassed list permissions for {list.Name}");
             }
-            return Results.Ok(list.ToResponseDto());
+            var listDto = list.ToResponseDto();
+            LogDtoOut(fn, nameof(GeListResponseDto), listDto);
+            return OkPayloadWithTrace(fn, listDto, $"list {listid} returned");
 
         }
         else
         {
             // TODO: contrive to return the ynot message as well.
-            return Results.Unauthorized();
+            return UnauthorizedWithTrace(fn);
         }
 
     }
@@ -1520,17 +1533,20 @@ app.MapPost("/lists", async (GeListDto newlistDto,
     RoleManager<IdentityRole> roleManager) =>
 {
     string fn = "/lists (POST)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(GeListDto), newlistDto);
 
     // if the newlist.Name is null, return bad request
     // zTODO: extend with other checks - reserve dnames, bad characters that won't
     // play nice with ActivityPub actor names or webfinger acct: handles
     if (string.IsNullOrEmpty(newlistDto.Name))
     {
-        return Results.BadRequest("Cannot have a list with no name. A Horse maybe... but not a list.");
+        string errMsg = "Cannot have a list with no name. A Horse maybe... but not a list.";
+        return BadRequestWithTrace(fn, errMsg);
     }
     else if (newlistDto.Name == GlobalConfig.modListName)
     {
-        return Results.BadRequest($"List name {GlobalConfig.modListName} is RESERVED.");
+        string errMsg = $"List name {GlobalConfig.modListName} is RESERVED.";
+        return BadRequestWithTrace(fn, errMsg);
     }
     else
     {
@@ -1538,7 +1554,8 @@ app.MapPost("/lists", async (GeListDto newlistDto,
         var invalidIndex = newlistDto.Name.IndexOfAny(Path.GetInvalidFileNameChars());
         if (invalidIndex >= 0)
         {
-            return Results.BadRequest($"List name contains invalid character '{newlistDto.Name[invalidIndex]}' at position {invalidIndex}.");
+            string errMsg = $"List name contains invalid character '{newlistDto.Name[invalidIndex]}' at position {invalidIndex}.";
+            return BadRequestWithTrace(fn, errMsg);
         }
     }
     DBg.d(LogLevel.Trace, $"{fn} - new list name: {newlistDto.Name}");
@@ -1547,12 +1564,14 @@ app.MapPost("/lists", async (GeListDto newlistDto,
     var existingList = await db.Lists.Where(l => l.Name == newlistDto.Name).FirstOrDefaultAsync();
     if (existingList is not null)
     {
-        return Results.BadRequest("List with that name already exists");
+        string errMsg = "List with that name already exists";
+        return BadRequestWithTrace(fn, errMsg);
     }
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     if (me is null)
     {
-        return Results.BadRequest("Could not determine who you are");
+        string errMsg = "Could not determine who you are";
+        return BadRequestWithTrace(fn, errMsg);
     }
     // no need to check for roles, auth middleware already did it. 
 
@@ -1568,7 +1587,8 @@ app.MapPost("/lists", async (GeListDto newlistDto,
         if (invalidActivityPubIdChar != null)
         {
             DBg.d(LogLevel.Trace, $"{fn} - invalid AP id character: {invalidActivityPubIdChar.c} at position {invalidActivityPubIdChar.index}");
-            return Results.BadRequest($"ActivityPubId contains invalid character {invalidActivityPubIdChar.c} starting at position {invalidActivityPubIdChar.index}.");
+            string errMsg = $"ActivityPubId contains invalid character {invalidActivityPubIdChar.c} starting at position {invalidActivityPubIdChar.index}.";
+            return BadRequestWithTrace(fn, errMsg);
         }
     }
 
@@ -1584,6 +1604,7 @@ app.MapPost("/lists", async (GeListDto newlistDto,
     await ProtectedFiles.RefreshListCacheAsync(db, newlist.Id);
     await newlist.RegenerateAllFiles(db);
     string msg = $"/lists/{newlist.Id}";
+    LogDtoOut(fn, nameof(GeList), newlist);
     return Results.Created(msg, newlist);
 }).RequireAuthorization(new AuthorizeAttribute
 {
@@ -1600,6 +1621,7 @@ app.MapPut("/lists", async (HttpContext context,
     GeListController geListController) =>
     {
         string fn = "/lists (PUT)"; DBg.d(LogLevel.Trace, fn);
+        LogDtoIn(fn, nameof(GeListDto), inputList);
         GeListVisibility? oldVisibility = await db.Lists
             .AsNoTracking()
             .Where(l => l.Id == inputList.Id)
@@ -1680,14 +1702,18 @@ app.MapGet("/lists/{listId:int}/items", async (int listId,
         UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext) =>
 {
-    string fn = "/lists/{listId:int}/items (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/lists/{listId}/items (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var list = await db.Lists.FindAsync(listId);
-    if (list is null) return Results.NotFound("List not found");
+    if (list is null)
+    {
+        return NotFoundWithTrace(fn, "List not found");
+    }
     var items = await list.GetItems(db);
     // TODO: restrict access to items based on list permissions.
     var itemDtos = items.Select(i => i.ToResponseDto()).ToList();
-    return Results.Ok(itemDtos);
+    LogDtoOut(fn, "List<GeListItemResponseDto>", itemDtos);
+    return OkPayloadWithTrace(fn, itemDtos, $"{itemDtos.Count} items returned for list {listId}");
 })
 .WithEndpointDocs("lists.listid.items.get");
 // TODO: restreict access toitems based on list permissions. 
@@ -1706,53 +1732,57 @@ app.MapGet("/items/{id:int}", async (int id,
         UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext) =>
 {
-    string fn = "/items/{id:int} (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/items/{id} (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     var showitem = await db.Items.FindAsync(id);
     if (showitem is not null)
     {
         if (showitem.RedirectToItemId.HasValue)
         {
-            return Results.Redirect($"/items/{showitem.RedirectToItemId.Value}", permanent: true);
+            return RedirectWithTrace(fn, $"/items/{showitem.RedirectToItemId.Value}", $"redirecting item {id} to {showitem.RedirectToItemId.Value}");
         }
-        return Results.Ok(showitem.ToResponseDto());
+        var itemDto = showitem.ToResponseDto();
+        LogDtoOut(fn, nameof(GeListItemResponseDto), itemDto);
+        return OkPayloadWithTrace(fn, itemDto, $"item {id} returned");
     }
     else
     {
-        return Results.NotFound();
+        return NotFoundNoMessageWithTrace(fn, $"item {id} not found");
     }
 })
 .WithEndpointDocs("items.id.get");
 
 app.MapGet("/posts/{itemId:int}", async (int itemId, GeFeSLEDb db) =>
 {
-    string fn = "/posts/{itemId:int} (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/posts/{itemId} (GET)"; DBg.d(LogLevel.Trace, fn);
 
     GeListItem? item = await db.Items.FirstOrDefaultAsync(i => i.Id == itemId);
     if (item == null)
     {
-        return Results.NotFound($"Item with id {itemId} not found");
+        string msg = $"Item with id {itemId} not found";
+        return NotFoundWithTrace(fn, msg);
     }
 
     if (item.RedirectToItemId.HasValue)
     {
-        return Results.Redirect($"/posts/{item.RedirectToItemId.Value}", permanent: true);
+        return RedirectWithTrace(fn, $"/posts/{item.RedirectToItemId.Value}", $"redirecting post {itemId} to {item.RedirectToItemId.Value}");
     }
 
     if (item.IsDeleted)
     {
-        return Results.StatusCode(410);
+        return StatusCodeWithTrace(fn, 410, "Item is deleted");
     }
 
     GeList? list = await db.Lists.FirstOrDefaultAsync(l => l.Id == item.ListId);
     if (list == null)
     {
-        return Results.NotFound($"List with id {item.ListId} not found for item {itemId}");
+        string msg = $"List with id {item.ListId} not found for item {itemId}";
+        return NotFoundWithTrace(fn, msg);
     }
 
     if (list.Visibility != GeListVisibility.Public)
     {
-        return Results.StatusCode(403);
+        return StatusCodeWithTrace(fn, 403, "List is not public");
     }
 
     string hostBase = (GlobalConfig.Hostname ?? string.Empty).TrimEnd('/');
@@ -1800,7 +1830,7 @@ app.MapGet("/posts/{itemId:int}", async (int itemId, GeFeSLEDb db) =>
     sb.AppendLine("</body>");
     sb.AppendLine("</html>");
 
-    return Results.Content(sb.ToString(), "text/html");
+    return ContentWithTrace(fn, sb.ToString(), "text/html", "HTML response generated");
 }).AllowAnonymous();
 
 app.MapPost("/items", async (
@@ -1811,12 +1841,12 @@ app.MapPost("/items", async (
     GeListFileController geListFileController) =>
 {
     string fn = "/items (POST)"; DBg.d(LogLevel.Trace, fn);
-    DBg.d(LogLevel.Trace, $"{fn} <- {System.Text.Json.JsonSerializer.Serialize(itemDto)}");
+    LogDtoIn(fn, nameof(GeListItemCreateUpdateDto), itemDto);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // if the ListId of itemDto is 0 (which is ok - no value in json int is 0), then set it to listid
     if (itemDto.ListId == 0)
     {
-        return Results.BadRequest("New item listID is invalid.");
+        return BadRequestWithTrace(fn, "New item listID is invalid.");
     }
     // Map DTO to domain object
     var newitem = new GeListItem { ListId = itemDto.ListId, Name = itemDto.Name, Comment = itemDto.Comment, IsComplete = itemDto.IsComplete, Visible = itemDto.Visible, Tags = new List<string>(itemDto.Tags) };
@@ -1825,7 +1855,10 @@ app.MapPost("/items", async (
 
     // find the list that corresponds to listid
     var list = await db.Lists.FindAsync(newitem.ListId);
-    if (list is null) return Results.NotFound("List not found");
+    if (list is null)
+    {
+        return NotFoundWithTrace(fn, "List not found");
+    }
 
     // "attachments" protection check - if the item references an upload we want to set the protection to match 
     // the list that its in
@@ -1851,7 +1884,9 @@ app.MapPost("/items", async (
         ActivityPubDeliveryUtils.ResolveActorInboxAsync,
         (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
             ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
-    return Results.Created($"/items/{newitem.Id}", newitem.ToResponseDto());
+    var createdItemDto = newitem.ToResponseDto();
+    LogDtoOut(fn, nameof(GeListItemResponseDto), createdItemDto);
+    return Results.Created($"/items/{newitem.Id}", createdItemDto);
 }).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
@@ -1863,7 +1898,7 @@ app.MapGet("/lists/{list:int}/files", async (int list,
     HttpContext httpContext,
     UserManager<GeFeSLEUser> userManager) =>
 {
-    string fn = "/lists/{list:int}/files (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/lists/{list}/files (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     var listObj = await db.Lists
@@ -1874,13 +1909,15 @@ app.MapGet("/lists/{list:int}/files", async (int list,
 
     if (listObj is null)
     {
-        return Results.NotFound($"List {list} not found");
+        string msg = $"List {list} not found";
+        return NotFoundWithTrace(fn, msg);
     }
 
     (bool canView, string? ynot) = listObj.IsUserAllowedToView(user);
     if (!canView)
     {
-        return Results.BadRequest(ynot);
+        string msg = ynot ?? "Not allowed to view list files";
+        return BadRequestWithTrace(fn, msg);
     }
 
     var items = await db.Items.Where(i => i.ListId == list).ToListAsync();
@@ -1924,7 +1961,7 @@ app.MapGet("/lists/{list:int}/files", async (int list,
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToList();
 
-    return Results.Ok(new
+    return OkPayloadWithTrace(fn, new
     {
         list = new
         {
@@ -1934,7 +1971,7 @@ app.MapGet("/lists/{list:int}/files", async (int list,
         },
         items = itemResults,
         allRefs = allListRefs
-    });
+    }, "list export payload returned");
 })
 .RequireAuthorization(new AuthorizeAttribute
 {
@@ -1950,13 +1987,16 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
         HttpContext httpContext,
         GeListFileController geListFileController) =>
 {
-    string fn = "/items/{itemId:int} (PUT)"; DBg.d(LogLevel.Trace, fn);
-    DBg.d(LogLevel.Trace, $"{fn} <- {System.Text.Json.JsonSerializer.Serialize(inputItemDto)}");
+    string fn = $"/items/{itemId} (PUT)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(GeListItemCreateUpdateDto), inputItemDto);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // Verify the item exists
     var moditem = await db.Items.FirstOrDefaultAsync(item => item.Id == itemId);
     // check for listowner or contributor of the list this item belongs to
-    if (moditem is null) return Results.NotFound();
+    if (moditem is null)
+    {
+        return NotFoundNoMessageWithTrace(fn, $"item {itemId} not found");
+    }
     // if the item's listid is different from the inputItem's listid, then we have to make sure the 
     // caller has modification rights to BOTH lists
     // first, find the OLD list. 
@@ -1965,7 +2005,11 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
         .Include(l => l.ListOwners)
         .Include(l => l.Contributors)
         .FirstOrDefaultAsync(l => l.Id == moditem.ListId);
-    if (oldlist is null) return Results.NotFound($"Original list {moditem.ListId} not found");
+    if (oldlist is null)
+    {
+        string msg = $"Original list {moditem.ListId} not found";
+        return NotFoundWithTrace(fn, msg);
+    }
     // if the listid is changing, find the NEW list and check permissions on that too
     var itemMoved = false;
     GeList? destinationListForMove = null;
@@ -1977,7 +2021,11 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
             .Include(l => l.ListOwners)
             .Include(l => l.Contributors)
             .FirstOrDefaultAsync(l => l.Id == inputItemDto.ListId);
-        if (destinationListForMove is null) return Results.NotFound($"New list {inputItemDto.ListId} not found");
+        if (destinationListForMove is null)
+        {
+            string msg = $"New list {inputItemDto.ListId} not found";
+            return NotFoundWithTrace(fn, msg);
+        }
         (bool canModifyOld, string? ynotOld) = oldlist.IsUserAllowedToModify(user);
         (bool canModifyNew, string? ynotNew) = destinationListForMove.IsUserAllowedToModify(user);
         if (!canModifyOld || !canModifyNew)
@@ -1988,7 +2036,7 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
             if (!canModifyNew)            {
                 reason += $"No modify permissions on new list (id {destinationListForMove.Id}, name {destinationListForMove.Name}): {ynotNew}.";
             }
-            return Results.BadRequest(reason);
+            return BadRequestWithTrace(fn, reason);
         }
     }
     // otherwise, modify away boyo. 
@@ -2057,7 +2105,8 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
                 ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
     }
 
-    return Results.Ok();
+    return OkWithTrace(fn, "item update saved");
+    
 }).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
@@ -2077,7 +2126,7 @@ app.MapDelete("/items/{id:int}", async (int id,
     var delitem = await db.Items.FindAsync(id);
     if (delitem is null) {
         DBg.d(LogLevel.Error, $"{fn} -- item not found");
-        return Results.NotFound();
+        return NotFoundNoMessageWithTrace(fn, $"item {id} not found");
     }
     var list = await db.Lists
         .Include(l => l.Creator)
@@ -2086,19 +2135,19 @@ app.MapDelete("/items/{id:int}", async (int id,
         .FirstOrDefaultAsync(l => l.Id == delitem.ListId);
     if (list is null) {
         DBg.d(LogLevel.Error, $"{fn} -- list not found");
-        return Results.NotFound($"List {delitem.ListId} not found");
+        string msg = $"List {delitem.ListId} not found";
+        return NotFoundWithTrace(fn, msg);
     }
     (bool canModify, string? ynot) = list.IsUserAllowedToModify(user);
     if (!canModify)    {
         string reason = $"Cannot delete item. No modify permissions on list (id {list.Id}, name {list.Name}): {ynot}.";
         DBg.d(LogLevel.Error, $"{fn} -- {reason}");
-        return Results.BadRequest(reason);
+        return BadRequestWithTrace(fn, reason);
     }
     else {
         if (delitem.IsDeleted)
         {
-            DBg.d(LogLevel.Information, $"{fn} -- item already deleted");
-            return Results.Ok();
+            return OkWithTrace(fn, "item already deleted");
         }
 
         delitem.IsDeleted = true;
@@ -2117,7 +2166,7 @@ app.MapDelete("/items/{id:int}", async (int id,
         
         await list.RegenerateAllFiles(db);
         DBg.d(LogLevel.Information, $"{fn} -- item deleted successfully");
-        return Results.Ok();
+        return OkWithTrace(fn, $"item {id} deleted");
     }
 })
 .WithEndpointDocs("items.id.delete")
@@ -2135,19 +2184,24 @@ app.MapPatch("/items/{id:int}/list", async (
     UserManager<GeFeSLEUser> userManager,
     HttpContext httpContext) =>
 {
-    string fn = "/items/{id:int}/list (PATCH)"; DBg.d(LogLevel.Trace, fn);
-
-    string dumpData = System.Text.Json.JsonSerializer.Serialize(data);
-    DBg.d(LogLevel.Trace, $"{fn} -- dump data {dumpData}");
+    string fn = $"/items/{id}/list (PATCH)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(MoveItemDto), data);
 
     var newlistid = data.listid;
     DBg.d(LogLevel.Trace, $"{fn} <-- {{ itemid: {id}, newlistid: {newlistid}}}");
 
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
-    if (user is null) return Results.BadRequest("Could not determine who you are");
+    if (user is null)
+    {
+        return BadRequestWithTrace(fn, "Could not determine who you are");
+    }
 
     var item = await db.Items.FindAsync(id);
-    if (item is null) return Results.NotFound($"Item {id} not found");
+    if (item is null)
+    {
+        string errMsg = $"Item {id} not found";
+        return NotFoundWithTrace(fn, errMsg);
+    }
 
     var oldlistid = item.ListId;
     var oldlist = await db.Lists
@@ -2155,18 +2209,26 @@ app.MapPatch("/items/{id:int}/list", async (
         .Include(l => l.ListOwners)
         .Include(l => l.Contributors)
         .FirstOrDefaultAsync(l => l.Id == oldlistid);
-    if (oldlist is null) return Results.NotFound($"Source list {oldlistid} not found");
+    if (oldlist is null)
+    {
+        string errMsg = $"Source list {oldlistid} not found";
+        return NotFoundWithTrace(fn, errMsg);
+    }
 
     var newlist = await db.Lists
         .Include(l => l.Creator)
         .Include(l => l.ListOwners)
         .Include(l => l.Contributors)
         .FirstOrDefaultAsync(l => l.Id == newlistid);
-    if (newlist is null) return Results.NotFound($"Destination list {newlistid} not found");
+    if (newlist is null)
+    {
+        string errMsg = $"Destination list {newlistid} not found";
+        return NotFoundWithTrace(fn, errMsg);
+    }
 
     if (oldlistid == newlistid)
     {
-        return Results.Ok($"Item {id} already in list {newlistid}");
+        return OkPayloadWithTrace(fn, $"Item {id} already in list {newlistid}", $"item {id} already in list {newlistid}");
     }
 
     (bool canModifyOld, string? ynotOld) = oldlist.IsUserAllowedToModify(user);
@@ -2182,7 +2244,7 @@ app.MapPatch("/items/{id:int}/list", async (
         {
             reason += $"No modify permissions on destination list (id {newlist.Id}, name {newlist.Name}): {ynotNew}.";
         }
-        return Results.BadRequest(reason);
+        return BadRequestWithTrace(fn, reason);
     }
 
     item.ListId = newlistid;
@@ -2211,7 +2273,7 @@ app.MapPatch("/items/{id:int}/list", async (
                 onlyFollowerForBroadcast));
 
     var msg = $"Item {id} moved from list {oldlistid} to list {newlistid}";
-    return Results.Ok(msg);
+    return OkPayloadWithTrace(fn, msg, msg);
 })
 .WithEndpointDocs("items.id.list.patch")
 .RequireAuthorization(new AuthorizeAttribute
@@ -2238,7 +2300,11 @@ app.MapDelete("/items/{itemid:int}/tags/{tag}", async (
 
     // find the item in question
     var item = await db.Items.FindAsync(itemid);
-    if (item is null) return Results.NotFound($"Item {itemid} not found");
+    if (item is null)
+    {
+        string errMsg = $"Item {itemid} not found";
+        return NotFoundWithTrace(fn, errMsg);
+    }
 
     // now the tricky part - does the user have right listowner or contributor-ship or role to modify 
     // TODO: implement permissions check; for now rely on SU/listowner roles via middleware 
@@ -2256,7 +2322,7 @@ app.MapDelete("/items/{itemid:int}/tags/{tag}", async (
     }
 
     var msg = $"Tag {gonetag} removed from item {itemid}";
-    return Results.Ok(msg);
+    return OkPayloadWithTrace(fn, msg, msg);
 })
 .WithEndpointDocs("items.itemid.tags.tag.delete")
 .RequireAuthorization(new AuthorizeAttribute
@@ -2272,11 +2338,8 @@ app.MapPut("/items/{itemid:int}/tags", async (
     UserManager<GeFeSLEUser> userManager,
     HttpContext httpContext) =>
 {
-    string fn = "/items/{itemid:int}/tags (PUT)"; DBg.d(LogLevel.Trace, fn);
-
-    // stringify the data
-    string dumpData = System.Text.Json.JsonSerializer.Serialize(data);
-    DBg.d(LogLevel.Trace, $"{fn} -- dump data {dumpData}");
+    string fn = $"/items/{itemid}/tags (PUT)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(AddTagDto), data);
 
     var newtag = data.tag;
     DBg.d(LogLevel.Trace, $"{fn} <-- {{ itemid: {itemid}, tag: {newtag}}}");
@@ -2286,7 +2349,11 @@ app.MapPut("/items/{itemid:int}/tags", async (
 
     // find the item in question
     var item = await db.Items.FindAsync(itemid);
-    if (item is null) return Results.NotFound($"Item {itemid} not found");
+    if (item is null)
+    {
+        string errMsg = $"Item {itemid} not found";
+        return NotFoundWithTrace(fn, errMsg);
+    }
 
     // now the tricky part - does the user have right listowner or contributor-ship or role to modify 
     // TODO: implement permissions check; for now rely on SU/listowner roles via middleware 
@@ -2294,7 +2361,7 @@ app.MapPut("/items/{itemid:int}/tags", async (
     // Validate that the tag is not null, empty, or whitespace-only
     if (string.IsNullOrWhiteSpace(newtag))
     {
-        return Results.BadRequest("Tag cannot be empty or whitespace-only");
+        return BadRequestWithTrace(fn, "Tag cannot be empty or whitespace-only");
     }
 
     // Helper function to parse quoted tags
@@ -2378,7 +2445,7 @@ app.MapPut("/items/{itemid:int}/tags", async (
     
     if (tagsToAdd.Count == 0)
     {
-        return Results.BadRequest("No valid tags found");
+        return BadRequestWithTrace(fn, "No valid tags found");
     }
 
     var addedTags = new List<string>();
@@ -2426,7 +2493,7 @@ app.MapPut("/items/{itemid:int}/tags", async (
         await list.RegenerateAllFiles(db);
     }
 
-    return Results.Ok(msg);
+    return OkPayloadWithTrace(fn, msg, msg);
 }).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
@@ -2470,7 +2537,7 @@ app.MapGet("/lists/regen", async (GeFeSLEDb db,
     }
     await GlobalStatic.GenerateHTMLListIndex(db);
 
-    return Results.Redirect(referer);
+    return RedirectWithTrace(fn, referer, "redirecting to referer");
 })
 .WithEndpointDocs("lists.regen.get")
 .RequireAuthorization(new AuthorizeAttribute
@@ -2485,7 +2552,7 @@ app.MapGet("/lists/{listid}/regen", async (int listid,
         UserManager<GeFeSLEUser> userManager,
         HttpContext httpContext) =>
 {
-    string fn = "/lists/{listid}/regen (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/lists/{listid}/regen (GET)"; DBg.d(LogLevel.Trace, fn);
     var referer = httpContext.Request.Headers["Referer"].ToString();
     if (string.IsNullOrEmpty(referer)) referer = "/index.html";
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
@@ -2498,11 +2565,11 @@ app.MapGet("/lists/{listid}/regen", async (int listid,
         .Include(l => l.ListOwners)
         .Include(l => l.Contributors)
         .FirstOrDefaultAsync(l => l.Id == listid);
-    if (list is null) return Results.NotFound();
+    if (list is null) return NotFoundNoMessageWithTrace(fn, $"list {listid} not found");
     else
     {
         await list.RegenerateAllFiles(db);
-        return Results.Redirect(referer);
+        return RedirectWithTrace(fn, referer, "redirecting to referer");
     }
 })
 .WithEndpointDocs("lists.listid.regen.get")
@@ -2598,7 +2665,7 @@ app.MapGet("/oauthcallback", async (HttpContext context,
     {
         msg = $"External OAuth authentication error: {auth.Failure?.Message}";
         await GlobalStatic.GenerateUnAuthPage(sb, msg);
-        return Results.Content(sb.ToString(), "text/html");
+        return ContentWithTrace(fn, sb.ToString(), "text/html", "OAuth callback page generated");
     }
 
     // so at this point the user has already been authenticated by google or whatever
@@ -2622,7 +2689,7 @@ app.MapGet("/oauthcallback", async (HttpContext context,
     {
         msg = "OAuth account does not have an email address";
         await GlobalStatic.GenerateUnAuthPage(sb, msg);
-        return Results.Content(sb.ToString(), "text/html");
+        return ContentWithTrace(fn, sb.ToString(), "text/html", "OAuth callback page generated");
     }
     // find the user by email in our database
     // TODO: the user should have been "granted" with both username and email in our system the same
@@ -2651,7 +2718,7 @@ app.MapGet("/oauthcallback", async (HttpContext context,
     UserSessionService.storeProvider(context, provider!);
     UserSessionService.AddAccessToken(context, provider!, accessToken!);
     await GlobalStatic.GenerateLoginResult(sb, msg);
-    return Results.Content(sb.ToString(), "text/html");
+    return ContentWithTrace(fn, sb.ToString(), "text/html", "OAuth callback page generated");
 })
 .WithEndpointDocs("oauthcallback.get");
 
@@ -2669,7 +2736,7 @@ app.MapPost("/me", async (HttpContext context,
     string fn = "/me (POST)"; DBg.d(LogLevel.Trace, fn);
     if (!context.Request.HasFormContentType)
     {
-        return Results.BadRequest("No POST form data.");
+        return BadRequestWithTrace(fn, "No POST form data.");
     }
     var form = await context.Request.ReadFormAsync();
     var login = new LoginDto
@@ -2682,9 +2749,9 @@ app.MapPost("/me", async (HttpContext context,
 
     if (!login.IsValid())
     {
-        return Results.BadRequest("Could not deserialize POST form body to LoginDto");
+        return BadRequestWithTrace(fn, "Could not deserialize POST form body to LoginDto");
     }
-    DBg.d(LogLevel.Trace, $"POST form data: {System.Text.Json.JsonSerializer.Serialize(login)}");
+    LogDtoIn(fn, nameof(LoginDto), login);
 
     if (string.IsNullOrEmpty(login.OAuthProvider))
     {
@@ -2739,13 +2806,13 @@ app.MapPost("/me", async (HttpContext context,
             if (isJSApi)
             {
                 DBg.d(LogLevel.Trace, $"LOGIN: BAD - RETURNING 401");
-                return Results.Unauthorized();
+                return UnauthorizedWithTrace(fn, msg ?? "Unauthorized");
             } // bad login -API
             else
             {
                 DBg.d(LogLevel.Trace, $"LOGIN: BAD - RETURNING UNAUTH PAGE");
                 await GlobalStatic.GenerateUnAuthPage(sb, msg ?? "Unauthorized");
-                return Results.Content(sb.ToString(), "text/html");
+                return ContentWithTrace(fn, sb.ToString(), "text/html", "login page generated");
             } // bad login - web
         }
         else
@@ -2758,13 +2825,15 @@ app.MapPost("/me", async (HttpContext context,
                 await UserSessionService.createSession(context, user!.Id ?? "OAuth", user.UserName ?? "OAuth", realizedRole ?? "anonymous");
                 _ = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
                 var antiForgeryTokens = antiforgery.GetAndStoreTokens(context);
-                return Results.Ok(new
+                var loginResultDto = new
                 {
                     username = login.Username,
                     role = realizedRole,
                     antiForgeryToken = antiForgeryTokens.RequestToken,
                     antiForgeryHeaderName = antiForgeryTokens.HeaderName
-                });
+                };
+                LogDtoOut(fn, "LoginResultDto", loginResultDto);
+                return OkPayloadWithTrace(fn, loginResultDto, "login result returned");
             } // good login -API
             else
             {
@@ -2772,7 +2841,7 @@ app.MapPost("/me", async (HttpContext context,
                 _ = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
                 _ = antiforgery.GetAndStoreTokens(context);
                 DBg.d(LogLevel.Trace, $"LOGIN: OK - RETURNING REDIRECT");
-                return Results.Redirect("/");
+                return RedirectWithTrace(fn, "/", "redirecting after login");
             } // good login - web
         }
     }
@@ -2796,12 +2865,13 @@ app.MapPost("/me", async (HttpContext context,
             {
                 if (login.Instance is null)
                 {
-                    return Results.BadRequest("Selected OAuth provider Mastodon but missing Mastodon instance.");
+                    return BadRequestWithTrace(fn, "Selected OAuth provider Mastodon but missing Mastodon instance.");
                 }
                 (bool isUP, string? ynot) = await MastoController.checkInstance(login.Instance);
                 if (!isUP)
                 {
-                    return Results.BadRequest($"Mastodon instance {login.Instance} is down/unreachable: {ynot}");
+                    string msg = $"Mastodon instance {login.Instance} is down/unreachable: {ynot}";
+                    return BadRequestWithTrace(fn, msg);
                 }
                 else
                 {
@@ -2809,20 +2879,22 @@ app.MapPost("/me", async (HttpContext context,
                     (ApplicationToken? appToken, ynot) = await MastoController.registerAppWithInstance(instance);
                     if (appToken is null)
                     {
-                        return Results.BadRequest($"Could not register {GlobalStatic.applicationName} with {instance}: {ynot}");
+                        string msg = $"Could not register {GlobalStatic.applicationName} with {instance}: {ynot}";
+                        return BadRequestWithTrace(fn, msg);
                     }
                     else
                     {
                         string authorizationUrl = MastoController.getMastodonOAuthUrl(appToken);
                         if (authorizationUrl is null)
                         {
-                            return Results.BadRequest($"Could not get authorization URL with this appToken: {appToken}");
+                            string msg = $"Could not get authorization URL with this appToken: {appToken}";
+                            return BadRequestWithTrace(fn, msg);
                         }
                         else
                         {
                             // store the appToken in the session cookie
                             MastoController.storeMastoToken(context, appToken);
-                            return Results.Redirect(authorizationUrl);
+                            return RedirectWithTrace(fn, authorizationUrl, $"redirecting to {authorizationUrl}");
                         }
                     }
                 }
@@ -2830,7 +2902,7 @@ app.MapPost("/me", async (HttpContext context,
 
         default:
             {
-                return Results.BadRequest("Unknown OAuth provider");
+                return BadRequestWithTrace(fn, "Unknown OAuth provider");
 
             }
 
@@ -2859,11 +2931,11 @@ app.MapGet("/mastocallback", async (string code,
 
     if (appToken is null)
     {
-        return Results.BadRequest("BAD/MISSING Mastodon parameters in session cookie - dunno, did you forget to _login.html -> /mastoconnect -> /mastologin?");
+        return BadRequestWithTrace(fn, "BAD/MISSING Mastodon parameters in session cookie - dunno, did you forget to _login.html -> /mastoconnect -> /mastologin?");
     }
     if (string.IsNullOrEmpty(GlobalConfig.mastoScopes))
     {
-        return Results.BadRequest("BAD/MISSING Mastodon scopes in config"); // should never be null due to default value
+        return BadRequestWithTrace(fn, "BAD/MISSING Mastodon scopes in config"); // should never be null due to default value
     }
 
     string redirectUri = Uri.EscapeDataString($"{GlobalConfig.Hostname}/mastocallback");
@@ -2884,7 +2956,8 @@ app.MapGet("/mastocallback", async (string code,
     if (response.StatusCode != System.Net.HttpStatusCode.OK)
     {
         var error = await response.Content.ReadAsStringAsync();
-        return Results.BadRequest($"Mastodon instance {appToken.instance} returned 422: {error} - Sent: {postData}");
+        string msg = $"Mastodon instance {appToken.instance} returned 422: {error} - Sent: {postData}";
+        return BadRequestWithTrace(fn, msg);
     }
     else
     {
@@ -2900,7 +2973,10 @@ app.MapGet("/mastocallback", async (string code,
         string credentialsUrl = $"{appToken.instance}/api/v1/accounts/verify_credentials";
 
         // handle this better
-        if (token is null) return Results.Unauthorized();
+        if (token is null)
+        {
+            return UnauthorizedWithTrace(fn, "Mastodon token is null");
+        }
 
         // create httpClient
         client.DefaultRequestHeaders.Add("Authorization", "Bearer " + accessToken);
@@ -2908,7 +2984,8 @@ app.MapGet("/mastocallback", async (string code,
         if (response.StatusCode != System.Net.HttpStatusCode.OK)
         {
             var error = await response.Content.ReadAsStringAsync();
-            return Results.BadRequest($"Mastodon instance {appToken.instance} returned  422: {error} - requested {credentialsUrl}");
+            string msg = $"Mastodon instance {appToken.instance} returned  422: {error} - requested {credentialsUrl}";
+            return BadRequestWithTrace(fn, msg);
         }
         else
         {
@@ -2916,7 +2993,10 @@ app.MapGet("/mastocallback", async (string code,
 
             var newcontent = await response.Content.ReadAsStringAsync();
             var account = JsonConvert.DeserializeObject<Account>(newcontent);
-            if (account is null) return Results.BadRequest("Mastodon instance returned null account object");
+            if (account is null)
+            {
+                return BadRequestWithTrace(fn, "Mastodon instance returned null account object");
+            }
 
             // dump out the account object
             var accountDump = JsonConvert.SerializeObject(account, Formatting.Indented);
@@ -2969,7 +3049,7 @@ app.MapGet("/mastocallback", async (string code,
                 await UserSessionService.createSession(httpContext, username!, username!, "anonymous");
                 var msg = $"Hi {username} from the fediverse; You've been logged in with role: anonymous.";
                 await GlobalStatic.GenerateLoginResult(sb, msg);
-                return Results.Content(sb.ToString(), "text/html");
+                return ContentWithTrace(fn, sb.ToString(), "text/html", "Mastodon callback page generated");
             }
             else
             {
@@ -2978,7 +3058,7 @@ app.MapGet("/mastocallback", async (string code,
                 await UserSessionService.createSession(httpContext, localuser.Id, localuser.UserName!, realizedRole);
                 var msg = $"Hi {username} from the fediverse; You've been logged in with role: {realizedRole}.";
                 await GlobalStatic.GenerateLoginResult(sb, msg);
-                return Results.Content(sb.ToString(), "text/html");
+                return ContentWithTrace(fn, sb.ToString(), "text/html", "Mastodon callback page generated");
             }
 
 
@@ -2997,7 +3077,8 @@ app.MapPost("/lists/{listid:int}", async Task<IResult> (HttpContext httpContext)
     var userManager = httpContext.RequestServices.GetRequiredService<UserManager<GeFeSLEUser>>();
     var geListController = httpContext.RequestServices.GetRequiredService<GeListController>();
 
-    string fn = "/lists/{listid:int} (POST)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/lists/{listid} (POST)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(GeListImportDto), importListDto);
 
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // get session user
@@ -3008,12 +3089,17 @@ app.MapPost("/lists/{listid:int}", async Task<IResult> (HttpContext httpContext)
         .Include(l => l.ListOwners)
         .Include(l => l.Contributors)
         .FirstOrDefaultAsync(l => l.Id == listid);
-    if (list is null) return Results.NotFound($"List {listid} not found.");
+    if (list is null)
+    {
+        string msg = $"List {listid} not found.";
+        return NotFoundWithTrace(fn, msg);
+    }
     // is the user allowed to modify this list? 
     (bool canMod, string? ynot) = list.IsUserAllowedToModify(user);
     if (!canMod && sessionUser.Role != "SuperUser")
     {
-        return Results.BadRequest(ynot); // TODO: return a proper 403  
+        string msg = ynot ?? "Cannot modify target list";
+        return BadRequestWithTrace(fn, msg); // TODO: return a proper 403
     }
     else
     {
@@ -3040,7 +3126,7 @@ app.MapPost("/lists/query", async (
     GeListController geListController) =>
 {
     string fn = "/lists/query (POST)"; DBg.d(LogLevel.Trace, fn);
-    DBg.d(LogLevel.Trace, $"{fn} <-- importListDto: {System.Text.Json.JsonSerializer.Serialize(importListDto)}");
+    LogDtoIn(fn, nameof(GeListImportDto), importListDto);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     importListDto.Data = null;
     return await geListController.ListImport(httpContext, importListDto, null, user);
@@ -3107,11 +3193,11 @@ app.MapGet("/me", async (HttpContext httpContext,
         }
     }
 
-    DBg.d(LogLevel.Information, $"{fn} --> {sessionUser}");
+    
     if (sessionUser.IsAuthenticated)
     {
         var antiForgeryTokens = antiforgery.GetAndStoreTokens(httpContext);
-        return Results.Ok(new
+        var meAuthenticatedDto = new
         {
             sessionUser.Id,
             sessionUser.UserName,
@@ -3119,10 +3205,13 @@ app.MapGet("/me", async (HttpContext httpContext,
             sessionUser.IsAuthenticated,
             antiForgeryToken = antiForgeryTokens.RequestToken,
             antiForgeryHeaderName = antiForgeryTokens.HeaderName
-        });
+        };
+        LogDtoOut(fn, "MeAuthenticatedDto", meAuthenticatedDto);
+        return OkPayloadWithTrace(fn, meAuthenticatedDto, "authenticated session details returned");
     }
 
-    return Results.Ok(sessionUser);
+    LogDtoOut(fn, nameof(UserDto), sessionUser);
+    return OkPayloadWithTrace(fn, sessionUser, "anonymous session details returned");
 })
 .WithEndpointDocs("me.get")
 .AllowAnonymous()
@@ -3136,7 +3225,7 @@ app.MapGet("/lists/{list:int}/users", async (int list,
         UserManager<GeFeSLEUser> userManager,
         RoleManager<IdentityRole> roleManager) =>
 {
-    string fn = "/lists/{list:int}/users (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/lists/{list}/users (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     // middleware rejects the request if there isn't a listid. see if the list given is a real one
@@ -3146,7 +3235,10 @@ app.MapGet("/lists/{list:int}/users", async (int list,
                                  .Include(l => l.ListOwners)
                                  .Include(l => l.Contributors)
                                  .FirstOrDefaultAsync(l => l.Id == list);
-    if (listObj is null) return Results.NotFound();
+    if (listObj is null)
+    {
+        return NotFoundNoMessageWithTrace(fn, $"list {list} not found");
+    }
     else
     {
         // take the list's .Creator, .ListOwners and .Contributors and return them as json
@@ -3154,7 +3246,8 @@ app.MapGet("/lists/{list:int}/users", async (int list,
         var listownersDto = listObj.ListOwners.Select(u => u.ToSummaryDto()).ToList();
         var contributorsDto = listObj.Contributors.Select(u => u.ToSummaryDto()).ToList();
         var result = new GeListUsersDto { Creator = creatorDto, ListOwners = listownersDto, Contributors = contributorsDto };
-        return Results.Ok(result);
+        LogDtoOut(fn, nameof(GeListUsersDto), result);
+        return OkPayloadWithTrace(fn, result, $"list {list} users returned");
     }
 
 }).RequireAuthorization(new AuthorizeAttribute
@@ -3169,19 +3262,21 @@ app.MapPost("/lists/{list:int}/owners", async (int list,
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager) =>
 {
-    string fn = "/lists/{list:int}/owners (POST)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/lists/{list}/owners (POST)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(AddListUserDto), requestData);
 
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     if (string.IsNullOrEmpty(requestData.Username))
     {
-        return Results.BadRequest(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = "username must be specified",
             ListId = list,
             Role = "listowner"
-        });
+        };
+        return BadRequestObjectWithTrace(fn, response, response.Message);
     }
 
     GeList? targetList = await db.Lists
@@ -3191,53 +3286,57 @@ app.MapPost("/lists/{list:int}/owners", async (int list,
 
     if (targetList == null)
     {
-        return Results.NotFound(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = $"List {list} does not exist",
             ListId = list,
             Username = requestData.Username,
             Role = "listowner"
-        });
+        };
+        return NotFoundObjectWithTrace(fn, response, response.Message);
     }
 
     string? callerUserName = httpContext.User.Identity?.Name;
     if (string.IsNullOrEmpty(callerUserName))
     {
-        return Results.BadRequest(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = "Caller is not logged in",
             ListId = list,
             Username = requestData.Username,
             Role = "listowner"
-        });
+        };
+        return BadRequestObjectWithTrace(fn, response, response.Message);
     }
 
     GeFeSLEUser? caller = await userManager.FindByNameAsync(callerUserName!.ToUpper());
     if (caller == null)
     {
-        return Results.BadRequest(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = "Caller is not in the database",
             ListId = list,
             Username = requestData.Username,
             Role = "listowner"
-        });
+        };
+        return BadRequestObjectWithTrace(fn, response, response.Message);
     }
 
     GeFeSLEUser? user = await userManager.FindByNameAsync(requestData.Username.ToUpper());
     if (user == null)
     {
-        return Results.NotFound(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = $"User {requestData.Username} does not exist",
             ListId = list,
             Username = requestData.Username,
             Role = "listowner"
-        });
+        };
+        return NotFoundObjectWithTrace(fn, response, response.Message);
     }
 
     var roles = await userManager.GetRolesAsync(caller);
@@ -3245,22 +3344,22 @@ app.MapPost("/lists/{list:int}/owners", async (int list,
 
     if ((targetList.Creator != caller) && (realizedRole != "SuperUser"))
     {
-        return Results.Problem("Only the list's creator or a SuperUser can add a listowner",
-            statusCode: 403);
+        string msg = "Only the list's creator or a SuperUser can add a listowner";
+        return ProblemWithTrace(fn, msg, 403);
     }
 
     if (targetList.ListOwners.Contains(user))
     {
         var msg = $"{user.UserName} is already a listowner of {targetList.Name}";
         DBg.d(LogLevel.Information, msg);
-        return Results.Ok(new ListUserOperationResponse
+        return OkPayloadWithTrace(fn, new ListUserOperationResponse
         {
             Success = true,
             Message = msg,
             Username = requestData.Username,
             ListId = list,
             Role = "listowner"
-        });
+        }, msg);
     }
 
     targetList.ListOwners.Add(user);
@@ -3276,14 +3375,14 @@ app.MapPost("/lists/{list:int}/owners", async (int list,
             ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
     var addedMsg = $"{caller.UserName} Added {user.UserName} to {targetList.Name} as a listowner";
     DBg.d(LogLevel.Information, addedMsg);
-    return Results.Ok(new ListUserOperationResponse
+    return OkPayloadWithTrace(fn, new ListUserOperationResponse
     {
         Success = true,
         Message = addedMsg,
         Username = requestData.Username,
         ListId = list,
         Role = "listowner"
-    });
+    }, addedMsg);
 })
 .RequireAuthorization(new AuthorizeAttribute
 {
@@ -3297,19 +3396,21 @@ app.MapPost("/lists/{list:int}/contributors", async (int list,
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager) =>
 {
-    string fn = "/lists/{list:int}/contributors (POST)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/lists/{list}/contributors (POST)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(AddListUserDto), requestData);
 
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     if (string.IsNullOrEmpty(requestData.Username))
     {
-        return Results.BadRequest(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = "username must be specified",
             ListId = list,
             Role = "contributor"
-        });
+        };
+        return BadRequestObjectWithTrace(fn, response, response.Message);
     }
 
     GeList? targetList = await db.Lists
@@ -3319,53 +3420,57 @@ app.MapPost("/lists/{list:int}/contributors", async (int list,
 
     if (targetList == null)
     {
-        return Results.NotFound(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = $"List {list} does not exist",
             ListId = list,
             Username = requestData.Username,
             Role = "contributor"
-        });
+        };
+        return NotFoundObjectWithTrace(fn, response, response.Message);
     }
 
     string? callerUserName = httpContext.User.Identity?.Name;
     if (string.IsNullOrEmpty(callerUserName))
     {
-        return Results.BadRequest(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = "Caller is not logged in",
             ListId = list,
             Username = requestData.Username,
             Role = "contributor"
-        });
+        };
+        return BadRequestObjectWithTrace(fn, response, response.Message);
     }
 
     GeFeSLEUser? caller = await userManager.FindByNameAsync(callerUserName!.ToUpper());
     if (caller == null)
     {
-        return Results.BadRequest(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = "Caller is not in the database",
             ListId = list,
             Username = requestData.Username,
             Role = "contributor"
-        });
+        };
+        return BadRequestObjectWithTrace(fn, response, response.Message);
     }
 
     GeFeSLEUser? user = await userManager.FindByNameAsync(requestData.Username.ToUpper());
     if (user == null)
     {
-        return Results.NotFound(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = $"User {requestData.Username} does not exist",
             ListId = list,
             Username = requestData.Username,
             Role = "contributor"
-        });
+        };
+        return NotFoundObjectWithTrace(fn, response, response.Message);
     }
 
     var roles = await userManager.GetRolesAsync(caller);
@@ -3373,22 +3478,22 @@ app.MapPost("/lists/{list:int}/contributors", async (int list,
 
     if ((targetList.Creator != caller) && (realizedRole != "SuperUser") && !targetList.ListOwners.Contains(caller))
     {
-        return Results.Problem("Only the list's creator, a SuperUser or a listowner can add a contributor",
-            statusCode: 403);
+        string msg = "Only the list's creator, a SuperUser or a listowner can add a contributor";
+        return ProblemWithTrace(fn, msg, 403);
     }
 
     if (targetList.Contributors.Contains(user))
     {
         var msg = $"{user.UserName} is already a contributor to {targetList.Name}";
         DBg.d(LogLevel.Information, msg);
-        return Results.Ok(new ListUserOperationResponse
+        return OkPayloadWithTrace(fn, new ListUserOperationResponse
         {
             Success = true,
             Message = msg,
             Username = requestData.Username,
             ListId = list,
             Role = "contributor"
-        });
+        }, msg);
     }
 
     targetList.Contributors.Add(user);
@@ -3404,14 +3509,14 @@ app.MapPost("/lists/{list:int}/contributors", async (int list,
             ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
     var addedMsg = $"{caller.UserName} Added {user.UserName} to {targetList.Name} as a contributor";
     DBg.d(LogLevel.Information, addedMsg);
-    return Results.Ok(new ListUserOperationResponse
+    return OkPayloadWithTrace(fn, new ListUserOperationResponse
     {
         Success = true,
         Message = addedMsg,
         Username = requestData.Username,
         ListId = list,
         Role = "contributor"
-    });
+    }, addedMsg);
 })
 .RequireAuthorization(new AuthorizeAttribute
 {
@@ -3425,19 +3530,21 @@ app.MapDelete("/lists/{list:int}/owners", async (int list,
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager) =>
 {
-    DBg.d(LogLevel.Trace, "lists/{list}/owners (DELETE)");
+    string fn = $"/lists/{list}/owners (DELETE)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(AddListUserDto), requestData);
 
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     if (string.IsNullOrEmpty(requestData.Username))
     {
-        return Results.BadRequest(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = "username must be specified",
             ListId = list,
             Role = "listowner"
-        });
+        };
+        return BadRequestObjectWithTrace(fn, response, response.Message);
     }
 
     GeList? targetList = await db.Lists
@@ -3447,53 +3554,57 @@ app.MapDelete("/lists/{list:int}/owners", async (int list,
 
     if (targetList == null)
     {
-        return Results.NotFound(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = $"List {list} does not exist",
             ListId = list,
             Username = requestData.Username,
             Role = "listowner"
-        });
+        };
+        return NotFoundObjectWithTrace(fn, response, response.Message);
     }
 
     string? callerUserName = httpContext.User.Identity?.Name;
     if (string.IsNullOrEmpty(callerUserName))
     {
-        return Results.BadRequest(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = "Caller is not logged in",
             ListId = list,
             Username = requestData.Username,
             Role = "listowner"
-        });
+        };
+        return BadRequestObjectWithTrace(fn, response, response.Message);
     }
 
     GeFeSLEUser? caller = await userManager.FindByNameAsync(callerUserName!.ToUpper());
     if (caller == null)
     {
-        return Results.BadRequest(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = "Caller is not in the database",
             ListId = list,
             Username = requestData.Username,
             Role = "listowner"
-        });
+        };
+        return BadRequestObjectWithTrace(fn, response, response.Message);
     }
 
     GeFeSLEUser? user = await userManager.FindByNameAsync(requestData.Username.ToUpper());
     if (user == null)
     {
-        return Results.NotFound(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = $"User {requestData.Username} does not exist",
             ListId = list,
             Username = requestData.Username,
             Role = "listowner"
-        });
+        };
+        return NotFoundObjectWithTrace(fn, response, response.Message);
     }
 
     var roles = await userManager.GetRolesAsync(caller);
@@ -3501,20 +3612,20 @@ app.MapDelete("/lists/{list:int}/owners", async (int list,
 
     if ((targetList.Creator != caller) && (realizedRole != "SuperUser"))
     {
-        return Results.Problem("Only the list's creator or a SuperUser can REMOVE a listowner",
-            statusCode: 403);
+        string errMsg = "Only the list's creator or a SuperUser can REMOVE a listowner";
+        return ProblemWithTrace(fn, errMsg, 403);
     }
 
     if (!targetList.ListOwners.Contains(user))
     {
-        return Results.Ok(new ListUserOperationResponse
+        return OkPayloadWithTrace(fn, new ListUserOperationResponse
         {
             Success = true,
             Message = $"{user.UserName} isn't a listowner of {targetList.Name}",
             Username = requestData.Username,
             ListId = list,
             Role = "listowner"
-        });
+        }, $"{user.UserName} isn't a listowner of {targetList.Name}");
     }
 
     targetList.ListOwners.Remove(user);
@@ -3530,14 +3641,14 @@ app.MapDelete("/lists/{list:int}/owners", async (int list,
             ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
     var msg = $"{caller.UserName} REMOVED {user.UserName} FROM {targetList.Name} as a listowner";
     DBg.d(LogLevel.Information, msg);
-    return Results.Ok(new ListUserOperationResponse
+    return OkPayloadWithTrace(fn, new ListUserOperationResponse
     {
         Success = true,
         Message = msg,
         Username = requestData.Username,
         ListId = list,
         Role = "listowner"
-    });
+    }, msg);
 })
 .WithEndpointDocs("DeleteListOwner")
 .RequireAuthorization(new AuthorizeAttribute
@@ -3552,19 +3663,21 @@ app.MapDelete("/lists/{list:int}/contributors", async (int list,
         HttpContext httpContext,
         UserManager<GeFeSLEUser> userManager) =>
 {
-    DBg.d(LogLevel.Trace, "lists/{list}/contributors (DELETE)");
+    string fn = $"/lists/{list}/contributors (DELETE)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(AddListUserDto), requestData);
 
     GeFeSLEUser? me = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     if (string.IsNullOrEmpty(requestData.Username))
     {
-        return Results.BadRequest(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = "username must be specified",
             ListId = list,
             Role = "contributor"
-        });
+        };
+        return BadRequestObjectWithTrace(fn, response, response.Message);
     }
 
     GeList? targetList = await db.Lists
@@ -3574,53 +3687,57 @@ app.MapDelete("/lists/{list:int}/contributors", async (int list,
 
     if (targetList == null)
     {
-        return Results.NotFound(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = $"List {list} does not exist",
             ListId = list,
             Username = requestData.Username,
             Role = "contributor"
-        });
+        };
+        return NotFoundObjectWithTrace(fn, response, response.Message);
     }
 
     string? callerUserName = httpContext.User.Identity?.Name;
     if (string.IsNullOrEmpty(callerUserName))
     {
-        return Results.BadRequest(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = "Caller is not logged in",
             ListId = list,
             Username = requestData.Username,
             Role = "contributor"
-        });
+        };
+        return BadRequestObjectWithTrace(fn, response, response.Message);
     }
 
     GeFeSLEUser? caller = await userManager.FindByNameAsync(callerUserName!.ToUpper());
     if (caller == null)
     {
-        return Results.BadRequest(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = "Caller is not in the database",
             ListId = list,
             Username = requestData.Username,
             Role = "contributor"
-        });
+        };
+        return BadRequestObjectWithTrace(fn, response, response.Message);
     }
 
     GeFeSLEUser? user = await userManager.FindByNameAsync(requestData.Username.ToUpper());
     if (user == null)
     {
-        return Results.NotFound(new ListUserOperationResponse
+        var response = new ListUserOperationResponse
         {
             Success = false,
             Message = $"User {requestData.Username} does not exist",
             ListId = list,
             Username = requestData.Username,
             Role = "contributor"
-        });
+        };
+        return NotFoundObjectWithTrace(fn, response, response.Message);
     }
 
     var roles = await userManager.GetRolesAsync(caller);
@@ -3628,20 +3745,20 @@ app.MapDelete("/lists/{list:int}/contributors", async (int list,
 
     if ((targetList.Creator != caller) && (realizedRole != "SuperUser") && !targetList.ListOwners.Contains(caller))
     {
-        return Results.Problem("Only the list's creator, a SuperUser or a listowner can REMOVE a contributor",
-            statusCode: 403);
+        string errMsg = "Only the list's creator, a SuperUser or a listowner can REMOVE a contributor";
+        return ProblemWithTrace(fn, errMsg, 403);
     }
 
     if (!targetList.Contributors.Contains(user))
     {
-        return Results.Ok(new ListUserOperationResponse
+        return OkPayloadWithTrace(fn, new ListUserOperationResponse
         {
             Success = true,
             Message = $"{user.UserName} isn't a contributor to {targetList.Name}",
             Username = requestData.Username,
             ListId = list,
             Role = "contributor"
-        });
+        }, $"{user.UserName} isn't a contributor to {targetList.Name}");
     }
 
     targetList.Contributors.Remove(user);
@@ -3657,14 +3774,14 @@ app.MapDelete("/lists/{list:int}/contributors", async (int list,
             ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
     var msg = $"{caller.UserName} REMOVED {user.UserName} FROM {targetList.Name} as a contributor";
     DBg.d(LogLevel.Information, msg);
-    return Results.Ok(new ListUserOperationResponse
+    return OkPayloadWithTrace(fn, new ListUserOperationResponse
     {
         Success = true,
         Message = msg,
         Username = requestData.Username,
         ListId = list,
         Role = "contributor"
-    });
+    }, msg);
 })
 .WithEndpointDocs("DeleteListContributor")
 .RequireAuthorization(new AuthorizeAttribute
@@ -3714,7 +3831,7 @@ app.MapGet("/session", async (HttpContext httpContext) =>
     DBg.d(LogLevel.Information, msg);
 
     await GlobalStatic.GeneratePageFooter(sb);
-    return Results.Content(sb.ToString(), "text/html");
+    return ContentWithTrace(fn, sb.ToString(), "text/html", "HTML response generated");
 }).AllowAnonymous()
 .RequireAuthorization(new AuthorizeAttribute
 { AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme });
@@ -3756,7 +3873,7 @@ app.MapGet("/me/delete", async (HttpContext httpContext) =>
     sb.AppendLine("</script>");
     
     await GlobalStatic.GeneratePageFooter(sb);
-    return Results.Content(sb.ToString(), "text/html");
+    return ContentWithTrace(fn, sb.ToString(), "text/html", "HTML response generated");
 }).AllowAnonymous()
 .RequireAuthorization(new AuthorizeAttribute
 { AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme });
@@ -3764,7 +3881,7 @@ app.MapGet("/me/delete", async (HttpContext httpContext) =>
 
 app.MapGet("/", () => {
     string fn = "/ (GET)"; DBg.d(LogLevel.Trace, fn);
-    return Results.Redirect("/index.html");
+    return RedirectWithTrace(fn, "/index.html", "redirecting to index");
 });
 
 app.MapPost("/files", async (IFormFile file,
@@ -3787,11 +3904,17 @@ app.MapPost("/files", async (IFormFile file,
     }
     catch (Exception e)
     {
-        return Results.BadRequest(e.Message);
+        return BadRequestWithTrace(fn, e.Message);
     }
 
-    if (user is null) return Results.BadRequest("User is null");
-    if (file is null) return Results.BadRequest("No file uploaded");
+    if (user is null)
+    {
+        return BadRequestWithTrace(fn, "User is null");
+    }
+    if (file is null)
+    {
+        return BadRequestWithTrace(fn, "No file uploaded");
+    }
     if (file.Length > 0)
     {
         if (string.IsNullOrWhiteSpace(user.UploadsPath))
@@ -3800,7 +3923,8 @@ app.MapPost("/files", async (IFormFile file,
             var otherUsers = await userManager.Users.Where(existingUser => existingUser.Id != user.Id).ToListAsync();
             if (otherUsers.Any(existingUser => string.Equals(existingUser.UploadsPath, candidateUploadsPath, StringComparison.OrdinalIgnoreCase)))
             {
-                return Results.BadRequest($"Another user already uses uploads folder '{candidateUploadsPath}'. Please choose a different username.");
+                string msg = $"Another user already uses uploads folder '{candidateUploadsPath}'. Please choose a different username.";
+                return BadRequestWithTrace(fn, msg);
             }
 
             user.UploadsPath = candidateUploadsPath;
@@ -3825,11 +3949,11 @@ app.MapPost("/files", async (IFormFile file,
         ProtectedFiles.AddFile(relpath, GlobalConfig.modListName);
 
 
-        return Results.Ok(url);
+        return OkPayloadWithTrace(fn, url, $"uploaded file URL {url}");
     }
     else
     {
-        return Results.BadRequest("File is empty");
+        return BadRequestWithTrace(fn, "File is empty");
     }
 }).RequireAuthorization(new AuthorizeAttribute
 {
@@ -3843,7 +3967,7 @@ app.MapDelete("/files/{*file}", async (string file,
     UserManager<GeFeSLEUser> userManager,
     HttpContext httpContext) =>
 {
-    string fn = "/files/{*file} (DELETE)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/files/{file} (DELETE)"; DBg.d(LogLevel.Trace, fn);
     _ = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
 
     try
@@ -3852,19 +3976,19 @@ app.MapDelete("/files/{*file}", async (string file,
     }
     catch (Exception e)
     {
-        return Results.BadRequest(e.Message);
+        return BadRequestWithTrace(fn, e.Message);
     }
 
     if (string.IsNullOrWhiteSpace(file))
     {
-        return Results.BadRequest("No file path provided");
+        return BadRequestWithTrace(fn, "No file path provided");
     }
 
     string decoded = WebUtility.UrlDecode(file).Replace("\\", "/").Trim();
     decoded = decoded.TrimStart('/');
     if (decoded.Contains("..", StringComparison.Ordinal))
     {
-        return Results.BadRequest("Invalid file path");
+        return BadRequestWithTrace(fn, "Invalid file path");
     }
 
     string relPath = GeListFileController.NormalizeRelativePath(decoded);
@@ -3873,7 +3997,7 @@ app.MapDelete("/files/{*file}", async (string file,
         || ProtectedFiles.ContainsFile(relPath)
         || ProtectedFiles.ContainsFile(relPath.TrimStart('/')))
     {
-        return Results.BadRequest("Protected internal files cannot be deleted");
+        return BadRequestWithTrace(fn, "Protected internal files cannot be deleted");
     }
 
     bool isGeneratedListFile = string.Equals(relPath, "/index.html", StringComparison.OrdinalIgnoreCase)
@@ -3886,32 +4010,32 @@ app.MapDelete("/files/{*file}", async (string file,
             ));
     if (isGeneratedListFile)
     {
-        return Results.BadRequest("Generated list files cannot be deleted");
+        return BadRequestWithTrace(fn, "Generated list files cannot be deleted");
     }
 
     string uploadsPrefix = "/" + GlobalStatic.uploadsFolder + "/";
     if (!relPath.StartsWith(uploadsPrefix, StringComparison.OrdinalIgnoreCase))
     {
-        return Results.BadRequest("Only files under uploads can be deleted");
+        return BadRequestWithTrace(fn, "Only files under uploads can be deleted");
     }
 
     string absRoot = Path.GetFullPath(GlobalConfig.wwwroot);
     string absFile = Path.GetFullPath(Path.Combine(absRoot, relPath.TrimStart('/')));
     if (!absFile.StartsWith(absRoot, StringComparison.OrdinalIgnoreCase))
     {
-        return Results.BadRequest("Invalid file path");
+        return BadRequestWithTrace(fn, "Invalid file path");
     }
 
     if (!System.IO.File.Exists(absFile))
     {
-        return Results.NotFound("File not found");
+        return NotFoundWithTrace(fn, "File not found");
     }
 
     System.IO.File.Delete(absFile);
     ProtectedFiles.RemoveFile(relPath);
     ProtectedFiles.RemoveFile(relPath.TrimStart('/'));
 
-    return Results.Ok(new { deleted = relPath });
+    return OkPayloadWithTrace(fn, new { deleted = relPath }, $"deleted file {relPath}");
 })
 .RequireAuthorization(new AuthorizeAttribute
 {
@@ -3923,9 +4047,9 @@ app.MapDelete("/files/{*file}", async (string file,
 
 app.MapGet("/actions/{processid}", (string processid) =>
 {
-    string fn = "/actions/{processid} (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/actions/{processid} (GET)"; DBg.d(LogLevel.Trace, fn);
     var status = ProcessTracker.GetProcessStatus(processid);
-    return Results.Ok(status);
+    return OkPayloadWithTrace(fn, status, "process status returned");
 
 });
 
@@ -3933,7 +4057,7 @@ app.MapGet("/actions", () =>
 {
     string fn = "/actions (GET)"; DBg.d(LogLevel.Trace, fn);
     var status = ProcessTracker.GetProcesses();
-    return Results.Ok(status);
+    return OkPayloadWithTrace(fn, status, "process list returned");
 
 });
 
@@ -3941,7 +4065,7 @@ app.MapGet("/files/orphan", async (GeListFileController geListFileController) =>
 {
     string fn = "/files/orphan (GET)"; DBg.d(LogLevel.Trace, fn);
     StringBuilder sb = await geListFileController.GetAllFilesInWWWRoot();
-    return Results.Content(sb.ToString(), "text/html");
+    return ContentWithTrace(fn, sb.ToString(), "text/html", "HTML response generated");
 }).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
@@ -3953,7 +4077,7 @@ app.MapGet("/files/cleanup", async (GeListFileController geListFileController) =
     string fn = "/files/cleanup (GET)"; DBg.d(LogLevel.Trace, fn);
     int deleted = await geListFileController.DeleteOrphanFilesAsync();
     DBg.d(LogLevel.Information, $"{fn} -- deleted {deleted} orphan files");
-    return Results.Redirect("/files/orphan");
+    return RedirectWithTrace(fn, "/files/orphan", $"deleted {deleted} orphan files");
 }).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
@@ -3984,7 +4108,7 @@ app.MapGet("/files/clean", async (GeListFileController geListFileController,
     }
     await GlobalStatic.GenerateHTMLListIndex(db);
 
-    return Results.Redirect("/files/orphan");
+    return RedirectWithTrace(fn, "/files/orphan", "redirecting after file cleanup");
 }).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
@@ -4001,7 +4125,7 @@ app.MapGet("/items/orphan", async (GeFeSLEDb db, bool delete = false) =>
     {
         db.Items.RemoveRange(geItemOrphans);
         await db.SaveChangesAsync();
-        return Results.Redirect("/items/orphan");
+        return RedirectWithTrace(fn, "/items/orphan", "redirecting after orphan item delete");
     }
 
     StringBuilder sb = new StringBuilder();
@@ -4043,7 +4167,7 @@ app.MapGet("/items/orphan", async (GeFeSLEDb db, bool delete = false) =>
     sb.AppendLine("</script>");
     
     await GlobalStatic.GeneratePageFooter(sb);
-    return Results.Content(sb.ToString(), "text/html");
+    return ContentWithTrace(fn, sb.ToString(), "text/html", "HTML response generated");
 }).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
@@ -4078,7 +4202,7 @@ app.MapPost("/cleanup/empty-tags", async (GeFeSLEDb db) =>
         await list.GenerateHTMLListPage(db);
     }
     
-    return Results.Ok($"Cleaned up empty tags from {cleanedCount} items");
+    return OkWithTrace(fn, $"Cleaned up empty tags from {cleanedCount} items");
 }).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
@@ -4094,7 +4218,7 @@ app.MapPost("/items/{itemid:int}/report", async (int itemid,
     HttpContext context,
     GeListFileController fileController) =>
 {
-    string fn = "/items/{itemid:int}/report (POST)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/items/{itemid}/report (POST)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(context, db, userManager);
 
     // there's going to be a "reason" parameter, and if user == null, a user contact 
@@ -4103,10 +4227,18 @@ app.MapPost("/items/{itemid:int}/report", async (int itemid,
     var userName = context.Request.Form["userName"];
 
     var item = await db.Items.FindAsync(itemid);
-    if (item is null) return Results.NotFound($"Item {itemid} not found");
+    if (item is null)
+    {
+        string msg = $"Item {itemid} not found";
+        return NotFoundWithTrace(fn, msg);
+    }
 
     var itemList = await db.Lists.FindAsync(item.ListId);
-    if (itemList is null) return Results.NotFound($"Item LIST {item.ListId} not found");
+    if (itemList is null)
+    {
+        string msg = $"Item LIST {item.ListId} not found";
+        return NotFoundWithTrace(fn, msg);
+    }
 
     // Determine the reporter identity - if user is logged in, use their username
     // Otherwise, use the userName from the form (or "anonymous" if none provided)
@@ -4171,7 +4303,7 @@ app.MapPost("/items/{itemid:int}/report", async (int itemid,
 
     // regen the MODLIST
     _ = modlist.GenerateHTMLListPage(db);
-    return Results.Ok();
+    return OkWithTrace(fn, "moderation item saved");
 
 }).AllowAnonymous();
 
@@ -4182,8 +4314,8 @@ app.MapPost("/lists/{listid:int}/suggest", async (int listid,
     HttpContext httpContext,
     GeListFileController geListFileController) =>
 {
-    string fn = "/lists/{listid:int}/suggest (POST)"; DBg.d(LogLevel.Trace, fn);
-    DBg.d(LogLevel.Trace, $"{fn} <- {System.Text.Json.JsonSerializer.Serialize(itemDto)}");
+    string fn = $"/lists/{listid}/suggest (POST)"; DBg.d(LogLevel.Trace, fn);
+    LogDtoIn(fn, nameof(GeListItemCreateUpdateDto), itemDto);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
     // Map DTO to domain object
     var newitem = new GeListItem { ListId = itemDto.ListId, Name = itemDto.Name, Comment = itemDto.Comment, IsComplete = itemDto.IsComplete, Visible = false, Tags = new List<string>(itemDto.Tags) };
@@ -4194,13 +4326,17 @@ app.MapPost("/lists/{listid:int}/suggest", async (int listid,
     }
     else
     {
-        if (newitem.ListId != listid) return Results.BadRequest("ListId does not match");
+        if (newitem.ListId != listid)
+        {
+            return BadRequestWithTrace(fn, "ListId does not match");
+        }
     }
 
     GeList? newitemList = await db.Lists.FirstOrDefaultAsync(l => l.Id == newitem.ListId);
     if (newitemList is null)
     {
-        return Results.BadRequest($"${newitem.ListId} is not a vlaid list");
+        string msg = $"${newitem.ListId} is not a vlaid list";
+        return BadRequestWithTrace(fn, msg);
     }
 
 
@@ -4260,7 +4396,9 @@ app.MapPost("/lists/{listid:int}/suggest", async (int listid,
     await modlist.GenerateRSSFeed(db);
     await modlist.GenerateJSON(db);
 
-    return Results.Created($"/showitems/{newitem.ListId}/{newitem.Id}", newitem.ToResponseDto());
+    var suggestedItemDto = newitem.ToResponseDto();
+    LogDtoOut(fn, nameof(GeListItemResponseDto), suggestedItemDto);
+    return Results.Created($"/showitems/{newitem.ListId}/{newitem.Id}", suggestedItemDto);
 }).AllowAnonymous();
 
 app.MapGet("/lists/export", async (GeFeSLEDb db) =>
@@ -4270,7 +4408,7 @@ app.MapGet("/lists/export", async (GeFeSLEDb db) =>
     // the zipFileName will be in wwwroot
     zipFile = $"{GlobalConfig.Hostname}/{zipFile}";
     DBg.d(LogLevel.Information, $"Exported site to {zipFile}");
-    return Results.Redirect(zipFile);
+    return RedirectWithTrace(fn, zipFile, $"redirecting to export archive {zipFile}");
 
 }).RequireAuthorization(new AuthorizeAttribute
 {
@@ -4297,11 +4435,17 @@ app.MapPost("/lists/import", async (IFormFile file,
     }
     catch (Exception e)
     {
-        return Results.BadRequest(e.Message);
+        return BadRequestWithTrace(fn, e.Message);
     }
 
-    if (user is null) return Results.BadRequest("User is null");
-    if (file is null) return Results.BadRequest("No file uploaded");
+    if (user is null)
+    {
+        return BadRequestWithTrace(fn, "User is null");
+    }
+    if (file is null)
+    {
+        return BadRequestWithTrace(fn, "No file uploaded");
+    }
     if (file.Length > 0)
     {
         if (string.IsNullOrWhiteSpace(user.UploadsPath))
@@ -4310,7 +4454,8 @@ app.MapPost("/lists/import", async (IFormFile file,
             var otherUsers = await userManager.Users.Where(existingUser => existingUser.Id != user.Id).ToListAsync();
             if (otherUsers.Any(existingUser => string.Equals(existingUser.UploadsPath, candidateUploadsPath, StringComparison.OrdinalIgnoreCase)))
             {
-                return Results.BadRequest($"Another user already uses uploads folder '{candidateUploadsPath}'. Please choose a different username.");
+                string msg = $"Another user already uses uploads folder '{candidateUploadsPath}'. Please choose a different username.";
+                return BadRequestWithTrace(fn, msg);
             }
 
             user.UploadsPath = candidateUploadsPath;
@@ -4328,11 +4473,11 @@ app.MapPost("/lists/import", async (IFormFile file,
             await file.CopyToAsync(stream);
         }
         string results = await GlobalStatic.SiteImport(db, filePath, user);
-        return Results.Ok(results);
+        return OkPayloadWithTrace(fn, results, $"import produced {results}");
     }
     else
     {
-        return Results.BadRequest("File is empty");
+        return BadRequestWithTrace(fn, "File is empty");
     }
 
 }).RequireAuthorization(new AuthorizeAttribute
@@ -4356,11 +4501,11 @@ app.MapGet("/.well-known/webfinger", async (string resource, GeFeSLEDb db) =>
 
 app.MapGet("/apv1/activities/{activityId}", async (string activityId) =>
 {
-    string fn = "/apv1/activities/{activityId} (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/apv1/activities/{activityId} (GET)"; DBg.d(LogLevel.Trace, fn);
     var readResult = await ActivityPubActivityLogStore.TryReadActivityPayloadAsync(activityId);
     if (readResult.Found && readResult.Payload is not null)
     {
-        return Results.Content(readResult.Payload, "application/activity+json");
+        return ContentWithTrace(fn, readResult.Payload, "application/activity+json", $"activity {activityId} returned");
     }
 
     if (!string.IsNullOrWhiteSpace(readResult.Error))
@@ -4368,7 +4513,7 @@ app.MapGet("/apv1/activities/{activityId}", async (string activityId) =>
         DBg.d(LogLevel.Warning, $"{fn} failed reading activity payload for {activityId}: {readResult.Error}");
     }
 
-    return Results.NotFound();
+    return NotFoundNoMessageWithTrace(fn, $"activity {activityId} not found");
 }).AllowAnonymous();
 
 // GET /apv1/lists/{listId}
@@ -4380,7 +4525,7 @@ app.MapGet("/apv1/activities/{activityId}", async (string activityId) =>
 
 app.MapGet("/apv1/lists/{listId:int}", async (int listId, GeFeSLEDb db) =>
 {
-    string fn = "/apv1/lists/{listId} (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/apv1/lists/{listId} (GET)"; DBg.d(LogLevel.Trace, fn);
     return await ActivityPubEndpointService.GetListActorAsync(
         listId,
         db,
@@ -4393,7 +4538,7 @@ app.MapGet("/apv1/lists/{listId:int}", async (int listId, GeFeSLEDb db) =>
 // TODOL: support pagination. 
 app.MapGet("/apv1/lists/{listId:int}/outbox", async (int listId, GeFeSLEDb db) =>
 {
-    string fn = "/apv1/lists/{listId}/outbox (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/apv1/lists/{listId}/outbox (GET)"; DBg.d(LogLevel.Trace, fn);
     return await ActivityPubEndpointService.GetListOutboxAsync(listId, db);
 }).AllowAnonymous();
 
@@ -4404,7 +4549,7 @@ app.MapGet("/apv1/lists/{listId:int}/outbox", async (int listId, GeFeSLEDb db) =
 
 app.MapGet("/apv1/lists/{listId:int}/items/{itemId:int}", async (int listId, int itemId, GeFeSLEDb db) =>
 {
-    string fn = "/apv1/lists/{listId}/items/{itemId} (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/apv1/lists/{listId}/items/{itemId} (GET)"; DBg.d(LogLevel.Trace, fn);
     return await ActivityPubEndpointService.GetListItemAsync(
         listId,
         itemId,
@@ -4414,7 +4559,7 @@ app.MapGet("/apv1/lists/{listId:int}/items/{itemId:int}", async (int listId, int
 
 app.MapGet("/apv1/items/{itemId:int}", async (int itemId, GeFeSLEDb db) =>
 {
-    string fn = "/apv1/items/{itemId} (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/apv1/items/{itemId} (GET)"; DBg.d(LogLevel.Trace, fn);
     return await ActivityPubEndpointService.GetItemAsync(
         itemId,
         db,
@@ -4428,15 +4573,15 @@ app.MapGet("/apv1/items/{itemId:int}", async (int itemId, GeFeSLEDb db) =>
 // in case its provided pagination gunk
 app.MapGet("/apv1/lists/{listId:int}/items", async (int listId, HttpContext httpContext) =>
 {
-    string fn = "/apv1/lists/{listId}/items (GET)"; DBg.d(LogLevel.Trace, fn);
-    return Results.Redirect($"/apv1/lists/{listId}/outbox{httpContext.Request.QueryString}");
+    string fn = $"/apv1/lists/{listId}/items (GET)"; DBg.d(LogLevel.Trace, fn);
+    return RedirectWithTrace(fn, $"/apv1/lists/{listId}/outbox{httpContext.Request.QueryString}", $"redirecting to list {listId} outbox");
 });
 
 // GET /apv1/lists/{listId}/followers
 // returns an ActivityPub Collection of followers
 app.MapGet("/apv1/lists/{listId:int}/followers", async (int listId, GeFeSLEDb db) =>
 {
-    string fn = "/apv1/lists/{listId}/followers (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/apv1/lists/{listId}/followers (GET)"; DBg.d(LogLevel.Trace, fn);
     return await ActivityPubEndpointService.GetFollowersAsync(listId, db);
 });
 
@@ -4489,7 +4634,7 @@ app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] Json
 // 
 app.MapGet("/{actorName:regex(^[A-Za-z0-9_-]+$)}", async (string actorName, GeFeSLEDb db, HttpContext httpContext) =>
 {
-    string fn = "/{actorName} (GET)"; DBg.d(LogLevel.Trace, fn);
+    string fn = $"/{actorName} (GET)"; DBg.d(LogLevel.Trace, fn);
     return await ActivityPubEndpointService.GetActorNameRedirectAsync(actorName, db);
 }).AllowAnonymous();
 
