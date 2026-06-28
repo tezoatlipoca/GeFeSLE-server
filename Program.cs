@@ -4529,6 +4529,14 @@ app.MapPost("/lists/import", async (IFormFile file,
     await ActivityPubKeyLoader.LoadFromConfigAsync(GlobalConfig.ActivityPubPrivateKeyPemFile);
 ActivityPubActivityLogStore.RegisterMaintenanceTasks();
 
+app.MapNodeInfoEndpoints();
+
+app.MapGet("/Home/Error", () =>
+{
+    string fn = "/Home/Error (GET)"; DBg.d(LogLevel.Trace, fn);
+    return ProblemWithTrace(fn, "Unhandled server error", StatusCodes.Status500InternalServerError);
+}).AllowAnonymous();
+
 // webfinger. /.well-known/webfinger?resource=acct:username@hostname
 app.MapGet("/.well-known/webfinger", async (string resource, GeFeSLEDb db) =>
 {

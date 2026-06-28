@@ -236,6 +236,30 @@
       }
     }
   },
+  "nodeinfo.discovery.get": {
+    "summary": "NodeInfo discovery",
+    "description": "Returns NodeInfo discovery links, including the highest supported schema.",
+    "withthags": ["Federation"],
+    "produces": {
+      "200": {
+        "description": "NodeInfo discovery document",
+        "responseType": "JsonElement",
+        "contentType": "application/json"
+      }
+    }
+  },
+  "nodeinfo.2_1.get": {
+    "summary": "NodeInfo 2.1",
+    "description": "Returns this instance's NodeInfo 2.1 payload.",
+    "withthags": ["Federation"],
+    "produces": {
+      "200": {
+        "description": "NodeInfo 2.1 document",
+        "responseType": "JsonElement",
+        "contentType": "application/json"
+      }
+    }
+  },
   "lists.get": {
     "summary": "List all lists accessible to user",
     "description": "Retrieves all lists the authenticated user has access to.",
