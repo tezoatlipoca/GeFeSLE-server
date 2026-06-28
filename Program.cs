@@ -775,6 +775,18 @@ app.Use(async (context, next) =>
         try
         {
             await next.Invoke();
+
+            // Static-file misses (e.g., unknown *.html) can return 404 before endpoint fallback.
+            // Mirror fallback tracing so these requests are visible in logs the same way.
+            string? requestPath = context.Request.Path.Value;
+            if (!string.IsNullOrWhiteSpace(requestPath)
+                && Path.HasExtension(requestPath)
+                && context.Response.StatusCode == StatusCodes.Status404NotFound)
+            {
+                string requestFn = $"{requestPath} ({context.Request.Method})";
+                DBg.d(LogLevel.Trace, requestFn);
+                DBg.d(LogLevel.Error, $"{requestFn} --> 404");
+            }
         }
         catch (Microsoft.AspNetCore.Http.BadHttpRequestException ex) when
          (ex.InnerException is AntiforgeryValidationException)
@@ -3964,6 +3976,7 @@ app.MapPost("/files", async (IFormFile file,
 app.MapDelete("/files/{*file}", async (string file,
     IAntiforgery antiforgery,
     GeFeSLEDb db,
+    GeListFileController geListFileController,
     UserManager<GeFeSLEUser> userManager,
     HttpContext httpContext) =>
 {
@@ -3992,28 +4005,52 @@ app.MapDelete("/files/{*file}", async (string file,
     }
 
     string relPath = GeListFileController.NormalizeRelativePath(decoded);
+    string uploadsPrefix = "/" + GlobalStatic.uploadsFolder + "/";
+    bool isUploadPath = relPath.StartsWith(uploadsPrefix, StringComparison.OrdinalIgnoreCase);
+    bool isDynamicallyProtected = ProtectedFiles.ContainsFile(relPath)
+        || ProtectedFiles.ContainsFile(relPath.TrimStart('/'));
 
-    if (GeListFileController.IsInternalProtectedPath(relPath)
-        || ProtectedFiles.ContainsFile(relPath)
-        || ProtectedFiles.ContainsFile(relPath.TrimStart('/')))
+    if (GeListFileController.IsInternalProtectedPath(relPath))
     {
         return BadRequestWithTrace(fn, "Protected internal files cannot be deleted");
     }
 
-    bool isGeneratedListFile = string.Equals(relPath, "/index.html", StringComparison.OrdinalIgnoreCase)
-        || await db.Lists.AnyAsync(l =>
-            !string.IsNullOrWhiteSpace(l.Name)
-            && (
-                string.Equals(relPath, $"/{l.Name}.html", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(relPath, $"/{l.Name}.json", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(relPath, $"/rss-{l.Name}.xml", StringComparison.OrdinalIgnoreCase)
-            ));
+    if (isDynamicallyProtected)
+    {
+        if (!isUploadPath)
+        {
+            return BadRequestWithTrace(fn, "Protected internal files cannot be deleted");
+        }
+
+        var referencedUploads = await geListFileController.GetAllReferencedUploadFilesAsync();
+        if (referencedUploads.Contains(relPath))
+        {
+            return BadRequestWithTrace(fn, "Upload file is still referenced and cannot be deleted");
+        }
+
+        // stale protection entries can remain after association changes; clear them when truly orphaned
+        ProtectedFiles.RemoveFile(relPath);
+        ProtectedFiles.RemoveFile(relPath.TrimStart('/'));
+    }
+
+    bool isGeneratedListFile = string.Equals(relPath, "/index.html", StringComparison.OrdinalIgnoreCase);
+    if (!isGeneratedListFile)
+    {
+        List<string> listNames = await db.Lists
+            .Where(l => !string.IsNullOrWhiteSpace(l.Name))
+            .Select(l => l.Name!)
+            .ToListAsync();
+
+        isGeneratedListFile = listNames.Any(listName =>
+            string.Equals(relPath, $"/{listName}.html", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relPath, $"/{listName}.json", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relPath, $"/rss-{listName}.xml", StringComparison.OrdinalIgnoreCase));
+    }
     if (isGeneratedListFile)
     {
         return BadRequestWithTrace(fn, "Generated list files cannot be deleted");
     }
 
-    string uploadsPrefix = "/" + GlobalStatic.uploadsFolder + "/";
     if (!relPath.StartsWith(uploadsPrefix, StringComparison.OrdinalIgnoreCase))
     {
         return BadRequestWithTrace(fn, "Only files under uploads can be deleted");
@@ -4635,8 +4672,16 @@ app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] Json
 app.MapGet("/{actorName:regex(^[A-Za-z0-9_-]+$)}", async (string actorName, GeFeSLEDb db, HttpContext httpContext) =>
 {
     string fn = $"/{actorName} (GET)"; DBg.d(LogLevel.Trace, fn);
-    return await ActivityPubEndpointService.GetActorNameRedirectAsync(actorName, db);
+    return await ActivityPubEndpointService.GetActorNameRedirectAsync(fn, actorName, db);
 }).AllowAnonymous();
+
+app.MapFallback((Delegate)((HttpContext httpContext) =>
+{
+    string path = httpContext.Request.Path.Value ?? "/";
+    string fn = $"{path} ({httpContext.Request.Method})"; DBg.d(LogLevel.Trace, fn);
+    string msg = $"resource {path} not found";
+    return NotFoundWithTrace(fn, msg);
+})).AllowAnonymous();
 
 
 

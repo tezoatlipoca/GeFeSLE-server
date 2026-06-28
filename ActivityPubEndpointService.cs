@@ -47,17 +47,17 @@ public static class ActivityPubEndpointService
         return Results.Content(System.Text.Json.JsonSerializer.Serialize(response), "application/jrd+json");
     }
 
-    public static async Task<IResult> GetActorNameRedirectAsync(string actorName, GeFeSLEDb db)
+    public static async Task<IResult> GetActorNameRedirectAsync(string fn, string actorName, GeFeSLEDb db)
     {
         if (string.IsNullOrWhiteSpace(actorName))
         {
-            return Results.NotFound();
+            return EndpointLoggingHelpers.NotFoundNoMessageWithTrace(fn);
         }
 
         GeList? list = await db.Lists.FirstOrDefaultAsync(l => l.ActivityPubId == actorName);
         if (list is null)
         {
-            return Results.NotFound();
+            return EndpointLoggingHelpers.NotFoundNoMessageWithTrace(fn);
         }
 
         string target = $"https://{GlobalConfig.Hostname}/apv1/lists/{list.Id}";

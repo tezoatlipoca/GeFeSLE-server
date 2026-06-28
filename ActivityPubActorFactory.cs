@@ -407,7 +407,8 @@ public static class ActivityPubActorFactory
             };
         }
 
-        DBg.d(LogLevel.Trace, $"ActivityPub actor for list {list.Id}:\n{System.Text.Json.JsonSerializer.Serialize(actor, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })}");
+        // we log outgoing activities in ActivityPubDeliveryUtils, so we don't need to dump the actor here
+        //DBg.d(LogLevel.Trace, $"ActivityPub actor for list {list.Id}:\n{System.Text.Json.JsonSerializer.Serialize(actor, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })}");
 
         return actor;
     }

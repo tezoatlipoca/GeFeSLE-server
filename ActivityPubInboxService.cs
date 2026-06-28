@@ -1,6 +1,8 @@
 using System.Text.Json;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using static EndpointLoggingHelpers;
 
 public static class ActivityPubInboxService
 {
@@ -48,17 +50,19 @@ public static class ActivityPubInboxService
         Func<string, string, string, string, string, string?, bool, string, Task<bool>> sendActivityPubFollowAckAsync,
         Func<GeList, GeFeSLEDb, GeListItem, string, GeListFollower?, Task> broadcastActivityPubItemToFollowersAsync)
     {
-        string fn = "/apv1/lists/{listId}/inbox (POST)";
+        string fn = $"/apv1/lists/{listId}/inbox (POST)";
         DBg.d(LogLevel.Trace, fn);
+        LogDtoIn(fn, nameof(JsonElement), activityJson);
 
         GeList? list = await db.Lists.FirstOrDefaultAsync(l => l.Id == listId);
         string expectedActorUrl = $"{GlobalConfig.Hostname}/apv1/lists/{listId}";
         if (list == null)
         {
-            return Results.NotFound($"List with id {listId} not found");
+            string msg = $"List with id {listId} not found";
+            return NotFoundWithTrace(fn, msg);
         }
 
-        DBg.d(LogLevel.Trace, $"{fn} <-- {activityJson.GetRawText()}");
+        //DBg.d(LogLevel.Trace, $"{fn} <-- {activityJson.GetRawText()}");
 
         string incomingType = activityJson.TryGetProperty("type", out var typeProp) && typeProp.ValueKind == JsonValueKind.String
             ? typeProp.GetString() ?? string.Empty
@@ -66,6 +70,21 @@ public static class ActivityPubInboxService
         string incomingId = activityJson.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String
             ? idProp.GetString() ?? $"{GlobalConfig.Hostname}/apv1/activities/unknown-{Guid.NewGuid()}"
             : $"{GlobalConfig.Hostname}/apv1/activities/unknown-{Guid.NewGuid()}";
+        var persistedActivity = await TryWriteIncomingActivityAsync(incomingId, activityJson);
+        string persistedActivityPath = persistedActivity.FilePath ?? "(not written)";
+        if (persistedActivity.Wrote)
+        {
+            DBg.d(LogLevel.Debug, $"{fn} -- incoming ActivityPub activity saved to {persistedActivityPath}");
+        }
+        else if (string.IsNullOrWhiteSpace(persistedActivity.Error))
+        {
+            DBg.d(LogLevel.Trace, $"{fn} -- incoming ActivityPub activity persistence skipped (full logging disabled)");
+        }
+        else
+        {
+            DBg.d(LogLevel.Warning, $"{fn} -- incoming ActivityPub activity not saved: {persistedActivity.Error ?? "unknown error"}");
+        }
+
         string? actorIri = activityJson.TryGetProperty("actor", out var actorProp)
             ? readIriFromActivityPubNode(actorProp)
             : null;
@@ -118,13 +137,13 @@ public static class ActivityPubInboxService
         if (string.Equals(incomingType, "Delete", StringComparison.OrdinalIgnoreCase))
         {
             DBg.d(LogLevel.Debug,
-                $"{fn} -- Delete diagnostics: nestedObjectType={nestedObjectType ?? "(null)"}, targetObject={targetObject ?? "(null)"}, actorIri={actorIri ?? "(null)"}, topLevelObjectIri={topLevelObjectIri ?? "(null)"}, expectedActorUrl={expectedActorUrl}");
+                $"{fn} -- Delete diagnostics from activity file: {persistedActivityPath}");
         }
 
         if (string.IsNullOrWhiteSpace(actorIri))
         {
-            DBg.d(LogLevel.Warning, $"{fn} -- activity.actor is null or empty");
-            return Results.BadRequest("activity.actor is null or empty");
+            string msg = "activity.actor is null or empty";
+            return BadRequestWithTrace(fn, msg);
         }
 
         if (isDeleteActor)
@@ -149,25 +168,26 @@ public static class ActivityPubInboxService
                 DBg.d(LogLevel.Information, $"{fn} -- Delete actor received for unknown follower {actorIri}; ignoring");
             }
 
-            return Results.Ok($"Delete actor processed for {actorIri}");
+            string msg = $"Delete actor processed for {actorIri}";
+            return OkWithTrace(fn, msg);
         }
 
         if (!isFollow && !isUnfollow)
         {
-            DBg.d(LogLevel.Information, $"{fn} -- ignoring unsupported activity type '{incomingType}' for list inbox");
-            return Results.Ok($"Ignored unsupported ActivityPub activity type: {incomingType}");
+            string msg = $"Ignored unsupported ActivityPub activity type: {incomingType}";
+            return OkWithTrace(fn, msg);
         }
 
         if (string.IsNullOrWhiteSpace(targetObject) || !string.Equals(targetObject, expectedActorUrl, StringComparison.OrdinalIgnoreCase))
         {
-            DBg.d(LogLevel.Warning, $"{fn} -- activity.object is null or does not match expected actor URL. Expected: {expectedActorUrl}, Actual: {targetObject ?? "(null)"}");
+            string msg = $"activity.object is null or does not match expected actor URL. Expected: {expectedActorUrl}, Actual: {targetObject ?? "(null)"}";
             string? rejectInbox = await resolveActorInboxAsync(actorIri, null);
             if (!string.IsNullOrWhiteSpace(rejectInbox))
             {
                 await sendActivityPubFollowAckAsync(rejectInbox, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, false,
-                    $"Rejected: activity.object must match {expectedActorUrl}");
+                    $"Rejected: {msg}");
             }
-            return Results.BadRequest($"activity.object is null or does not match expected actor URL. Expected: {expectedActorUrl}, Actual: {targetObject ?? "(null)"}");
+            return BadRequestWithTrace(fn, msg);
         }
 
         GeListFollower? follower = await db.ListFollowers.FirstOrDefaultAsync(f => f.Id == actorIri);
@@ -176,14 +196,14 @@ public static class ActivityPubInboxService
         {
             if (follower == null)
             {
-                DBg.d(LogLevel.Information, $"{fn} -- ignoring unfollow for unknown follower {actorIri}");
+                string rejectMsg = $"Unfollow rejected: follower {actorIri} is unknown for this list";
                 string? rejectInbox = await resolveActorInboxAsync(actorIri, null);
                 if (!string.IsNullOrWhiteSpace(rejectInbox))
                 {
                     await sendActivityPubFollowAckAsync(rejectInbox, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, false,
-                        $"Unfollow rejected: follower {actorIri} is unknown for this list");
+                        rejectMsg);
                 }
-                return Results.BadRequest($"Unfollow rejected: follower {actorIri} is unknown for this list");
+                return BadRequestWithTrace(fn, rejectMsg);
             }
 
             bool removedFromList = follower.FollowingLists.RemoveAll(id => id == list.Id) > 0;
@@ -198,7 +218,8 @@ public static class ActivityPubInboxService
                 || !await sendActivityPubFollowAckAsync(acceptInbox, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, true,
                     $"Unfollow accepted for list {list.Name} (id: {list.Id})"))
             {
-                return Results.Problem($"Unfollow processed locally but failed to send ActivityPub Accept to {actorIri}", statusCode: 502);
+                string acceptFailureMsg = $"Unfollow processed locally but failed to send ActivityPub Accept to {actorIri}";
+                return ProblemWithTrace(fn, acceptFailureMsg, 502);
             }
 
             if (removedFromList)
@@ -206,8 +227,8 @@ public static class ActivityPubInboxService
                 await list.RegenerateAllFiles(db);
             }
 
-            DBg.d(LogLevel.Information, $"{fn} -- unfollow processed for list {list.Name} (id: {list.Id}) by follower {follower.Id}");
-            return Results.Ok($"Unfollow processed for list {list.Name} (id: {list.Id})");
+            string unfollowSuccessMsg = $"Unfollow processed for list {list.Name} (id: {list.Id})";
+            return OkWithTrace(fn, unfollowSuccessMsg);
         }
 
         if (follower == null)
@@ -242,7 +263,8 @@ public static class ActivityPubInboxService
             || !await sendActivityPubFollowAckAsync(acceptInboxForFollow, expectedActorUrl, incomingId, incomingType, actorIri, targetObject, true,
                 $"Follow accepted for list {list.Name} (id: {list.Id})"))
         {
-            return Results.Problem($"Follow processed locally but failed to send ActivityPub Accept to {actorIri}", statusCode: 502);
+            string msg = $"Follow processed locally but failed to send ActivityPub Accept to {actorIri}";
+            return ProblemWithTrace(fn, msg, 502);
         }
 
         var currentItems = await list.GetItems(db);
@@ -256,6 +278,50 @@ public static class ActivityPubInboxService
             await list.RegenerateAllFiles(db);
         }
 
-        return Results.Ok($"Activity received and processed for list {list.Name} (id: {list.Id})");
+        string successMsg = $"Activity received and processed for list {list.Name} (id: {list.Id})";
+        return OkWithTrace(fn, successMsg);
+    }
+
+    private static async Task<(bool Wrote, string? FilePath, string? Error)> TryWriteIncomingActivityAsync(string activityId, JsonElement activityJson)
+    {
+        if (!ActivityPubActivityLogStore.IsFullLoggingEnabled())
+        {
+            return (false, null, null);
+        }
+
+        if (string.IsNullOrWhiteSpace(GlobalConfig.ActivityPubActivitiesFolder))
+        {
+            return (false, null, "ActivityPub activities folder is not configured.");
+        }
+
+        try
+        {
+            Directory.CreateDirectory(GlobalConfig.ActivityPubActivitiesFolder);
+            string filePath = BuildIncomingActivityFilePath(activityId);
+            await File.WriteAllTextAsync(filePath, activityJson.GetRawText());
+            return (true, filePath, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, null, ex.Message);
+        }
+    }
+
+    private static string BuildIncomingActivityFilePath(string activityId)
+    {
+        string encodedId = Uri.EscapeDataString(activityId);
+        if (string.IsNullOrWhiteSpace(encodedId))
+        {
+            encodedId = $"unknown-{Guid.NewGuid()}";
+        }
+
+        const int maxFileNameLength = 180;
+        if (encodedId.Length > maxFileNameLength)
+        {
+            string hash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(activityId))).ToLowerInvariant()[..16];
+            encodedId = $"{encodedId[..(maxFileNameLength - 17)]}_{hash}";
+        }
+
+        return Path.Combine(GlobalConfig.ActivityPubActivitiesFolder!, $"{encodedId}.json");
     }
 }
