@@ -48,9 +48,9 @@ Commenting on list items is being worked on right now.
 .. or build your own!
 
 ## Future Work/Roadmap
-v1.2 - complete Federation including item comments, comment threading
-v1.3 - localization, accessibility
-v1.4 - ? 
+- v1.2 - complete Federation including item comments, comment threading
+- v1.3 - localization, accessibility
+- v1.4 - ? 
 
 # How do I install it? 
 - [installation](/Documentation/installation.md)
