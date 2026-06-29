@@ -4,6 +4,9 @@
 
 <img width="300" height="" alt="The same sample list in a Mastodon client (Phanpy)" src="https://github.com/user-attachments/assets/278dcf32-5ea6-4795-9fca-285cf1ed0a4b" />
 
+The _sample list in the screenshots above_ can be [**seen LIVE** on our flagship/test/sample site **HERE**](https://lists.awadwatt.com/Federation%20Test.html) or in **Mastodon** at `@federation.test@lists.awadwatt.com`
+
+
 ### **Yet _another_ list making tool? Yes. **
 
 BUT - in _THIS_ list making tool:
