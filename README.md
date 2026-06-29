@@ -4,7 +4,7 @@
 
 <img width="300" height="" alt="The same sample list in a Mastodon client (Phanpy)" src="https://github.com/user-attachments/assets/278dcf32-5ea6-4795-9fca-285cf1ed0a4b" />
 
-**Yet _another_ list making tool? Yes. **
+### **Yet _another_ list making tool? Yes. **
 
 BUT - in _THIS_ list making tool:
 - _**FAST**_ single binary, self-hosted, linux and Windows
