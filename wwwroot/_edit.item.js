@@ -217,6 +217,12 @@ async function getItem() {
 
     // Add event listeners for radio button mode selection
     setupModeToggle(listid);
+
+    // If the item ID was rotated on save, show a note after reload.
+    if (urlParams.get('idrotated') === '1') {
+        d('This item\'s canonical ID changed after visibility update; editor reloaded to the new ID.');
+        c(RC.OK);
+    }
 }
 
 // When the form is submitted, send it to the REST API
@@ -342,10 +348,18 @@ async function updateItem(e) {
                         console.debug(' | newOrUpdate: ' + newOrUpdate);
                         if (newOrUpdate == 'update') {
                             document.getElementById('item.id').value = newID;
+                            const idChanged = json.itemIdChanged === true
+                                || (id != null && id !== '' && String(newID) !== String(id));
+                            if (idChanged) {
+                                d(`Item ID changed from ${id} to ${newID}; reloading editor to the new canonical ID.`);
+                                c(RC.OK);
+                                const rotatedUrl = `${window.location.pathname}?listid=${listid}&itemid=${newID}&idrotated=1`;
+                                window.location.replace(rotatedUrl);
+                                return;
+                            }
+
                             // and update the url in the browser to include the newID
-                            let newUrl = window.location.href;
-                            newUrl = newUrl.substring(0, newUrl.indexOf('?'));
-                            newUrl = newUrl + '?item=' + newID;
+                            const newUrl = `${window.location.pathname}?listid=${listid}&itemid=${newID}`;
                             window.history.pushState({}, '', newUrl);
                             console.debug(' | New URL: ' + newUrl);
                         }

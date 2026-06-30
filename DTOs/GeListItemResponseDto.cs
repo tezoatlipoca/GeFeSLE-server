@@ -13,6 +13,9 @@ namespace GeFeSLE.DTOs
         public bool Visible { get; set; } = true;
         public bool IsDeleted { get; set; } = false;
         public int? RedirectToItemId { get; set; }
+        public string? OriginatorActorIri { get; set; }
+        public string? SourceObjectIri { get; set; }
+        public string? SourceAttributedToIri { get; set; }
         public List<string> Tags { get; set; } = new List<string>();
         public DateTime CreatedDate { get; set; }
         public DateTime ModifiedDate { get; set; }

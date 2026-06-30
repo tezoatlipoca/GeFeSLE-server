@@ -59,11 +59,22 @@ protected override void OnModelCreating(ModelBuilder builder)
     builder.Entity<GeFeSLEUser>()
         .HasIndex(u => u.UploadsPath)
         .IsUnique();
+
+    builder.Entity<GeListItemComment>()
+        .HasIndex(c => new { c.ListId, c.ItemId });
+
+    builder.Entity<GeListItemComment>()
+        .HasIndex(c => c.ParentCommentId);
+
+    builder.Entity<GeListItemComment>()
+        .HasIndex(c => new { c.ListId, c.RemoteObjectIri })
+        .IsUnique();
 }
 
 public DbSet<GeListItem> Items => Set<GeListItem>();
 public DbSet<GeList> Lists => Set<GeList>();
 public DbSet<GeListFollower> ListFollowers => Set<GeListFollower>();
+public DbSet<GeListItemComment> ItemComments => Set<GeListItemComment>();
 
 }
 

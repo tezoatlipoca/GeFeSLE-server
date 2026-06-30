@@ -180,6 +180,32 @@ public class GeList
             });
         }
 
+        static string RenderExternalLink(string? iri)
+        {
+            if (string.IsNullOrWhiteSpace(iri))
+            {
+                return string.Empty;
+            }
+
+            string encoded = WebUtility.HtmlEncode(iri.Trim());
+            return $"<a href=\"{encoded}\" rel=\"nofollow noopener noreferrer\" target=\"_blank\">{encoded}</a>";
+        }
+
+        static string RenderRemoteCommentBody(GeListItemComment comment)
+        {
+            if (!string.IsNullOrWhiteSpace(comment.ContentHtml))
+            {
+                return comment.ContentHtml;
+            }
+
+            if (!string.IsNullOrWhiteSpace(comment.Summary))
+            {
+                return $"<p>{WebUtility.HtmlEncode(comment.Summary)}</p>";
+            }
+
+            return "<p>(no content)</p>";
+        }
+
         static string FormatUserDisplay(GeFeSLEUser? user)
         {
             string displayName = user?.UserName
@@ -241,6 +267,53 @@ public class GeList
                 && item.RedirectToItemId.HasValue)
             .Select(item => new { OldId = item.Id, NewId = item.RedirectToItemId!.Value })
             .ToListAsync();
+        var itemComments = (await db.ItemComments
+            .Where(comment => comment.ListId == Id)
+            .ToListAsync())
+            .OrderBy(comment => comment.PublishedAt ?? new DateTimeOffset(comment.CreatedDate))
+            .ThenBy(comment => comment.Id)
+            .ToList();
+        var topLevelCommentsByItem = itemComments
+            .Where(comment => !comment.ParentCommentId.HasValue)
+            .GroupBy(comment => comment.ItemId)
+            .ToDictionary(group => group.Key, group => group.ToList());
+        var childCommentsByParent = itemComments
+            .Where(comment => comment.ParentCommentId.HasValue)
+            .GroupBy(comment => comment.ParentCommentId!.Value)
+            .ToDictionary(group => group.Key, group => group.ToList());
+        var commentCountByItem = itemComments
+            .GroupBy(comment => comment.ItemId)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        void RenderCommentTree(StringBuilder output, GeListItemComment comment, int depth)
+        {
+            int clampedDepth = Math.Min(depth, 8);
+            output.AppendLine($"<div class=\"ap-item-comment depth-{clampedDepth}\">");
+            output.AppendLine("<div class=\"ap-item-comment-meta\">");
+            if (!string.IsNullOrWhiteSpace(comment.ActorIri))
+            {
+                output.AppendLine($"<span class=\"ap-item-comment-actor\"><strong>Actor:</strong> {RenderExternalLink(comment.ActorIri)}</span>");
+            }
+            if (!string.IsNullOrWhiteSpace(comment.AttributedToIri))
+            {
+                output.AppendLine($"<span class=\"ap-item-comment-attributed\"><strong>Attributed:</strong> {RenderExternalLink(comment.AttributedToIri)}</span>");
+            }
+            output.AppendLine($"<span class=\"ap-item-comment-object\"><strong>Object:</strong> {RenderExternalLink(comment.RemoteObjectIri)}</span>");
+            output.AppendLine("</div>");
+            output.AppendLine($"<div class=\"ap-item-comment-body\">{RenderRemoteCommentBody(comment)}</div>");
+            output.AppendLine("</div>");
+
+            if (!childCommentsByParent.TryGetValue(comment.Id, out var children))
+            {
+                return;
+            }
+
+            foreach (var child in children)
+            {
+                RenderCommentTree(output, child, depth + 1);
+            }
+        }
+
         var followerCount = await db.ListFollowers
             .Where(f => f.FollowingLists.Contains(Id) && !string.IsNullOrWhiteSpace(f.Id))
             .Select(f => f.Id)
@@ -368,7 +441,44 @@ sb.AppendLine("</div>");
             if (item.Comment != null)
             {
                 var itemmd = Markdown.ToHtml(item.Comment, listMarkdownPipeline);
-                sb.AppendLine($"<div class=\"commentcell\">{itemmd}</div>");
+                sb.AppendLine("<div class=\"commentcell\">");
+                sb.AppendLine(itemmd);
+                if (!string.IsNullOrWhiteSpace(item.OriginatorActorIri)
+                    || !string.IsNullOrWhiteSpace(item.SourceAttributedToIri)
+                    || !string.IsNullOrWhiteSpace(item.SourceObjectIri))
+                {
+                    sb.AppendLine("<div class=\"itemsourcefooter\">");
+                    if (!string.IsNullOrWhiteSpace(item.OriginatorActorIri))
+                    {
+                        sb.AppendLine($"<div class=\"itemsourceactor\"><strong>Actor:</strong> {RenderExternalLink(item.OriginatorActorIri)}</div>");
+                    }
+                    if (!string.IsNullOrWhiteSpace(item.SourceAttributedToIri))
+                    {
+                        sb.AppendLine($"<div class=\"itemsourceattributed\"><strong>Attributed To:</strong> {RenderExternalLink(item.SourceAttributedToIri)}</div>");
+                    }
+                    if (!string.IsNullOrWhiteSpace(item.SourceObjectIri))
+                    {
+                        sb.AppendLine($"<div class=\"itemsourceobject\"><strong>Source Object:</strong> {RenderExternalLink(item.SourceObjectIri)}</div>");
+                    }
+                    sb.AppendLine("</div>");
+                }
+
+                if (topLevelCommentsByItem.TryGetValue(item.Id, out var topComments) && topComments.Count > 0)
+                {
+                    int totalThreadComments = commentCountByItem.TryGetValue(item.Id, out int count)
+                        ? count
+                        : topComments.Count;
+                    sb.AppendLine("<details class=\"ap-item-comments\">");
+                    sb.AppendLine($"<summary class=\"ap-item-comments-title\">Thread ({totalThreadComments})</summary>");
+                    sb.AppendLine("<div class=\"ap-item-comments-content\">");
+                    foreach (var topComment in topComments)
+                    {
+                        RenderCommentTree(sb, topComment, 0);
+                    }
+                    sb.AppendLine("</div>");
+                    sb.AppendLine("</details>");
+                }
+                sb.AppendLine("</div>");
             }
             else
             {

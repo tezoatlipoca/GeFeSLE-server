@@ -522,7 +522,22 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var db = scope.ServiceProvider.GetRequiredService<GeFeSLEDb>();
+        string dataSource = db.Database.GetDbConnection().DataSource;
+        var pendingMigrations = (await db.Database.GetPendingMigrationsAsync()).ToList();
+        var appliedMigrationsBefore = (await db.Database.GetAppliedMigrationsAsync()).ToList();
+
+        DBg.d(LogLevel.Information,
+            $"Startup DB target: {dataSource}. Applied migrations: {appliedMigrationsBefore.Count}. Pending migrations: {pendingMigrations.Count}");
+        if (pendingMigrations.Count > 0)
+        {
+            DBg.d(LogLevel.Information, $"Pending migrations: {string.Join(", ", pendingMigrations)}");
+        }
+
         db.Database.Migrate();
+
+        var appliedMigrationsAfter = (await db.Database.GetAppliedMigrationsAsync()).ToList();
+        DBg.d(LogLevel.Information,
+            $"Startup DB migration complete for {dataSource}. Applied migrations now: {appliedMigrationsAfter.Count}");
 
         GlobalStatic.SeedRoles(services).Wait();
 
@@ -1838,6 +1853,21 @@ app.MapGet("/posts/{itemId:int}", async (int itemId, GeFeSLEDb db) =>
     {
         sb.AppendLine($"<div>{contentHtml}</div>");
     }
+    if (!string.IsNullOrWhiteSpace(item.OriginatorActorIri))
+    {
+        string actorIri = WebUtility.HtmlEncode(item.OriginatorActorIri);
+        sb.AppendLine($"<div><strong>Actor:</strong> <a href=\"{actorIri}\" rel=\"nofollow noopener noreferrer\" target=\"_blank\">{actorIri}</a></div>");
+    }
+    if (!string.IsNullOrWhiteSpace(item.SourceAttributedToIri))
+    {
+        string attributedIri = WebUtility.HtmlEncode(item.SourceAttributedToIri);
+        sb.AppendLine($"<div><strong>Attributed To:</strong> <a href=\"{attributedIri}\" rel=\"nofollow noopener noreferrer\" target=\"_blank\">{attributedIri}</a></div>");
+    }
+    if (!string.IsNullOrWhiteSpace(item.SourceObjectIri))
+    {
+        string objectIri = WebUtility.HtmlEncode(item.SourceObjectIri);
+        sb.AppendLine($"<div><strong>Source Object:</strong> <a href=\"{objectIri}\" rel=\"nofollow noopener noreferrer\" target=\"_blank\">{objectIri}</a></div>");
+    }
     sb.AppendLine($"<p><a href=\"{WebUtility.HtmlEncode(listAnchorUrl)}\">View in list</a></p>");
     sb.AppendLine("</body>");
     sb.AppendLine("</html>");
@@ -2051,9 +2081,13 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
             return BadRequestWithTrace(fn, reason);
         }
     }
+    bool wasVisible = moditem.Visible;
+    int requestedItemId = moditem.Id;
+
     // otherwise, modify away boyo. 
     moditem.UpdateFromDto(inputItemDto);
     moditem.ListId = inputItemDto.ListId;
+    bool visibilityChanged = wasVisible != moditem.Visible;
 
     await db.SaveChangesAsync();
     
@@ -2080,6 +2114,32 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
         }
 
     }
+    bool rotatedItemIdOnVisibilityDrop = false;
+    if (!itemMoved
+        && visibilityChanged
+        && wasVisible
+        && !moditem.Visible
+        && nowlist.Visibility == GeListVisibility.Public)
+    {
+        moditem = await ActivityPubBroadcastService.RotateActivityPubItemIdForVisibilityDropAsync(
+            nowlist,
+            db,
+            moditem,
+            successorVisible: false,
+            (listForBroadcast, dbForBroadcast, itemForBroadcast, activityTypeForBroadcast, onlyFollowerForBroadcast) =>
+                ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+                    listForBroadcast,
+                    dbForBroadcast,
+                    itemForBroadcast,
+                    activityTypeForBroadcast,
+                    (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+                    ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+                    (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                        ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey),
+                    onlyFollowerForBroadcast));
+        rotatedItemIdOnVisibilityDrop = true;
+    }
+
     if(itemMoved)
     {
         await oldlist.RegenerateAllFiles(db);
@@ -2106,25 +2166,62 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
     {
         await nowlist.RegenerateAllFiles(db);
 
-        await ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
-            nowlist,
-            db,
-            moditem,
-            "Update",
-            (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
-            ActivityPubDeliveryUtils.ResolveActorInboxAsync,
-            (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
-                ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
+        if (visibilityChanged)
+        {
+            if (rotatedItemIdOnVisibilityDrop)
+            {
+                DBg.d(LogLevel.Debug, $"{fn} -- visibility drop delete already broadcast during ID rotation for item {requestedItemId} -> {moditem.Id}");
+            }
+            else if (nowlist.Visibility == GeListVisibility.Public)
+            {
+                string visibilityActivityType = moditem.Visible ? "Create" : "Delete";
+                await ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+                    nowlist,
+                    db,
+                    moditem,
+                    visibilityActivityType,
+                    (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+                    ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+                    (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                        ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
+            }
+            else
+            {
+                DBg.d(LogLevel.Debug, $"{fn} -- visibility changed for item {moditem.Id} but list {nowlist.Id} is not public; skipping ActivityPub visibility broadcast");
+            }
+        }
+        else
+        {
+            await ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+                nowlist,
+                db,
+                moditem,
+                "Update",
+                (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+                ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+                (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                    ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
+        }
     }
 
-    return OkWithTrace(fn, "item update saved");
+    bool itemIdChanged = moditem.Id != requestedItemId;
+    string clientMessage = itemIdChanged
+        ? $"item updated; canonical id changed from {requestedItemId} to {moditem.Id}"
+        : "item update saved";
+    return OkPayloadWithTrace(fn, new
+    {
+        id = moditem.Id,
+        previousId = requestedItemId,
+        itemIdChanged,
+        idRotationApplied = rotatedItemIdOnVisibilityDrop,
+        message = clientMessage
+    }, clientMessage);
     
 }).RequireAuthorization(new AuthorizeAttribute
 {
     AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
     Roles = "SuperUser,listowner,contributor"
 });
-
 
 
 app.MapDelete("/items/{id:int}", async (int id,
@@ -4660,6 +4757,16 @@ app.MapPost("/apv1/lists/{listId:int}/inbox", async (int listId, [FromBody] Json
                 itemForBroadcast,
                 activityTypeForBroadcast,
                 (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+                ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+                (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                    ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey),
+                onlyFollowerForBroadcast),
+        (listForBroadcast, dbForBroadcast, remoteCommentObjectIri, reason, onlyFollowerForBroadcast) =>
+            ActivityPubBroadcastService.BroadcastActivityPubCommentAnnounceToFollowersAsync(
+                listForBroadcast,
+                dbForBroadcast,
+                remoteCommentObjectIri,
+                reason,
                 ActivityPubDeliveryUtils.ResolveActorInboxAsync,
                 (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
                     ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey),

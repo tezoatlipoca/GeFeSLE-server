@@ -78,6 +78,9 @@ namespace GeFeSLE.DTOs
                 Visible = item.Visible,
                 IsDeleted = item.IsDeleted,
                 RedirectToItemId = item.RedirectToItemId,
+                OriginatorActorIri = item.OriginatorActorIri,
+                SourceObjectIri = item.SourceObjectIri,
+                SourceAttributedToIri = item.SourceAttributedToIri,
                 Tags = new List<string>(item.Tags),
                 CreatedDate = item.CreatedDate,
                 ModifiedDate = item.ModifiedDate

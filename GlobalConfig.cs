@@ -11,6 +11,8 @@ public enum APActivityLoggingMode
 
 public static class GlobalConfig
 {
+    public static string? ConfigFilePath { get; set; }
+
     // define get and set methods for port, bind, hostname, and hostport
     // the difference between Bind+Port and Hostname is that Bind+Port is the address that the server listens on, 
     //while Hostname is the address (and port) that the server tells clients to connect to
@@ -515,6 +517,20 @@ public static class GlobalConfig
         }
         else
         {
+            if (!Path.IsPathRooted(dbfile))
+            {
+                string baseDir = Directory.GetCurrentDirectory();
+                if (!string.IsNullOrWhiteSpace(ConfigFilePath))
+                {
+                    string? configDir = Path.GetDirectoryName(ConfigFilePath);
+                    if (!string.IsNullOrWhiteSpace(configDir))
+                    {
+                        baseDir = configDir;
+                    }
+                }
+
+                dbfile = Path.GetFullPath(Path.Combine(baseDir, dbfile));
+            }
             DBg.d(LogLevel.Debug, $"Database file: {dbfile}");
             return dbfile;
         }
@@ -568,6 +584,7 @@ public static class GlobalConfig
         else
         {
 
+            ConfigFilePath = Path.GetFullPath(configPath);
             return configPath;
         }
 

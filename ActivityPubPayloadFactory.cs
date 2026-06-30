@@ -40,13 +40,85 @@ public static class ActivityPubPayloadFactory
             return $"https://{domain}/@{username}";
         }
 
-        List<Dictionary<string, object?>> BuildActivityPubTagObjects(IEnumerable<string?> sourceTexts, IEnumerable<string>? extraHashtags = null)
+        static bool IsLikelyEmailDomain(string domain)
+        {
+            return domain.Equals("gmail.com", StringComparison.OrdinalIgnoreCase)
+                || domain.Equals("outlook.com", StringComparison.OrdinalIgnoreCase)
+                || domain.Equals("hotmail.com", StringComparison.OrdinalIgnoreCase)
+                || domain.Equals("yahoo.com", StringComparison.OrdinalIgnoreCase)
+                || domain.Equals("icloud.com", StringComparison.OrdinalIgnoreCase)
+                || domain.Equals("proton.me", StringComparison.OrdinalIgnoreCase)
+                || domain.Equals("protonmail.com", StringComparison.OrdinalIgnoreCase);
+        }
+
+        static Dictionary<string, object?>? BuildMentionTagFromActorIri(string? actorIri)
+        {
+            if (string.IsNullOrWhiteSpace(actorIri))
+            {
+                return null;
+            }
+
+            if (!Uri.TryCreate(actorIri.Trim(), UriKind.Absolute, out var actorUri))
+            {
+                return null;
+            }
+
+            string[] pathParts = actorUri.AbsolutePath
+                .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (pathParts.Length == 0)
+            {
+                return null;
+            }
+
+            string? username = null;
+            for (int i = pathParts.Length - 1; i >= 0; i--)
+            {
+                string candidate = pathParts[i];
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    continue;
+                }
+
+                if (candidate.StartsWith("@", StringComparison.Ordinal))
+                {
+                    candidate = candidate[1..];
+                }
+
+                if (!Regex.IsMatch(candidate, "^[A-Za-z0-9_]+$"))
+                {
+                    continue;
+                }
+
+                username = candidate;
+                break;
+            }
+
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                return null;
+            }
+
+            string handle = $"@{username}@{actorUri.Host}";
+            return new Dictionary<string, object?>
+            {
+                ["type"] = "Mention",
+                ["name"] = handle,
+                ["href"] = actorIri.Trim()
+            };
+        }
+
+        List<Dictionary<string, object?>> BuildActivityPubTagObjects(
+            IEnumerable<string?> sourceTexts,
+            IEnumerable<string>? extraHashtags = null,
+            IEnumerable<string?>? extraActorMentions = null)
         {
             var tags = new List<Dictionary<string, object?>>();
             var seenMentions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var seenHashtags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var seenLinks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var mentionRegex = new Regex(@"(?<![\w/])@(?<user>[A-Za-z0-9_]+)@(?<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled);
+            var bareHandleRegex = new Regex(@"(?<![\w/@])(?<user>[A-Za-z0-9_]+)@(?<domain>[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled);
+            var emailRegex = new Regex(@"(?<![\w/@])(?<email>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})(?![\w@-])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
             var hashtagRegex = new Regex(@"(?<![\w&])#(?<tag>[A-Za-z0-9_]+)", RegexOptions.Compiled);
             var linkRegex = new Regex(@"(?<url>https?://[^\s<""')]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -64,6 +136,41 @@ public static class ActivityPubPayloadFactory
                             ["type"] = "Mention",
                             ["name"] = handle,
                             ["href"] = GuessMentionHref(username, domain)
+                        });
+                    }
+                }
+
+                foreach (Match match in bareHandleRegex.Matches(text!))
+                {
+                    string username = match.Groups["user"].Value;
+                    string domain = match.Groups["domain"].Value;
+                    if (IsLikelyEmailDomain(domain))
+                    {
+                        continue;
+                    }
+
+                    string handle = $"@{username}@{domain}";
+                    if (seenMentions.Add(handle))
+                    {
+                        tags.Add(new Dictionary<string, object?>
+                        {
+                            ["type"] = "Mention",
+                            ["name"] = handle,
+                            ["href"] = GuessMentionHref(username, domain)
+                        });
+                    }
+                }
+
+                foreach (Match match in emailRegex.Matches(text!))
+                {
+                    string email = match.Groups["email"].Value;
+                    if (!string.IsNullOrWhiteSpace(email) && seenLinks.Add($"mailto:{email}"))
+                    {
+                        tags.Add(new Dictionary<string, object?>
+                        {
+                            ["type"] = "Link",
+                            ["name"] = email,
+                            ["href"] = $"mailto:{email}"
                         });
                     }
                 }
@@ -109,6 +216,26 @@ public static class ActivityPubPayloadFactory
                             ["name"] = $"#{tag}"
                         });
                     }
+                }
+            }
+
+            if (extraActorMentions is not null)
+            {
+                foreach (var actorIri in extraActorMentions)
+                {
+                    var mentionTag = BuildMentionTagFromActorIri(actorIri);
+                    if (mentionTag is null)
+                    {
+                        continue;
+                    }
+
+                    string? handle = mentionTag.TryGetValue("name", out var nameObj) ? nameObj as string : null;
+                    if (string.IsNullOrWhiteSpace(handle) || !seenMentions.Add(handle))
+                    {
+                        continue;
+                    }
+
+                    tags.Add(mentionTag);
                 }
             }
 
@@ -290,7 +417,26 @@ public static class ActivityPubPayloadFactory
         contentMarkdownParts.Add($"[View in list]({staticItemUrl})");
 
         string renderedContent = string.Join("\n\n", contentMarkdownParts);
-        var noteTags = BuildActivityPubTagObjects(new[] { item.Name, sanitizedComment, hashtagLine }, item.Tags);
+        var noteTags = new List<Dictionary<string, object?>>();
+        noteTags.AddRange(BuildActivityPubTagObjects(
+            new[] { item.Name },
+            null,
+            null));
+        noteTags.AddRange(BuildActivityPubTagObjects(
+            new[] { sanitizedComment, hashtagLine },
+            item.Tags,
+            new[] { item.SourceAttributedToIri, item.OriginatorActorIri }));
+
+        noteTags = noteTags
+            .GroupBy(tag =>
+            {
+                string type = tag.TryGetValue("type", out var typeObj) ? typeObj?.ToString() ?? string.Empty : string.Empty;
+                string name = tag.TryGetValue("name", out var nameObj) ? nameObj?.ToString() ?? string.Empty : string.Empty;
+                string href = tag.TryGetValue("href", out var hrefObj) ? hrefObj?.ToString() ?? string.Empty : string.Empty;
+                return $"{type}|{name}|{href}";
+            }, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
         string renderedContentHtml = string.IsNullOrWhiteSpace(renderedContent)
             ? string.Empty
             : Markdown.ToHtml(renderedContent, markdownPipeline);

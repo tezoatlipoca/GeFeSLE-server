@@ -21,6 +21,11 @@ public class GeListItem
     // the newest canonical item ID for 301 redirect behavior on AP item endpoints.
     public int? RedirectToItemId { get; set; }
 
+    // ActivityPub inbound suggestion metadata.
+    public string? OriginatorActorIri { get; set; }
+    public string? SourceObjectIri { get; set; }
+    public string? SourceAttributedToIri { get; set; }
+
     // add a member that is a collection of tags (which are strings)
     public List<string> Tags { get; set; } = new List<string>();
 
