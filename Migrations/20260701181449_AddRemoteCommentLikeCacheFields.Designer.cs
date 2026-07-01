@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -9,9 +10,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GeFeSLE.Migrations
 {
     [DbContext(typeof(GeFeSLEDb))]
-    partial class GeFeSLEDbModelSnapshot : ModelSnapshot
+    [Migration("20260701181449_AddRemoteCommentLikeCacheFields")]
+    partial class AddRemoteCommentLikeCacheFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.7");
@@ -375,9 +378,6 @@ namespace GeFeSLE.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RawNoteJson")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RemoteLikeActorsJson")
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("RemoteLikesCount")

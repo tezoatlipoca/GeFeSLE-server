@@ -2285,6 +2285,85 @@ app.MapDelete("/items/{id:int}", async (int id,
     Roles = "SuperUser,listowner"
 });
 
+app.MapDelete("/items/{itemid:int}/comments/{commentid:int}", async (
+    int itemid,
+    int commentid,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    HttpContext httpContext) =>
+{
+    string fn = $"/items/{itemid}/comments/{commentid} (DELETE)"; DBg.d(LogLevel.Trace, fn);
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+
+    GeListItemComment? comment = await db.ItemComments.FirstOrDefaultAsync(c => c.Id == commentid);
+    if (comment is null)
+    {
+        string msg = $"Comment {commentid} not found";
+        return NotFoundWithTrace(fn, msg);
+    }
+
+    if (comment.ItemId != itemid)
+    {
+        string msg = $"Comment {commentid} does not belong to item {itemid}";
+        return BadRequestWithTrace(fn, msg);
+    }
+
+    GeList? list = await db.Lists
+        .Include(l => l.Creator)
+        .Include(l => l.ListOwners)
+        .Include(l => l.Contributors)
+        .FirstOrDefaultAsync(l => l.Id == comment.ListId);
+    if (list is null)
+    {
+        string msg = $"List {comment.ListId} not found for comment {commentid}";
+        return NotFoundWithTrace(fn, msg);
+    }
+
+    (bool canModify, string? ynot) = list.IsUserAllowedToModify(user);
+    if (!canModify)
+    {
+        string msg = $"Cannot delete comment. No modify permissions on list (id {list.Id}, name {list.Name}): {ynot}.";
+        return BadRequestWithTrace(fn, msg);
+    }
+
+    // Tombstone in place to preserve thread topology and prevent resurrection by later remote updates.
+    comment.ActorIri = null;
+    comment.AttributedToIri = null;
+    comment.Name = null;
+    comment.ContentHtml = null;
+    comment.Summary = "<comment deleted>";
+    comment.RawNoteJson = null;
+    comment.UpdatedAt = DateTimeOffset.UtcNow;
+    comment.ModifiedDate = DateTime.UtcNow;
+    comment.LastReceivedAt = DateTime.UtcNow;
+
+    await db.SaveChangesAsync();
+    await list.GenerateHTMLListPage(db);
+
+    await ActivityPubBroadcastService.BroadcastActivityPubCommentAnnounceToFollowersAsync(
+        list,
+        db,
+        comment.RemoteObjectIri,
+        $"Deleted remote comment for list item {comment.ItemId}",
+        ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+        (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+            ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey),
+        null);
+
+    return OkPayloadWithTrace(fn, new
+    {
+        itemId = comment.ItemId,
+        commentId = comment.Id,
+        remoteObject = comment.RemoteObjectIri,
+        tombstoned = true
+    }, $"Comment {commentid} tombstoned");
+})
+.WithEndpointDocs("items.itemid.comments.commentid.delete")
+.RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme
+});
+
 // moves an item between two lists by patching only its list id
 app.MapPatch("/items/{id:int}/list", async (
     int id,
@@ -2428,6 +2507,16 @@ app.MapDelete("/items/{itemid:int}/tags/{tag}", async (
     if (list is not null)
     {
         await list.RegenerateAllFiles(db);
+
+        await ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+            list,
+            db,
+            item,
+            "Update",
+            (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+            ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+            (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
     }
 
     var msg = $"Tag {gonetag} removed from item {itemid}";
@@ -2600,6 +2689,16 @@ app.MapPut("/items/{itemid:int}/tags", async (
     if (list is not null)
     {
         await list.RegenerateAllFiles(db);
+
+        await ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+            list,
+            db,
+            item,
+            "Update",
+            (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+            ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+            (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
     }
 
     return OkPayloadWithTrace(fn, msg, msg);
@@ -2640,11 +2739,8 @@ app.MapGet("/lists/regen", async (GeFeSLEDb db,
     var lists = await db.Lists.ToListAsync();
     foreach (var list in lists)
     {
-        await list.GenerateHTMLListPage(db);
-        await list.GenerateRSSFeed(db);
-        await list.GenerateJSON(db);
+        await list.RegenerateAllFiles(db);
     }
-    await GlobalStatic.GenerateHTMLListIndex(db);
 
     return RedirectWithTrace(fn, referer, "redirecting to referer");
 })
@@ -4706,6 +4802,18 @@ app.MapGet("/apv1/items/{itemId:int}", async (int itemId, GeFeSLEDb db) =>
         itemId,
         db,
         (list, item) => ActivityPubPayloadFactory.BuildActivityPubItemNote(list, item, activityPubMarkdownPipeline));
+}).AllowAnonymous();
+
+app.MapGet("/apv1/items/{itemId:int}/likes", async (int itemId, GeFeSLEDb db) =>
+{
+    string fn = $"/apv1/items/{itemId}/likes (GET)"; DBg.d(LogLevel.Trace, fn);
+    return await ActivityPubEndpointService.GetItemLikesAsync(itemId, db);
+}).AllowAnonymous();
+
+app.MapGet("/apv1/comments/{commentId:int}", async (int commentId, GeFeSLEDb db) =>
+{
+    string fn = $"/apv1/comments/{commentId} (GET)"; DBg.d(LogLevel.Trace, fn);
+    return await ActivityPubEndpointService.GetCommentAsync(commentId, db);
 }).AllowAnonymous();
 
 // GET /apv1/lists/{listId}/items

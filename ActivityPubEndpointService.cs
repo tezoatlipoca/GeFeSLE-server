@@ -223,4 +223,120 @@ public static class ActivityPubEndpointService
 
         return Results.Content(System.Text.Json.JsonSerializer.Serialize(followerCollection), "application/activity+json");
     }
+
+    public static async Task<IResult> GetItemLikesAsync(int itemId, GeFeSLEDb db)
+    {
+        GeListItem? item = await db.Items.FirstOrDefaultAsync(i => i.Id == itemId);
+        if (item is null)
+        {
+            return Results.NotFound($"Item with id {itemId} not found");
+        }
+
+        GeList? list = await db.Lists.FirstOrDefaultAsync(l => l.Id == item.ListId);
+        if (list is null)
+        {
+            return Results.NotFound($"List with id {item.ListId} not found for item {itemId}");
+        }
+        if (list.Visibility != GeListVisibility.Public)
+        {
+            return Results.StatusCode(403);
+        }
+
+        string objectIri = $"{GlobalConfig.Hostname}/apv1/items/{item.Id}";
+        var activeLikes = await db.ActivityPubObjectLikes
+            .Where(l => l.ListId == list.Id
+                && l.ItemId == item.Id
+                && l.ObjectIri == objectIri
+                && l.IsActive)
+            .ToListAsync();
+
+        var actorItems = activeLikes
+            .Select(l => l.ActorIri)
+            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var likesCollection = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://www.w3.org/ns/activitystreams",
+            ["id"] = $"{GlobalConfig.Hostname}/apv1/items/{item.Id}/likes",
+            ["type"] = "Collection",
+            ["totalItems"] = actorItems.Count,
+            ["items"] = actorItems
+        };
+
+        return Results.Content(System.Text.Json.JsonSerializer.Serialize(likesCollection), "application/activity+json");
+    }
+
+    public static async Task<IResult> GetCommentAsync(int commentId, GeFeSLEDb db)
+    {
+        GeListItemComment? comment = await db.ItemComments.FirstOrDefaultAsync(c => c.Id == commentId);
+        if (comment is null)
+        {
+            return Results.NotFound($"Comment with id {commentId} not found");
+        }
+
+        GeList? list = await db.Lists.FirstOrDefaultAsync(l => l.Id == comment.ListId);
+        if (list is null)
+        {
+            return Results.NotFound($"List with id {comment.ListId} not found for comment {commentId}");
+        }
+        if (list.Visibility != GeListVisibility.Public)
+        {
+            return Results.StatusCode(403);
+        }
+
+        string commentObjectIri = $"{GlobalConfig.Hostname}/apv1/comments/{comment.Id}";
+        bool isTombstoned = string.Equals(comment.Summary?.Trim(), "<comment deleted>", StringComparison.Ordinal);
+
+        string? content = comment.ContentHtml;
+        if (string.IsNullOrWhiteSpace(content) && !string.IsNullOrWhiteSpace(comment.Summary))
+        {
+            content = comment.Summary;
+        }
+
+        string? attributedTo = !string.IsNullOrWhiteSpace(comment.AttributedToIri)
+            ? comment.AttributedToIri
+            : (!string.IsNullOrWhiteSpace(comment.ActorIri) ? comment.ActorIri : $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}");
+
+        var note = new Dictionary<string, object?>
+        {
+            ["@context"] = "https://www.w3.org/ns/activitystreams",
+            ["id"] = commentObjectIri,
+            ["type"] = isTombstoned ? "Tombstone" : "Note",
+            ["url"] = commentObjectIri,
+            ["attributedTo"] = attributedTo,
+            ["inReplyTo"] = comment.InReplyToIri ?? $"{GlobalConfig.Hostname}/apv1/items/{comment.ItemId}",
+            ["to"] = new[] { "https://www.w3.org/ns/activitystreams#Public" },
+            ["cc"] = new[] { "https://www.w3.org/ns/activitystreams#Public" }
+        };
+
+        if (!string.IsNullOrWhiteSpace(comment.Name))
+        {
+            note["name"] = comment.Name;
+        }
+        if (!isTombstoned && !string.IsNullOrWhiteSpace(content))
+        {
+            note["content"] = content;
+        }
+        if (comment.PublishedAt.HasValue)
+        {
+            note["published"] = comment.PublishedAt.Value.ToUniversalTime().ToString("o");
+        }
+        else
+        {
+            note["published"] = comment.CreatedDate.ToUniversalTime().ToString("o");
+        }
+
+        if (comment.UpdatedAt.HasValue)
+        {
+            note["updated"] = comment.UpdatedAt.Value.ToUniversalTime().ToString("o");
+        }
+        else
+        {
+            note["updated"] = comment.ModifiedDate.ToUniversalTime().ToString("o");
+        }
+
+        return Results.Content(System.Text.Json.JsonSerializer.Serialize(note), "application/activity+json");
+    }
 }

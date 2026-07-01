@@ -140,6 +140,8 @@ public static class ActivityPubInboxService
         bool isUpdateNote = string.Equals(incomingType, "Update", StringComparison.OrdinalIgnoreCase)
             && hasObject
             && string.Equals(nestedObjectType, "Note", StringComparison.OrdinalIgnoreCase);
+        bool isLike = string.Equals(incomingType, "Like", StringComparison.OrdinalIgnoreCase);
+        bool isUndo = string.Equals(incomingType, "Undo", StringComparison.OrdinalIgnoreCase);
         bool isDeleteActor = string.Equals(incomingType, "Delete", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(actorIri)
             && !string.IsNullOrWhiteSpace(topLevelObjectIri)
@@ -170,6 +172,8 @@ public static class ActivityPubInboxService
                 await db.SaveChangesAsync();
                 if (removed)
                 {
+                    // this was easy - we can improve by restricting to just the lists they actuall used to follow. 
+                    
                     await list.RegenerateAllFiles(db);
                 }
                 DBg.d(LogLevel.Information, $"{fn} -- processed Delete actor cleanup for follower {actorIri} on list {list.Id}");
@@ -181,6 +185,233 @@ public static class ActivityPubInboxService
 
             string msg = $"Delete actor processed for {actorIri}";
             return OkWithTrace(fn, msg);
+        }
+
+        if (isLike)
+        {
+            DBg.d(LogLevel.Information, $"{fn} -- received ActivityPub Like from {actorIri} (activityId={incomingId ?? "<none>"})");
+            string? likeTargetIri = topLevelObjectIri;
+            if (hasObject && objectProp.ValueKind == JsonValueKind.Object)
+            {
+                likeTargetIri ??= ReadIriProperty(objectProp, "id", readIriFromActivityPubNode);
+                if (string.IsNullOrWhiteSpace(likeTargetIri)
+                    && objectProp.TryGetProperty("object", out var nestedLikeObjectProp))
+                {
+                    likeTargetIri = readIriFromActivityPubNode(nestedLikeObjectProp);
+                }
+            }
+
+            var resolvedLikeTarget = await ResolveIncomingLikeTargetAsync(list.Id, likeTargetIri, db);
+            if (resolvedLikeTarget is null)
+            {
+                string ignoredMsg = $"Ignored ActivityPub Like for unknown/non-local object {(likeTargetIri ?? "(null)")}";
+                DBg.d(LogLevel.Information, $"{fn} -- {ignoredMsg}");
+                return OkWithTrace(fn, ignoredMsg);
+            }
+
+            DBg.d(LogLevel.Trace,
+                $"{fn} -- ActivityPub Like target resolved to object={resolvedLikeTarget.ObjectIri}, itemId={resolvedLikeTarget.ItemId?.ToString() ?? "<null>"}, commentId={resolvedLikeTarget.CommentId?.ToString() ?? "<null>"}");
+
+            ActivityPubObjectLike? existingLike = null;
+            if (!string.IsNullOrWhiteSpace(incomingId))
+            {
+                existingLike = await db.ActivityPubObjectLikes.FirstOrDefaultAsync(l =>
+                    l.ListId == list.Id
+                    && l.LikeActivityIri == incomingId);
+            }
+
+            existingLike ??= await db.ActivityPubObjectLikes.FirstOrDefaultAsync(l =>
+                l.ListId == list.Id
+                && l.ObjectIri == resolvedLikeTarget.ObjectIri
+                && l.ActorIri == actorIri);
+
+            bool created = false;
+            if (existingLike is null)
+            {
+                existingLike = new ActivityPubObjectLike
+                {
+                    ListId = list.Id,
+                    ItemId = resolvedLikeTarget.ItemId,
+                    CommentId = resolvedLikeTarget.CommentId,
+                    ObjectIri = resolvedLikeTarget.ObjectIri,
+                    ActorIri = actorIri,
+                    LikeActivityIri = incomingId,
+                    IsActive = true,
+                    CreatedDate = DateTime.UtcNow,
+                    ModifiedDate = DateTime.UtcNow
+                };
+                db.ActivityPubObjectLikes.Add(existingLike);
+                created = true;
+            }
+            else
+            {
+                existingLike.ItemId = resolvedLikeTarget.ItemId;
+                existingLike.CommentId = resolvedLikeTarget.CommentId;
+                existingLike.IsActive = true;
+                existingLike.ModifiedDate = DateTime.UtcNow;
+                existingLike.LikeActivityIri = incomingId;
+            }
+
+            await db.SaveChangesAsync();
+            string msg = $"ActivityPub Like applied for {resolvedLikeTarget.ObjectIri} by {actorIri}";
+            DBg.d(LogLevel.Information, $"{fn} -- {msg}");
+            return OkPayloadWithTrace(fn, new
+            {
+                objectIri = resolvedLikeTarget.ObjectIri,
+                itemId = resolvedLikeTarget.ItemId,
+                commentId = resolvedLikeTarget.CommentId,
+                actor = actorIri,
+                likeActivity = incomingId,
+                created,
+                active = true,
+                persistedActivityPath
+            }, msg);
+        }
+
+        if (isUndo && !isUndoFollow)
+        {
+            DBg.d(LogLevel.Information, $"{fn} -- received ActivityPub Undo from {actorIri}");
+            string? undoLikeActivityIri = null;
+            string? undoLikeTargetIri = null;
+            if (hasObject)
+            {
+                undoLikeActivityIri = topLevelObjectIri;
+                if (objectProp.ValueKind == JsonValueKind.Object)
+                {
+                    string? undoNestedType = ReadStringProperty(objectProp, "type");
+                    if (string.Equals(undoNestedType, "Like", StringComparison.OrdinalIgnoreCase))
+                    {
+                        undoLikeActivityIri = readIriFromActivityPubNode(objectProp) ?? undoLikeActivityIri;
+                        if (objectProp.TryGetProperty("object", out var undoNestedTargetProp))
+                        {
+                            undoLikeTargetIri = readIriFromActivityPubNode(undoNestedTargetProp);
+                        }
+                    }
+                    else if (objectProp.TryGetProperty("object", out var undoObjectProp))
+                    {
+                        undoLikeTargetIri = readIriFromActivityPubNode(undoObjectProp);
+                    }
+                }
+            }
+
+            ActivityPubObjectLike? existingLike = null;
+            if (!string.IsNullOrWhiteSpace(undoLikeActivityIri))
+            {
+                existingLike = await db.ActivityPubObjectLikes.FirstOrDefaultAsync(l =>
+                    l.ListId == list.Id
+                    && l.IsActive
+                    && l.LikeActivityIri == undoLikeActivityIri);
+            }
+
+            if (existingLike is null)
+            {
+                string? candidateTarget = undoLikeTargetIri;
+                if (string.IsNullOrWhiteSpace(candidateTarget)
+                    && !string.IsNullOrWhiteSpace(undoLikeActivityIri)
+                    && Uri.TryCreate(undoLikeActivityIri, UriKind.Absolute, out _))
+                {
+                    candidateTarget = undoLikeActivityIri;
+                }
+
+                var resolvedUndoTarget = await ResolveIncomingLikeTargetAsync(list.Id, candidateTarget, db);
+                if (resolvedUndoTarget is not null)
+                {
+                    existingLike = await db.ActivityPubObjectLikes.FirstOrDefaultAsync(l =>
+                        l.ListId == list.Id
+                        && l.ObjectIri == resolvedUndoTarget.ObjectIri
+                        && l.ActorIri == actorIri
+                        && l.IsActive);
+                }
+            }
+
+            if (existingLike is null)
+            {
+                string ignoredMsg = $"Ignored ActivityPub Undo with no matching active Like for actor {actorIri}";
+                DBg.d(LogLevel.Information, $"{fn} -- {ignoredMsg}");
+                return OkWithTrace(fn, ignoredMsg);
+            }
+
+            existingLike.IsActive = false;
+            existingLike.ModifiedDate = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            string msg = $"ActivityPub Undo(Like) applied for {existingLike.ObjectIri} by {actorIri}";
+            DBg.d(LogLevel.Information, $"{fn} -- {msg}");
+            return OkPayloadWithTrace(fn, new
+            {
+                objectIri = existingLike.ObjectIri,
+                itemId = existingLike.ItemId,
+                commentId = existingLike.CommentId,
+                actor = actorIri,
+                likeActivity = existingLike.LikeActivityIri,
+                active = false,
+                persistedActivityPath
+            }, msg);
+        }
+
+        if (string.Equals(incomingType, "Delete", StringComparison.OrdinalIgnoreCase) && !isDeleteFollow)
+        {
+            string? deleteObjectIri = topLevelObjectIri;
+            if (string.IsNullOrWhiteSpace(deleteObjectIri) && hasObject && objectProp.ValueKind == JsonValueKind.Object)
+            {
+                deleteObjectIri = ReadIriProperty(objectProp, "atomUri", readIriFromActivityPubNode)
+                    ?? ReadStringProperty(objectProp, "atomUri");
+            }
+
+            if (string.IsNullOrWhiteSpace(deleteObjectIri))
+            {
+                string ignoredMsg = "Ignored ActivityPub Delete without a resolvable object IRI";
+                DBg.d(LogLevel.Information, $"{fn} -- {ignoredMsg}");
+                return OkWithTrace(fn, ignoredMsg);
+            }
+
+            GeListItemComment? deletedComment = await db.ItemComments.FirstOrDefaultAsync(c =>
+                c.ListId == list.Id
+                && c.RemoteObjectIri == deleteObjectIri);
+            if (deletedComment is null)
+            {
+                string ignoredMsg = $"Ignored ActivityPub Delete for unknown comment object {deleteObjectIri}";
+                DBg.d(LogLevel.Information, $"{fn} -- {ignoredMsg}");
+                return OkWithTrace(fn, ignoredMsg);
+            }
+
+            if (!IsCommentDeleteAuthorized(actorIri, deletedComment))
+            {
+                string ignoredMsg = $"Ignored ActivityPub Delete for comment {deletedComment.Id} due to actor mismatch. Actor: {actorIri}";
+                DBg.d(LogLevel.Warning, $"{fn} -- {ignoredMsg}");
+                return OkWithTrace(fn, ignoredMsg);
+            }
+
+            // Keep the comment row as a tombstone so existing child threading stays intact.
+            deletedComment.ActorIri = null;
+            deletedComment.AttributedToIri = null;
+            deletedComment.Name = null;
+            deletedComment.ContentHtml = null;
+            deletedComment.Summary = "<comment deleted>";
+            deletedComment.RawNoteJson = null;
+            deletedComment.UpdatedAt = DateTimeOffset.UtcNow;
+            deletedComment.ModifiedDate = DateTime.UtcNow;
+            deletedComment.LastReceivedAt = DateTime.UtcNow;
+
+            await db.SaveChangesAsync();
+            await list.GenerateHTMLListPage(db);
+
+            await broadcastActivityPubCommentAnnounceToFollowersAsync(
+                list,
+                db,
+                deleteObjectIri,
+                $"Deleted remote comment for list item {deletedComment.ItemId}",
+                null);
+
+            string deletedMsg = $"ActivityPub comment delete applied for item {deletedComment.ItemId}: comment {deletedComment.Id}";
+            return OkPayloadWithTrace(fn, new
+            {
+                itemId = deletedComment.ItemId,
+                commentId = deletedComment.Id,
+                remoteObject = deleteObjectIri,
+                tombstoned = true,
+                persistedActivityPath
+            }, deletedMsg);
         }
 
         if (isCreateNote && hasObject)
@@ -222,6 +453,12 @@ public static class ActivityPubInboxService
                         };
                         db.ItemComments.Add(existingComment);
                     }
+                    else if (IsCommentTombstoned(existingComment))
+                    {
+                        string ignoredMsg = $"Ignored ActivityPub Create/Note for tombstoned comment object {noteObjectIri}";
+                        DBg.d(LogLevel.Information, $"{fn} -- {ignoredMsg}");
+                        return OkWithTrace(fn, ignoredMsg);
+                    }
 
                     ApplyIncomingCommentNote(existingComment, objectProp, actorIri, readIriFromActivityPubNode);
                     existingComment.ItemId = threadTarget.ItemId;
@@ -231,6 +468,7 @@ public static class ActivityPubInboxService
                     existingComment.LastReceivedAt = DateTime.UtcNow;
 
                     await db.SaveChangesAsync();
+                    await list.RefreshRemoteCommentLikesForItemAsync(existingComment.ItemId, db);
                     await list.GenerateHTMLListPage(db);
 
                     await broadcastActivityPubCommentAnnounceToFollowersAsync(
@@ -368,6 +606,13 @@ public static class ActivityPubInboxService
                 && c.RemoteObjectIri == noteObjectIri);
             if (existingComment is not null)
             {
+                if (IsCommentTombstoned(existingComment))
+                {
+                    string ignoredMsg = $"Ignored ActivityPub Update/Note for tombstoned comment object {noteObjectIri}";
+                    DBg.d(LogLevel.Information, $"{fn} -- {ignoredMsg}");
+                    return OkWithTrace(fn, ignoredMsg);
+                }
+
                 string? noteInReplyToIri = ReadIriProperty(objectProp, "inReplyTo", readIriFromActivityPubNode)
                     ?? ReadIriProperty(objectProp, "inreplyto", readIriFromActivityPubNode);
                 if (!string.IsNullOrWhiteSpace(noteInReplyToIri))
@@ -386,6 +631,7 @@ public static class ActivityPubInboxService
                 existingComment.LastReceivedAt = DateTime.UtcNow;
 
                 await db.SaveChangesAsync();
+                await list.RefreshRemoteCommentLikesForItemAsync(existingComment.ItemId, db);
                 await list.GenerateHTMLListPage(db);
 
                 await broadcastActivityPubCommentAnnounceToFollowersAsync(
@@ -405,6 +651,62 @@ public static class ActivityPubInboxService
                     parentCommentId = existingComment.ParentCommentId,
                     persistedActivityPath
                 }, updateMsg);
+            }
+            // This next bit handles the case where we were not originally addressed in a post, but then 
+            // an update to a comment/item that we know about subsequently gets addressed properly to us. The thing we care about is in the inReplyTo block. 
+            
+            string? updateInReplyToIri = ReadIriProperty(objectProp, "inReplyTo", readIriFromActivityPubNode)
+                ?? ReadIriProperty(objectProp, "inreplyto", readIriFromActivityPubNode);
+            if (!string.IsNullOrWhiteSpace(updateInReplyToIri))
+            {
+                if (!IsIncomingNoteActorConsistent(actorIri, objectProp, readIriFromActivityPubNode))
+                {
+                    string ignoredMsg = $"Ignored ActivityPub Update/Note for unknown comment object {noteObjectIri} due to actor/attributedTo mismatch";
+                    DBg.d(LogLevel.Warning, $"{fn} -- {ignoredMsg}");
+                    return OkWithTrace(fn, ignoredMsg);
+                }
+
+                var threadTarget = await ResolveCommentThreadTargetAsync(list.Id, updateInReplyToIri, db);
+                if (threadTarget is not null)
+                {
+                    var createdFromUpdate = new GeListItemComment
+                    {
+                        ListId = list.Id,
+                        ItemId = threadTarget.ItemId,
+                        ParentCommentId = threadTarget.ParentCommentId,
+                        RemoteObjectIri = noteObjectIri,
+                        InReplyToIri = updateInReplyToIri,
+                        CreatedDate = DateTime.UtcNow,
+                        ModifiedDate = DateTime.UtcNow,
+                        LastReceivedAt = DateTime.UtcNow
+                    };
+
+                    ApplyIncomingCommentNote(createdFromUpdate, objectProp, actorIri, readIriFromActivityPubNode);
+                    db.ItemComments.Add(createdFromUpdate);
+
+                    await db.SaveChangesAsync();
+                    await list.RefreshRemoteCommentLikesForItemAsync(createdFromUpdate.ItemId, db);
+                    await list.GenerateHTMLListPage(db);
+
+                    await broadcastActivityPubCommentAnnounceToFollowersAsync(
+                        list,
+                        db,
+                        createdFromUpdate.RemoteObjectIri,
+                        $"Accepted first-seen remote comment via Update for list item {createdFromUpdate.ItemId}",
+                        null);
+
+                    string createdFromUpdateMsg = $"ActivityPub threaded comment accepted via Update for item {createdFromUpdate.ItemId}: comment {createdFromUpdate.Id}";
+                    return OkPayloadWithTrace(fn, new
+                    {
+                        itemId = createdFromUpdate.ItemId,
+                        commentId = createdFromUpdate.Id,
+                        remoteObject = createdFromUpdate.RemoteObjectIri,
+                        inReplyTo = createdFromUpdate.InReplyToIri,
+                        parentCommentId = createdFromUpdate.ParentCommentId,
+                        acceptedViaUpdate = true,
+                        persistedActivityPath
+                    }, createdFromUpdateMsg);
+                }
             }
 
             GeListItem? existingItem = await db.Items.FirstOrDefaultAsync(item =>
@@ -1115,6 +1417,118 @@ public static class ActivityPubInboxService
             ?? target.UpdatedAt;
     }
 
+    private static bool IsCommentDeleteAuthorized(string actorIri, GeListItemComment comment)
+    {
+        if (string.IsNullOrWhiteSpace(actorIri))
+        {
+            return false;
+        }
+
+        bool hasStoredActor = !string.IsNullOrWhiteSpace(comment.ActorIri)
+            || !string.IsNullOrWhiteSpace(comment.AttributedToIri);
+        if (!hasStoredActor)
+        {
+            return true;
+        }
+
+        return string.Equals(actorIri, comment.ActorIri, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(actorIri, comment.AttributedToIri, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsIncomingNoteActorConsistent(
+        string actorIri,
+        JsonElement noteObject,
+        Func<JsonElement, string?> readIriFromActivityPubNode)
+    {
+        if (string.IsNullOrWhiteSpace(actorIri))
+        {
+            return false;
+        }
+
+        string? attributedTo = ReadIriProperty(noteObject, "attributedTo", readIriFromActivityPubNode)
+            ?? ReadIriProperty(noteObject, "attributedto", readIriFromActivityPubNode);
+        if (string.IsNullOrWhiteSpace(attributedTo))
+        {
+            return true;
+        }
+
+        return string.Equals(actorIri, attributedTo, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task<LikeTargetResolution?> ResolveIncomingLikeTargetAsync(int listId, string? candidateObjectIri, GeFeSLEDb db)
+    {
+        if (string.IsNullOrWhiteSpace(candidateObjectIri))
+        {
+            return null;
+        }
+
+        if (TryResolveLocalCommentIdFromIri(candidateObjectIri, out int commentId))
+        {
+            GeListItemComment? comment = await db.ItemComments.FirstOrDefaultAsync(c => c.Id == commentId && c.ListId == listId);
+            if (comment is not null)
+            {
+                return new LikeTargetResolution(
+                    $"{GlobalConfig.Hostname}/apv1/comments/{comment.Id}",
+                    comment.ItemId,
+                    comment.Id);
+            }
+        }
+
+        if (TryResolveLocalItemIdFromIri(candidateObjectIri, listId, out int itemId))
+        {
+            GeListItem? item = await db.Items.FirstOrDefaultAsync(i => i.Id == itemId && i.ListId == listId);
+            if (item is not null)
+            {
+                return new LikeTargetResolution(
+                    $"{GlobalConfig.Hostname}/apv1/items/{item.Id}",
+                    item.Id,
+                    null);
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryResolveLocalCommentIdFromIri(string iri, out int commentId)
+    {
+        commentId = 0;
+        if (string.IsNullOrWhiteSpace(iri))
+        {
+            return false;
+        }
+
+        string path = Uri.TryCreate(iri, UriKind.Absolute, out var absolute)
+            ? absolute.AbsolutePath
+            : iri;
+
+        string[] parts = path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length >= 3
+            && string.Equals(parts[0], "apv1", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(parts[1], "comments", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(parts[2], out commentId))
+        {
+            return true;
+        }
+
+        if (parts.Length >= 5
+            && string.Equals(parts[0], "apv1", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(parts[1], "lists", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(parts[2], out _)
+            && string.Equals(parts[3], "comments", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(parts[4], out commentId))
+        {
+            return true;
+        }
+
+        commentId = 0;
+        return false;
+    }
+
+    private static bool IsCommentTombstoned(GeListItemComment comment)
+    {
+        return string.Equals(comment.Summary?.Trim(), "<comment deleted>", StringComparison.Ordinal);
+    }
+
     private static DateTimeOffset? ReadDateTimeOffsetProperty(JsonElement element, string propertyName)
     {
         string? raw = ReadStringProperty(element, propertyName);
@@ -1209,5 +1623,19 @@ public static class ActivityPubInboxService
 
         public int ItemId { get; }
         public int? ParentCommentId { get; }
+    }
+
+    private sealed class LikeTargetResolution
+    {
+        public LikeTargetResolution(string objectIri, int? itemId, int? commentId)
+        {
+            ObjectIri = objectIri;
+            ItemId = itemId;
+            CommentId = commentId;
+        }
+
+        public string ObjectIri { get; }
+        public int? ItemId { get; }
+        public int? CommentId { get; }
     }
 }

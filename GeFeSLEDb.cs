@@ -69,12 +69,27 @@ protected override void OnModelCreating(ModelBuilder builder)
     builder.Entity<GeListItemComment>()
         .HasIndex(c => new { c.ListId, c.RemoteObjectIri })
         .IsUnique();
+
+    builder.Entity<ActivityPubObjectLike>()
+        .HasIndex(l => new { l.ListId, l.ObjectIri, l.ActorIri })
+        .IsUnique();
+
+    builder.Entity<ActivityPubObjectLike>()
+        .HasIndex(l => l.LikeActivityIri)
+        .IsUnique();
+
+    builder.Entity<ActivityPubObjectLike>()
+        .HasIndex(l => new { l.ListId, l.ItemId, l.IsActive });
+
+    builder.Entity<ActivityPubObjectLike>()
+        .HasIndex(l => new { l.ListId, l.CommentId, l.IsActive });
 }
 
 public DbSet<GeListItem> Items => Set<GeListItem>();
 public DbSet<GeList> Lists => Set<GeList>();
 public DbSet<GeListFollower> ListFollowers => Set<GeListFollower>();
 public DbSet<GeListItemComment> ItemComments => Set<GeListItemComment>();
+public DbSet<ActivityPubObjectLike> ActivityPubObjectLikes => Set<ActivityPubObjectLike>();
 
 }
 

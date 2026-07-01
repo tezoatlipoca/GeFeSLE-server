@@ -132,6 +132,8 @@ function showListSecrets() {
     for (let l of links) { l.style.display = ''; }
     links = document.getElementsByClassName('moveitemlink');
     for (let l of links) { l.style.display = ''; }
+    links = document.getElementsByClassName('commentdeletelink');
+    for (let l of links) { l.style.display = ''; }
     links = document.getElementsByClassName('stickynoteslink');
     for (let l of links) { l.style.display = ''; }
     links = document.getElementsByClassName('googletaskslink');

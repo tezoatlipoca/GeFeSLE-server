@@ -20,6 +20,9 @@ public class GeListItemComment
 
     public DateTimeOffset? PublishedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
+    public int? RemoteLikesCount { get; set; }
+    public string? RemoteLikeActorsJson { get; set; }
+    public DateTimeOffset? RemoteLikesLastCheckedAt { get; set; }
     public DateTime LastReceivedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime CreatedDate { get; set; } = DateTime.UtcNow;

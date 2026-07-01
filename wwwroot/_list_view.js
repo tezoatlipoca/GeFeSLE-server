@@ -82,7 +82,9 @@ function canModifyCurrentList(list, sessionData) {
 
     return collectionMatchesCurrentSession(list.listOwners, identitySet)
         || collectionMatchesCurrentSession(list.listowners, identitySet)
-        || collectionMatchesCurrentSession(list.owners, identitySet);
+        || collectionMatchesCurrentSession(list.owners, identitySet)
+        || collectionMatchesCurrentSession(list.contributors, identitySet)
+        || collectionMatchesCurrentSession(list.Contributors, identitySet);
 }
 
 function getCurrentListIdFromPage() {
@@ -109,13 +111,13 @@ async function updateListEditButtonPermission(sessionData) {
 
     const listId = getCurrentListIdFromPage();
     if (!Number.isFinite(listId)) {
-        return;
+        return false;
     }
 
     try {
         const response = await fetch(`/lists/${listId}`);
         if (!response.ok) {
-            return;
+            return false;
         }
 
         const list = await response.json();
@@ -123,9 +125,11 @@ async function updateListEditButtonPermission(sessionData) {
         editListButtons.forEach((button) => {
             button.style.display = canModify ? '' : 'none';
         });
+        return canModify;
     }
     catch (error) {
         console.error('updateListEditButtonPermission', error);
+        return false;
     }
 }
 
@@ -169,6 +173,46 @@ function deleteItem(listId, itemid) {
             })
             .catch((error) => {
                 console.error(fn + error);
+                d(error);
+                c(RC.ERROR);
+            });
+    }
+}
+
+function deleteItemComment(itemid, commentid) {
+    let fn = 'deleteItemComment'; console.log(fn);
+    if (islocal()) return;
+
+    if (confirm('Are you sure you want to delete this comment?')) {
+        let apiUrl = `/items/${itemid}/comments/${commentid}`;
+        fetch(apiUrl, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'GeFeSLE-XMLHttpRequest': 'true'
+            },
+        })
+            .then(response => {
+                if (response.ok) {
+                    localStorage.setItem('result', `Comment ${commentid} for item ${itemid} deleted successfully`);
+                    location.reload();
+                }
+                else if (response.status == RC.UNAUTHORIZED) {
+                    let msg = "Not authorized! Have you logged in yet? <a href=\"_login.html\">LOGIN</a>";
+                    throw new Error(msg);
+                }
+                else if (response.status == RC.FORBIDDEN) {
+                    let msg = "Forbidden to delete comments! Are you logged in? <a href=\"_login.html\">LOGIN</a>";
+                    throw new Error(msg);
+                }
+                else {
+                    return response.text().then(text => {
+                        throw new Error(text || `Delete failed (${response.status})`);
+                    });
+                }
+            })
+            .catch((error) => {
+                console.error(fn + ' ' + error);
                 d(error);
                 c(RC.ERROR);
             });
@@ -915,7 +959,11 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     }
 
-    await updateListEditButtonPermission(sessionData);
+    const hasModifyRightsOnList = await updateListEditButtonPermission(sessionData);
+    if (hasModifyRightsOnList) {
+        globalCanEditList = true;
+        showListSecrets();
+    }
 
 
     // call the filterUpdate function (just to show how manyitems there are)
@@ -1049,14 +1097,18 @@ async function importItems(sourceService, destLIst) {
     }, 3000);
 }
 
-document.querySelectorAll('.commentcell').forEach(cell => {
-    cell.addEventListener('click', () => {
+document.querySelectorAll('.item-body-pane').forEach(cell => {
+    cell.addEventListener('click', (ev) => {
+        const interactiveAncestor = ev.target.closest('a, button, input, select, textarea, summary, label, [role="button"], [role="link"]');
+        if (interactiveAncestor) {
+            return;
+        }
         cell.classList.toggle('expanded');
     });
 });
 
 window.addEventListener('load', function () {
-    const commentCells = document.querySelectorAll('.commentcell');
+    const commentCells = document.querySelectorAll('.item-body-pane');
     commentCells.forEach(cell => {
         if (cell.scrollHeight > cell.clientHeight) {
             cell.classList.add('overflow');

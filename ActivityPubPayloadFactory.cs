@@ -453,6 +453,7 @@ public static class ActivityPubPayloadFactory
             ["attributedTo"] = $"{GlobalConfig.Hostname}/apv1/lists/{list.Id}",
             ["to"] = new[] { "https://www.w3.org/ns/activitystreams#Public" },
             ["cc"] = new[] { "https://www.w3.org/ns/activitystreams#Public" },
+            ["likes"] = $"{hostBase}/apv1/items/{item.Id}/likes",
             ["published"] = item.CreatedDate.ToUniversalTime().ToString("o"),
             ["updated"] = item.ModifiedDate.ToUniversalTime().ToString("o")
         };
