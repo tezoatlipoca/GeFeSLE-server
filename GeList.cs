@@ -116,6 +116,16 @@ public class GeList
     [NotMapped]
     public int VisibleItemCount { get; set; }
 
+    private bool IsModerationList()
+    {
+        if (string.IsNullOrWhiteSpace(GlobalConfig.modListName) || string.IsNullOrWhiteSpace(Name))
+        {
+            return false;
+        }
+
+        return string.Equals(Name, GlobalConfig.modListName, StringComparison.OrdinalIgnoreCase);
+    }
+
 
 
 
@@ -477,7 +487,7 @@ public class GeList
         var filename = $"{Name}.html";
         var dest = Path.Combine(GlobalConfig.wwwroot!, filename);
 
-        var items = await db.Items.Where(item => item.ListId == Id && item.Visible && !item.IsDeleted).ToListAsync();
+        var items = await GetItems(db);
         var movedItems = await db.Items
             .Where(item => item.ListId == Id
                 && item.IsDeleted
@@ -799,6 +809,7 @@ public class GeList
         sb.AppendLine($"<div class=\"button mastoimportlink\" onclick=\"importItems('Mastodon:Bookmarks',{Id})\" style=\"display: none;\">Mastodon Bookmarks</div>");
         sb.AppendLine($"<div class=\"button stickynoteslink\" onclick=\"importItems('Microsoft:StickyNotes',{Id})\" style=\"display: none;\">Microsoft Sticky Notes</div>");
         sb.AppendLine($"<div class=\"button googletaskslink\" onclick=\"importItems('Google:Tasks',{Id})\" style=\"display: none;\">Google Tasks</div>");
+        sb.AppendLine($"<div class=\"button purgeitemslink\" onclick=\"purgeDeletedItems({Id})\" style=\"display: none;\">Purge Deleted ITEMS</div>");
         sb.AppendLine($"<div class=\"button regenlink\" onclick=\"window.location.href='/lists/{Id}/regen'\" style=\"display: none;\">Regenerate</div>");
         if (items.Count > 0)
         {
@@ -1380,7 +1391,7 @@ public class GeList
         DBg.d(LogLevel.Trace, $"GenerateRssFeed {Id}");
         // create new database context
 
-        var items = await db.Items.Where(item => item.ListId == Id && item.Visible && !item.IsDeleted).ToListAsync();
+        var items = await GetItems(db);
         // if there are no items then return
         if (items.Count == 0) return;
         var list = await db.Lists.FindAsync(Id);
@@ -1423,7 +1434,7 @@ public class GeList
     public async Task GenerateJSON(GeFeSLEDb db)
     {
         DBg.d(LogLevel.Trace, $"GenerateJSON {Id}");
-        var items = await db.Items.Where(item => item.ListId == Id && item.Visible && !item.IsDeleted).ToListAsync();
+        var items = await GetItems(db);
         if (items.Count == 0) return;
         var list = await db.Lists.FindAsync(Id);
         if (list is null) return;
@@ -1447,11 +1458,14 @@ public class GeList
         DBg.d(LogLevel.Trace, $"{(user?.UserName) ?? "anonymous"} ? {Name}");
         string? ynot = null;
         bool allowed = false;
+        bool isCreator = user is not null && !string.IsNullOrWhiteSpace(CreatorId) && string.Equals(CreatorId, user.Id, StringComparison.Ordinal);
+        bool isListOwner = user is not null && ListOwners.Any(u => u.Id == user.Id);
+        bool isContributor = user is not null && Contributors.Any(u => u.Id == user.Id);
         switch (Visibility)
         {
             case GeListVisibility.Contributors:
                 if(user is null) { ynot = "Related list is CONTRIB access. User is null."; break; }
-                if (Contributors.Contains(user) || ListOwners.Contains(user) || Creator == user)
+                if (isContributor || isListOwner || isCreator)
                 {
                     allowed = true;
                     ynot = $"Related list is CONTRIB access. User is a contributor/owner/creator.";
@@ -1463,7 +1477,7 @@ public class GeList
                 break;
             case GeListVisibility.ListOwners:
                 if(user is null) { ynot = "Related list is OWNER access. User is null."; break; }
-                if (ListOwners.Contains(user) || Creator == user)
+                if (isListOwner || isCreator)
                 {
                     allowed = true;
                     ynot = $"Related list is OWNER access. User is a list owner/creator.";
@@ -1475,7 +1489,7 @@ public class GeList
                 break;
             case GeListVisibility.Private:
                 if(user is null) { ynot = "Related list is PRIVATE access. User is null."; break; }
-                if (Creator == user)
+                if (isCreator)
                 {
                     ynot = $"Related list is PRIVATE access. User is the creator.";
                     allowed = true;
@@ -1498,7 +1512,7 @@ public class GeList
 
     }
 
-    // Who can MODIFY a LIST or ITEMS IN IT? 
+    // Who can MODIFY ITEMS IN THIS LIST?
     // 0. SuperUser - ALWAYS // though this fn does not check for that - CALLER MUST CHECK
     // 1. Creator of the list - ALWAYS
     // 2. List Owners - if they're in the ListOwners list (regardless of what role they have)
@@ -1515,7 +1529,10 @@ public class GeList
         DBg.d(LogLevel.Trace, $"ListOwners: {string.Join(", ", ListOwners.Select(u => u.UserName))}");
         DBg.d(LogLevel.Trace, $"Contributors: {string.Join(", ", Contributors.Select(u => u.UserName))}");
         DBg.d(LogLevel.Trace, $"Creator: {Creator?.UserName}");
-        if (Contributors.Contains(user) || ListOwners.Contains(user) || Creator == user)
+        bool isCreator = !string.IsNullOrWhiteSpace(CreatorId) && string.Equals(CreatorId, user.Id, StringComparison.Ordinal);
+        bool isListOwner = ListOwners.Any(u => u.Id == user.Id);
+        bool isContributor = Contributors.Any(u => u.Id == user.Id);
+        if (isContributor || isListOwner || isCreator)
         {
             allowed = true;
             ynot = $"User {user.UserName} is a contributor/owner/creator of list {Name}.";
@@ -1528,6 +1545,33 @@ public class GeList
         DBg.d(LogLevel.Debug, $"{user.UserName} allowed: {allowed} - {ynot}");
         return (allowed, ynot);
 
+    }
+
+    // Who can MODIFY LIST METADATA (name/comment/visibility/delete)?
+    // 0. SuperUser - ALWAYS // though this fn does not check for that - CALLER MUST CHECK
+    // 1. Creator of the list - ALWAYS
+    // 2. List Owners - if they're in the ListOwners list
+    // 3. Contributors - never by list membership alone
+    public (bool, string?) IsUserAllowedToModifyList(GeFeSLEUser user)
+    {
+        DBg.d(LogLevel.Trace, $"{user.UserName} ? list-metadata:{Name}");
+        string? ynot = null;
+        bool allowed = false;
+        bool isCreator = !string.IsNullOrWhiteSpace(CreatorId) && string.Equals(CreatorId, user.Id, StringComparison.Ordinal);
+        bool isListOwner = ListOwners.Any(u => u.Id == user.Id);
+
+        if (isListOwner || isCreator)
+        {
+            allowed = true;
+            ynot = $"User {user.UserName} is a list owner/creator of list {Name}.";
+        }
+        else
+        {
+            ynot = $"User {user.UserName} is not a list owner/creator of list {Name}";
+        }
+
+        DBg.d(LogLevel.Debug, $"{user.UserName} list metadata allowed: {allowed} - {ynot}");
+        return (allowed, ynot);
     }
 
     // Method to regenerate all files for this list (HTML, RSS, JSON) and update the index
@@ -1553,15 +1597,39 @@ public class GeList
     // HOWEVER - this presumes we don't really care about the order in which items are returned. 
     // since we're going to introduce different list types soon, lets abstract that through
     // a GetItems function. 
-    public async Task<List<GeListItem>> GetItems(GeFeSLEDb db)
+    public async Task<List<GeListItem>> GetItems(GeFeSLEDb db, bool includeHidden = false)
     {
-        DBg.d(LogLevel.Trace, $"GetItems for list {Id} - {Name}");
+        DBg.d(LogLevel.Trace, $"GetItems for list {Id} - {Name} (includeHidden={includeHidden})");
         // for now, we will just return items ordered by CreatedDate desc (newest first)
         // in the future, we can modify this to return items in a different order based on the list type
-        var items = await db.Items.Where(item => item.ListId == Id && item.Visible && !item.IsDeleted).OrderByDescending(item => item.CreatedDate).ToListAsync();
+        IQueryable<GeListItem> itemsQuery = db.Items.Where(item => item.ListId == Id);
+
+        if (IsModerationList())
+        {
+            // Exclude moderated source items that were moved here by mistake.
+            // Keep explicit moderation tickets and legacy moderation entries.
+            itemsQuery = itemsQuery.Where(item => item.ModeratedItemId.HasValue || !item.ModerationItemId.HasValue);
+            // Deleted moderation tickets/items should never be returned from moderation list item APIs.
+            itemsQuery = itemsQuery.Where(item => !item.IsDeleted);
+        }
+        else
+        {
+            // Regular lists should never show moderation tickets.
+            itemsQuery = itemsQuery.Where(item => !item.ModeratedItemId.HasValue);
+        }
+
+        if (includeHidden)
+        {
+            itemsQuery = itemsQuery.Where(item => !item.IsDeleted || !item.RedirectToItemId.HasValue);
+        }
+        else
+        {
+            itemsQuery = itemsQuery.Where(item => item.Visible && !item.IsDeleted);
+        }
+
+        var items = await itemsQuery.OrderByDescending(item => item.CreatedDate).ToListAsync();
         DBg.d(LogLevel.Trace, $"Found {items.Count} items for list {Id} - {Name}");
         return items;
     }
-
 
 }

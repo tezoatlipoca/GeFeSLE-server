@@ -495,35 +495,16 @@ public static class ActivityPubInboxService
                 return OkWithTrace(fn, ignoredThreadMsg);
             }
 
-            string? noteContent = ReadStringProperty(objectProp, "content")
-                ?? ReadStringProperty(objectProp, "summary");
-            string attachmentsHtml = BuildIncomingAttachmentMarkup(objectProp, readIriFromActivityPubNode);
-            string combinedComment = BuildSuggestedItemComment(noteContent, attachmentsHtml);
-            string? noteName = ReadStringProperty(objectProp, "name");
-            if (string.IsNullOrWhiteSpace(noteName))
-            {
-                string submitterLabel = BuildActorMentionLabel(activityJson, actorIri);
-                noteName = $"Suggestion from {submitterLabel}";
-            }
-
-            string? attributedToIri = ReadIriProperty(objectProp, "attributedTo", readIriFromActivityPubNode)
-                ?? ReadIriProperty(objectProp, "attributedto", readIriFromActivityPubNode);
-
-            var suggestedItem = new GeListItem
-            {
-                ListId = list.Id,
-                Name = noteName,
-                Comment = combinedComment,
-                IsComplete = false,
-                Visible = false,
-                OriginatorActorIri = actorIri,
-                SourceObjectIri = noteObjectIri,
-                SourceAttributedToIri = attributedToIri
-            };
-            foreach (string tag in ExtractHashtagsFromNoteTag(objectProp))
-            {
-                suggestedItem.Tags.Add(tag);
-            }
+            string submitterLabel = BuildActorMentionLabel(activityJson, actorIri);
+            var suggestedItem = BuildSuggestedItemFromNote(
+                list.Id,
+                objectProp,
+                actorIri,
+                readIriFromActivityPubNode,
+                fallbackName: $"Suggestion from {submitterLabel}",
+                visible: false);
+            noteObjectIri = suggestedItem.SourceObjectIri ?? noteObjectIri;
+            string? attributedToIri = suggestedItem.SourceAttributedToIri;
 
             GeList? modlist = await db.Lists.FirstOrDefaultAsync(l => l.Name == GlobalConfig.modListName);
             if (modlist is null)
@@ -545,6 +526,7 @@ public static class ActivityPubInboxService
                 Name = $"{list.Name}#{suggestedItem.Id} <= by {actorIri}",
                 ListId = modlist.Id,
                 Visible = true,
+                ModeratedItemId = suggestedItem.Id,
                 Tags = new List<string> { "SUGGESTED", "ACTIVITYPUB", list.Name ?? $"list-{list.Id}" }
             };
 
@@ -564,6 +546,8 @@ public static class ActivityPubInboxService
             modItem.Comment = modComment.ToString();
 
             db.Items.Add(modItem);
+            await db.SaveChangesAsync();
+            suggestedItem.ModerationItemId = modItem.Id;
             await db.SaveChangesAsync();
 
             await list.RegenerateAllFiles(db);
@@ -839,8 +823,11 @@ public static class ActivityPubInboxService
             modComment.AppendLine("---------  ");
             modComment.AppendLine($"<a href=\"_edit.item.html?listid={list.Id}&itemid={existingItem.Id}\">LINK TO REVIEW UPDATED ITEM</a>");
             modItem.Comment = modComment.ToString();
+            modItem.ModeratedItemId = existingItem.Id;
 
             db.Items.Add(modItem);
+            await db.SaveChangesAsync();
+            existingItem.ModerationItemId = modItem.Id;
             await db.SaveChangesAsync();
 
             await list.RegenerateAllFiles(db);
@@ -1152,6 +1139,49 @@ public static class ActivityPubInboxService
         }
 
         return string.Join("\n\n", parts);
+    }
+
+    public static GeListItem BuildSuggestedItemFromNote(
+        int listId,
+        JsonElement noteObject,
+        string actorIri,
+        Func<JsonElement, string?> readIriFromActivityPubNode,
+        string? fallbackName = null,
+        bool visible = false,
+        bool isComplete = false)
+    {
+        string? noteObjectIri = readIriFromActivityPubNode(noteObject);
+        string? noteContent = ReadStringProperty(noteObject, "content")
+            ?? ReadStringProperty(noteObject, "summary");
+        string attachmentsHtml = BuildIncomingAttachmentMarkup(noteObject, readIriFromActivityPubNode);
+        string combinedComment = BuildSuggestedItemComment(noteContent, attachmentsHtml);
+        string? noteName = ReadStringProperty(noteObject, "name");
+        if (string.IsNullOrWhiteSpace(noteName))
+        {
+            noteName = fallbackName;
+        }
+
+        string? attributedToIri = ReadIriProperty(noteObject, "attributedTo", readIriFromActivityPubNode)
+            ?? ReadIriProperty(noteObject, "attributedto", readIriFromActivityPubNode);
+
+        var item = new GeListItem
+        {
+            ListId = listId,
+            Name = noteName,
+            Comment = combinedComment,
+            IsComplete = isComplete,
+            Visible = visible,
+            OriginatorActorIri = actorIri,
+            SourceObjectIri = noteObjectIri,
+            SourceAttributedToIri = attributedToIri
+        };
+
+        foreach (string tag in ExtractHashtagsFromNoteTag(noteObject))
+        {
+            item.Tags.Add(tag);
+        }
+
+        return item;
     }
 
     private static string BuildIncomingAttachmentMarkup(JsonElement noteObject, Func<JsonElement, string?> readIriFromActivityPubNode)

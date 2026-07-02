@@ -59,6 +59,7 @@ builder.Host.UseWindowsService();
 if (string.IsNullOrEmpty(configFile))
 {
     DBg.d(LogLevel.Critical, "No configuration specified or file not found. Exiting.");
+    bailAfterDBContext = true;
 }
 else
 {
@@ -1725,25 +1726,98 @@ app.MapPut("/lists", async (HttpContext context,
 
 
 app.MapGet("/lists/{listId:int}/items", async (int listId,
-        GeFeSLEDb db,
-        UserManager<GeFeSLEUser> userManager,
-        HttpContext httpContext) =>
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    HttpContext httpContext,
+    bool includeHidden = false) =>
 {
     string fn = $"/lists/{listId}/items (GET)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    bool isSuperUser = httpContext.User.IsInRole("SuperUser");
+    if (!isSuperUser && user is null)
+    {
+        return BadRequestWithTrace(fn, "Could not determine who you are");
+    }
     var list = await db.Lists.FindAsync(listId);
     if (list is null)
     {
         return NotFoundWithTrace(fn, "List not found");
     }
-    var items = await list.GetItems(db);
+    if (includeHidden)
+    {
+        (bool canModify, string? ynot) = list.IsUserAllowedToModify(user);
+        if (!canModify && !isSuperUser)
+        {
+            return BadRequestWithTrace(fn, $"List {listId} hidden items requested without modify permissions: {ynot}");
+        }
+    }
+
+    var items = await list.GetItems(db, includeHidden);
     // TODO: restrict access to items based on list permissions.
-    var itemDtos = items.Select(i => i.ToResponseDto()).ToList();
+    var itemIds = items.Select(i => i.Id).ToList();
+    var previousRedirectIdsByTarget = await db.Items
+        .Where(i => i.RedirectToItemId.HasValue && itemIds.Contains(i.RedirectToItemId.Value))
+        .GroupBy(i => i.RedirectToItemId!.Value)
+        .ToDictionaryAsync(group => group.Key, group => group.Select(i => i.Id).Distinct().OrderBy(v => v).ToList());
+    var itemDtos = items.Select(i => i.ToResponseDto(
+        previousRedirectIdsByTarget.TryGetValue(i.Id, out var previousIds)
+            ? previousIds
+            : Array.Empty<int>())).ToList();
     LogDtoOut(fn, "List<GeListItemResponseDto>", itemDtos);
     return OkPayloadWithTrace(fn, itemDtos, $"{itemDtos.Count} items returned for list {listId}");
 })
 .WithEndpointDocs("lists.listid.items.get");
 // TODO: restreict access toitems based on list permissions. 
+
+app.MapDelete("/lists/{listid:int}/items", async (int listid,
+    GeFeSLEDb db,
+    UserManager<GeFeSLEUser> userManager,
+    HttpContext httpContext) =>
+{
+    string fn = $"/lists/{listid}/items (DELETE)"; DBg.d(LogLevel.Trace, fn);
+
+    GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    bool isSuperUser = httpContext.User.IsInRole("SuperUser");
+
+    GeList? list = await db.Lists
+        .Include(l => l.Creator)
+        .Include(l => l.ListOwners)
+        .Include(l => l.Contributors)
+        .FirstOrDefaultAsync(l => l.Id == listid);
+
+    if (list is null)
+    {
+        return NotFoundWithTrace(fn, $"List {listid} not found");
+    }
+
+    (bool canModifyList, string? ynot) = list.IsUserAllowedToModifyList(user!);
+    if (!canModifyList && !isSuperUser)
+    {
+        string reason = $"Cannot purge deleted items for list {listid}: {ynot}";
+        return BadRequestWithTrace(fn, reason);
+    }
+
+    var deletedItems = await db.Items
+        .Where(item => item.ListId == listid && item.IsDeleted)
+        .ToListAsync();
+
+    if (deletedItems.Count > 0)
+    {
+        db.Items.RemoveRange(deletedItems);
+        await db.SaveChangesAsync();
+    }
+
+    await list.GenerateHTMLListPage(db);
+
+    string msg = $"Purged {deletedItems.Count} deleted item(s) from list {listid}";
+    return OkPayloadWithTrace(fn, new { listId = listid, purged = deletedItems.Count }, msg);
+})
+.WithEndpointDocs("lists.listid.items.delete")
+.RequireAuthorization(new AuthorizeAttribute
+{
+    AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme + "," + CookieAuthenticationDefaults.AuthenticationScheme,
+    Roles = "SuperUser,listowner"
+});
 
 
 // retreives the specified item by id
@@ -1768,7 +1842,13 @@ app.MapGet("/items/{id:int}", async (int id,
         {
             return RedirectWithTrace(fn, $"/items/{showitem.RedirectToItemId.Value}", $"redirecting item {id} to {showitem.RedirectToItemId.Value}");
         }
-        var itemDto = showitem.ToResponseDto();
+        var previousRedirectItemIds = await db.Items
+            .Where(i => i.RedirectToItemId == showitem.Id)
+            .Select(i => i.Id)
+            .Distinct()
+            .OrderBy(v => v)
+            .ToListAsync();
+        var itemDto = showitem.ToResponseDto(previousRedirectItemIds);
         LogDtoOut(fn, nameof(GeListItemResponseDto), itemDto);
         return OkPayloadWithTrace(fn, itemDto, $"item {id} returned");
     }
@@ -1891,7 +1971,16 @@ app.MapPost("/items", async (
         return BadRequestWithTrace(fn, "New item listID is invalid.");
     }
     // Map DTO to domain object
-    var newitem = new GeListItem { ListId = itemDto.ListId, Name = itemDto.Name, Comment = itemDto.Comment, IsComplete = itemDto.IsComplete, Visible = itemDto.Visible, Tags = new List<string>(itemDto.Tags) };
+    var newitem = new GeListItem
+    {
+        ListId = itemDto.ListId,
+        Name = itemDto.Name,
+        Comment = itemDto.Comment,
+        IsComplete = itemDto.IsComplete,
+        Visible = itemDto.Visible,
+        IsDeleted = itemDto.IsDeleted,
+        Tags = new List<string>(itemDto.Tags)
+    };
     db.Items.Add(newitem);
     await db.SaveChangesAsync();
 
@@ -2032,6 +2121,7 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
     string fn = $"/items/{itemId} (PUT)"; DBg.d(LogLevel.Trace, fn);
     LogDtoIn(fn, nameof(GeListItemCreateUpdateDto), inputItemDto);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    bool isSuperUser = httpContext.User.IsInRole("SuperUser");
     // Verify the item exists
     var moditem = await db.Items.FirstOrDefaultAsync(item => item.Id == itemId);
     // check for listowner or contributor of the list this item belongs to
@@ -2068,9 +2158,18 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
             string msg = $"New list {inputItemDto.ListId} not found";
             return NotFoundWithTrace(fn, msg);
         }
+
+        bool sourceIsModList = string.Equals(oldlist.Name, GlobalConfig.modListName, StringComparison.OrdinalIgnoreCase);
+        bool destinationIsModList = string.Equals(destinationListForMove.Name, GlobalConfig.modListName, StringComparison.OrdinalIgnoreCase);
+        if (sourceIsModList || destinationIsModList)
+        {
+            string msg = $"Cannot move items into or out of reserved moderation list '{GlobalConfig.modListName}'.";
+            return BadRequestWithTrace(fn, msg);
+        }
+
         (bool canModifyOld, string? ynotOld) = oldlist.IsUserAllowedToModify(user);
         (bool canModifyNew, string? ynotNew) = destinationListForMove.IsUserAllowedToModify(user);
-        if (!canModifyOld || !canModifyNew)
+        if ((!canModifyOld || !canModifyNew) && !isSuperUser)
         {            string reason = $"Cannot modify item. ";
             if (!canModifyOld)            {
                 reason += $"No modify permissions on original list (id {oldlist.Id}, name {oldlist.Name}): {ynotOld}. ";
@@ -2082,12 +2181,33 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
         }
     }
     bool wasVisible = moditem.Visible;
+    bool wasDeleted = moditem.IsDeleted;
     int requestedItemId = moditem.Id;
 
     // otherwise, modify away boyo. 
     moditem.UpdateFromDto(inputItemDto);
     moditem.ListId = inputItemDto.ListId;
     bool visibilityChanged = wasVisible != moditem.Visible;
+    bool deletionChanged = wasDeleted != moditem.IsDeleted;
+    bool deletedNow = !wasDeleted && moditem.IsDeleted;
+
+    if (deletedNow)
+    {
+        // Match DELETE /items/{id} semantics when transitioning into deleted state.
+        moditem.ModifiedDate = DateTime.Now;
+
+        // If this item is a moderation ticket being deleted, remove ticket<->moderated links.
+        if (moditem.ModeratedItemId.HasValue)
+        {
+            int moderatedItemId = moditem.ModeratedItemId.Value;
+            var moderatedItem = await db.Items.FirstOrDefaultAsync(i => i.Id == moderatedItemId);
+            if (moderatedItem is not null && moderatedItem.ModerationItemId == moditem.Id)
+            {
+                moderatedItem.ModerationItemId = null;
+            }
+            moditem.ModeratedItemId = null;
+        }
+    }
 
     await db.SaveChangesAsync();
     
@@ -2104,7 +2224,7 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
     else
     {
         // if the item is in a public list, but it is not visible, its attachments shouldn't be either:
-        if (moditem.Visible)
+        if (moditem.Visible && !moditem.IsDeleted)
         {
             geListFileController.UnProtectFiles(itemfiles, nowlist.Name); // TODO: handle situation when a file is in two lists of differing vis levels
         }
@@ -2117,6 +2237,7 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
     bool rotatedItemIdOnVisibilityDrop = false;
     if (!itemMoved
         && visibilityChanged
+        && !deletedNow
         && wasVisible
         && !moditem.Visible
         && nowlist.Visibility == GeListVisibility.Public)
@@ -2145,28 +2266,55 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
         await oldlist.RegenerateAllFiles(db);
         await nowlist.RegenerateAllFiles(db);
 
-        await ActivityPubBroadcastService.BroadcastMovedItemToFollowersAsync(
-            oldlist,
-            nowlist,
-            db,
-            moditem,
-            (listForBroadcast, dbForBroadcast, itemForBroadcast, activityTypeForBroadcast, onlyFollowerForBroadcast) =>
-                ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
-                    listForBroadcast,
-                    dbForBroadcast,
-                    itemForBroadcast,
-                    activityTypeForBroadcast,
-                    (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
-                    ActivityPubDeliveryUtils.ResolveActorInboxAsync,
-                    (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
-                        ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey),
-                    onlyFollowerForBroadcast));
+        if (deletedNow)
+        {
+            await ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+                nowlist,
+                db,
+                moditem,
+                "Delete",
+                (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+                ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+                (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                    ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
+        }
+        else
+        {
+            await ActivityPubBroadcastService.BroadcastMovedItemToFollowersAsync(
+                oldlist,
+                nowlist,
+                db,
+                moditem,
+                (listForBroadcast, dbForBroadcast, itemForBroadcast, activityTypeForBroadcast, onlyFollowerForBroadcast) =>
+                    ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+                        listForBroadcast,
+                        dbForBroadcast,
+                        itemForBroadcast,
+                        activityTypeForBroadcast,
+                        (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+                        ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+                        (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                            ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey),
+                        onlyFollowerForBroadcast));
+        }
     }
     else
     {
         await nowlist.RegenerateAllFiles(db);
 
-        if (visibilityChanged)
+        if (deletedNow)
+        {
+            await ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
+                nowlist,
+                db,
+                moditem,
+                "Delete",
+                (listForNote, itemForNote) => ActivityPubPayloadFactory.BuildActivityPubItemNote(listForNote, itemForNote, activityPubMarkdownPipeline),
+                ActivityPubDeliveryUtils.ResolveActorInboxAsync,
+                (inboxUrl, actorUrl, activityPayload, successLogMessage) =>
+                    ActivityPubDeliveryUtils.SendSignedActivityPubMessageAsync(inboxUrl, actorUrl, activityPayload, successLogMessage, activityPubSigningKey));
+        }
+        else if (visibilityChanged || deletionChanged)
         {
             if (rotatedItemIdOnVisibilityDrop)
             {
@@ -2174,7 +2322,7 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
             }
             else if (nowlist.Visibility == GeListVisibility.Public)
             {
-                string visibilityActivityType = moditem.Visible ? "Create" : "Delete";
+                string visibilityActivityType = (moditem.Visible && !moditem.IsDeleted) ? "Create" : "Delete";
                 await ActivityPubBroadcastService.BroadcastActivityPubItemToFollowersAsync(
                     nowlist,
                     db,
@@ -2187,7 +2335,7 @@ app.MapPut("/items/{itemId:int}", async (int itemId,
             }
             else
             {
-                DBg.d(LogLevel.Debug, $"{fn} -- visibility changed for item {moditem.Id} but list {nowlist.Id} is not public; skipping ActivityPub visibility broadcast");
+                DBg.d(LogLevel.Debug, $"{fn} -- visibility/deletion changed for item {moditem.Id} but list {nowlist.Id} is not public; skipping ActivityPub visibility broadcast");
             }
         }
         else
@@ -2231,6 +2379,7 @@ app.MapDelete("/items/{id:int}", async (int id,
 {
     var fn = $"/items/{id} (DELETE)"; DBg.d(LogLevel.Trace, $"{fn}");
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    bool isSuperUser = httpContext.User.IsInRole("SuperUser");
     // check if list owner is owner of, or can modify THIS list
     var delitem = await db.Items.FindAsync(id);
     if (delitem is null) {
@@ -2248,14 +2397,36 @@ app.MapDelete("/items/{id:int}", async (int id,
         return NotFoundWithTrace(fn, msg);
     }
     (bool canModify, string? ynot) = list.IsUserAllowedToModify(user);
-    if (!canModify)    {
+    if (!canModify && !isSuperUser)    {
         string reason = $"Cannot delete item. No modify permissions on list (id {list.Id}, name {list.Name}): {ynot}.";
         DBg.d(LogLevel.Error, $"{fn} -- {reason}");
         return BadRequestWithTrace(fn, reason);
     }
     else {
+        bool relationshipsCleared = false;
+
+        // If this item is a moderation ticket, remove ticket<->moderated links before delete.
+        if (delitem.ModeratedItemId.HasValue)
+        {
+            int moderatedItemId = delitem.ModeratedItemId.Value;
+            var moderatedItem = await db.Items.FirstOrDefaultAsync(i => i.Id == moderatedItemId);
+            if (moderatedItem is not null && moderatedItem.ModerationItemId == delitem.Id)
+            {
+                moderatedItem.ModerationItemId = null;
+                relationshipsCleared = true;
+            }
+            delitem.ModeratedItemId = null;
+            relationshipsCleared = true;
+        }
+
         if (delitem.IsDeleted)
         {
+            if (relationshipsCleared)
+            {
+                await db.SaveChangesAsync();
+                await list.RegenerateAllFiles(db);
+                return OkWithTrace(fn, "item already deleted; moderation links cleared");
+            }
             return OkWithTrace(fn, "item already deleted");
         }
 
@@ -2294,6 +2465,7 @@ app.MapDelete("/items/{itemid:int}/comments/{commentid:int}", async (
 {
     string fn = $"/items/{itemid}/comments/{commentid} (DELETE)"; DBg.d(LogLevel.Trace, fn);
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    bool isSuperUser = httpContext.User.IsInRole("SuperUser");
 
     GeListItemComment? comment = await db.ItemComments.FirstOrDefaultAsync(c => c.Id == commentid);
     if (comment is null)
@@ -2320,7 +2492,7 @@ app.MapDelete("/items/{itemid:int}/comments/{commentid:int}", async (
     }
 
     (bool canModify, string? ynot) = list.IsUserAllowedToModify(user);
-    if (!canModify)
+    if (!canModify && !isSuperUser)
     {
         string msg = $"Cannot delete comment. No modify permissions on list (id {list.Id}, name {list.Name}): {ynot}.";
         return BadRequestWithTrace(fn, msg);
@@ -2379,6 +2551,7 @@ app.MapPatch("/items/{id:int}/list", async (
     DBg.d(LogLevel.Trace, $"{fn} <-- {{ itemid: {id}, newlistid: {newlistid}}}");
 
     GeFeSLEUser? user = UserSessionService.UpdateSessionAccessTime(httpContext, db, userManager);
+    bool isSuperUser = httpContext.User.IsInRole("SuperUser");
     if (user is null)
     {
         return BadRequestWithTrace(fn, "Could not determine who you are");
@@ -2419,9 +2592,17 @@ app.MapPatch("/items/{id:int}/list", async (
         return OkPayloadWithTrace(fn, $"Item {id} already in list {newlistid}", $"item {id} already in list {newlistid}");
     }
 
+    bool sourceIsModList = string.Equals(oldlist.Name, GlobalConfig.modListName, StringComparison.OrdinalIgnoreCase);
+    bool destinationIsModList = string.Equals(newlist.Name, GlobalConfig.modListName, StringComparison.OrdinalIgnoreCase);
+    if (sourceIsModList || destinationIsModList)
+    {
+        string errMsg = $"Cannot move items into or out of reserved moderation list '{GlobalConfig.modListName}'.";
+        return BadRequestWithTrace(fn, errMsg);
+    }
+
     (bool canModifyOld, string? ynotOld) = oldlist.IsUserAllowedToModify(user);
     (bool canModifyNew, string? ynotNew) = newlist.IsUserAllowedToModify(user);
-    if (!canModifyOld || !canModifyNew)
+    if ((!canModifyOld || !canModifyNew) && !isSuperUser)
     {
         string reason = "Cannot move item. ";
         if (!canModifyOld)
@@ -4506,13 +4687,14 @@ app.MapPost("/items/{itemid:int}/report", async (int itemid,
     {
         Name = $"{itemList.Name}#{itemid} <= by {reporterIdentity}",
         ListId = modlist.Id,
-        Tags = { "REPORTED", itemList.Name }
+        Tags = { "REPORTED", itemList.Name },
+        ModeratedItemId = item.Id
     };
-    moditem.Comment += $"Reported by {reporterIdentity}  ";
-    moditem.Comment += $"Item has been preemptively marked as invisible pending moderation  ";
-    moditem.Comment += $"Rationale for report:  ";
-    moditem.Comment += $"{reason}  ";
-    moditem.Comment += $"---------  ";
+    string safeReporterIdentity = WebUtility.HtmlEncode(reporterIdentity);
+    string safeReason = WebUtility.HtmlEncode(reason.ToString().Trim());
+    moditem.Comment += $"Reported by {safeReporterIdentity}  \n";
+    moditem.Comment += "Item has been preemptively marked as invisible pending moderation  \n";
+    moditem.Comment += $"<div class=\"moderation-rationale-box\"><strong>Rationale for report:</strong><br>{safeReason}</div>\n";
     moditem.Comment += $"<a href=\"_edit.item.html?listid={itemList.Id}&itemid={itemid}\">LINK TO VIEW/FIX</a>";
     // change the original item's visibility to false
     item.Visible = false;
@@ -4525,6 +4707,8 @@ app.MapPost("/items/{itemid:int}/report", async (int itemid,
     DBg.d(LogLevel.Trace, $"{fn} -- SAVING MOD ITEM: {moditem.Comment}");
     db.Items.Add(moditem);
     // save all changes
+    await db.SaveChangesAsync();
+    item.ModerationItemId = moditem.Id;
     await db.SaveChangesAsync();
     // regen the item's list
     _ = itemList.GenerateHTMLListPage(db);
@@ -4597,7 +4781,8 @@ app.MapPost("/lists/{listid:int}/suggest", async (int listid,
     {
         Name = $"{newitemList.Name}#{newitem.Id} <= by {user?.UserName ?? "anonymous"}",
         ListId = modlist.Id,
-        Tags = { "SUGGESTED", newitemList.Name }
+        Tags = { "SUGGESTED", newitemList.Name },
+        ModeratedItemId = newitem.Id
     };
     moditem.Comment += $"SUGGESTED by {user?.UserName ?? "anonymous"}  ";
     moditem.Comment += $"Item has been preemptively marked as invisible pending approval  ";
@@ -4614,6 +4799,8 @@ app.MapPost("/lists/{listid:int}/suggest", async (int listid,
     db.Items.Add(moditem);
 
 
+    await db.SaveChangesAsync();
+    newitem.ModerationItemId = moditem.Id;
     await db.SaveChangesAsync();
 
     List<string> itemfiles = newitem.LocalFiles();

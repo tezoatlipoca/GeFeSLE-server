@@ -87,6 +87,36 @@ function canModifyCurrentList(list, sessionData) {
         || collectionMatchesCurrentSession(list.Contributors, identitySet);
 }
 
+function canAdministerCurrentList(list, sessionData) {
+    if (!list || !sessionData) {
+        return false;
+    }
+
+    if (isSuperUser(sessionData.role)) {
+        return true;
+    }
+
+    const identitySet = getCurrentSessionIdentitySet(sessionData);
+    if (identitySet.size === 0) {
+        return false;
+    }
+
+    if (objectMatchesCurrentSession(list.creator, identitySet)) {
+        return true;
+    }
+
+    if (identitySet.has(normalizeListIdentityValue(list.creatorId))
+        || identitySet.has(normalizeListIdentityValue(list.creatorUserId))
+        || identitySet.has(normalizeListIdentityValue(list.creatorUserName))
+        || identitySet.has(normalizeListIdentityValue(list.creatorUsername))) {
+        return true;
+    }
+
+    return collectionMatchesCurrentSession(list.listOwners, identitySet)
+        || collectionMatchesCurrentSession(list.listowners, identitySet)
+        || collectionMatchesCurrentSession(list.owners, identitySet);
+}
+
 function getCurrentListIdFromPage() {
     const editListButton = document.querySelector('.editlink[onclick*="listid="]');
     if (!editListButton) {
@@ -105,6 +135,7 @@ function getCurrentListIdFromPage() {
 
 async function updateListEditButtonPermission(sessionData) {
     const editListButtons = Array.from(document.getElementsByClassName('editlink'));
+    const purgeButtons = Array.from(document.getElementsByClassName('purgeitemslink'));
     if (editListButtons.length === 0 || !sessionData || !sessionData.userName) {
         return;
     }
@@ -122,14 +153,179 @@ async function updateListEditButtonPermission(sessionData) {
 
         const list = await response.json();
         const canModify = canModifyCurrentList(list, sessionData);
+        const canAdminister = canAdministerCurrentList(list, sessionData);
         editListButtons.forEach((button) => {
-            button.style.display = canModify ? '' : 'none';
+            button.style.display = canAdminister ? '' : 'none';
+        });
+        purgeButtons.forEach((button) => {
+            button.style.display = canAdminister ? '' : 'none';
         });
         return canModify;
     }
     catch (error) {
         console.error('updateListEditButtonPermission', error);
         return false;
+    }
+}
+
+function getHiddenItemPreviewText(item) {
+    const rawText = typeof item?.comment === 'string' ? item.comment : '';
+    const normalized = rawText.replace(/\s+/g, ' ').trim();
+    if (normalized.length <= 200) {
+        return normalized;
+    }
+    return normalized.substring(0, 200).trimEnd() + '...';
+}
+
+function buildHiddenItemPreviewRow(item) {
+    const wrapper = document.createDocumentFragment();
+
+    const nameCell = document.createElement('div');
+    nameCell.className = 'namecell';
+    nameCell.textContent = item.name || '';
+
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'supplementary-item-status';
+    statusBadge.textContent = item.isDeleted ? 'deleted' : 'invisible';
+    nameCell.appendChild(document.createTextNode(' '));
+    nameCell.appendChild(statusBadge);
+
+    if (item.moderationItemId != null) {
+        const moderationBadge = document.createElement('span');
+        moderationBadge.className = 'supplementary-item-status';
+        moderationBadge.textContent = 'moderated';
+        nameCell.appendChild(document.createTextNode(' '));
+        nameCell.appendChild(moderationBadge);
+    }
+
+    const itemRow = document.createElement('div');
+    itemRow.className = 'itemrow supplementary-item-preview';
+    itemRow.id = String(item.id);
+
+    if (item.moderationItemId != null) {
+        itemRow.classList.add('under-moderation');
+    }
+
+    const commentCell = document.createElement('div');
+    commentCell.className = 'commentcell';
+
+    const bodyPane = document.createElement('div');
+    bodyPane.className = 'item-body-pane';
+    bodyPane.textContent = getHiddenItemPreviewText(item);
+    commentCell.appendChild(bodyPane);
+
+    const tagCell = document.createElement('div');
+    tagCell.className = 'tagscell';
+    const tags = Array.isArray(item.tags) ? item.tags : [];
+    tags.filter(tag => typeof tag === 'string' && tag.trim().length > 0).forEach(tag => {
+        const tagSpan = document.createElement('span');
+        tagSpan.className = 'tag';
+        tagSpan.textContent = tag.trim();
+        tagCell.appendChild(tagSpan);
+    });
+
+    const utilityBox = document.createElement('div');
+    utilityBox.className = 'utilitybox';
+
+    const modifiedDate = document.createElement('span');
+    modifiedDate.className = 'itemmoddate';
+    modifiedDate.textContent = item.modifiedDate ? String(item.modifiedDate).replace('T', ' ').replace('Z', '') : '';
+    utilityBox.appendChild(modifiedDate);
+
+    const editLink = document.createElement('span');
+    editLink.className = 'itemeditlink';
+    const editAnchor = document.createElement('a');
+    editAnchor.href = `_edit.item.html?listid=${item.listId}&itemid=${item.id}`;
+    editAnchor.textContent = 'Edit';
+    editLink.appendChild(editAnchor);
+    utilityBox.appendChild(editLink);
+
+    if (!item.isDeleted) {
+        const deleteLink = document.createElement('span');
+        deleteLink.className = 'itemdeletelink';
+        const deleteAnchor = document.createElement('a');
+        deleteAnchor.href = '#';
+        deleteAnchor.textContent = 'Delete';
+        deleteAnchor.addEventListener('click', function (event) {
+            event.preventDefault();
+            deleteItem(item.listId, item.id);
+        });
+        deleteLink.appendChild(document.createTextNode(' '));
+        deleteLink.appendChild(deleteAnchor);
+        utilityBox.appendChild(deleteLink);
+    }
+
+    itemRow.appendChild(commentCell);
+    itemRow.appendChild(tagCell);
+    itemRow.appendChild(utilityBox);
+
+    wrapper.appendChild(nameCell);
+    wrapper.appendChild(itemRow);
+    return wrapper;
+}
+
+async function renderHiddenItemsForEditors() {
+    if (!globalCanEditList) {
+        return;
+    }
+
+    const listId = getCurrentListIdFromPage();
+    if (!Number.isFinite(listId)) {
+        return;
+    }
+
+    const itemTable = document.getElementById('itemtable');
+    if (!itemTable) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/lists/${listId}/items?includeHidden=true`);
+        if (!response.ok) {
+            return;
+        }
+
+        const items = await response.json();
+        const existingItemIds = new Set(Array.from(document.querySelectorAll('.itemrow')).map(row => String(row.id)));
+        const fragment = document.createDocumentFragment();
+
+        for (const item of items) {
+            if (!item || item.redirectToItemId != null) {
+                continue;
+            }
+
+            const existingRow = document.getElementById(String(item.id));
+            if (item.visible && !item.isDeleted) {
+                if (item.moderationItemId != null && existingRow) {
+                    const existingNameCell = existingRow.previousElementSibling;
+                    if (existingNameCell && existingNameCell.classList.contains('namecell')) {
+                        existingNameCell.classList.add('under-moderation');
+                        if (!existingNameCell.querySelector('.moderation-open-status')) {
+                            const moderationBadge = document.createElement('span');
+                            moderationBadge.className = 'supplementary-item-status moderation-open-status';
+                            moderationBadge.textContent = 'moderated';
+                            existingNameCell.appendChild(document.createTextNode(' '));
+                            existingNameCell.appendChild(moderationBadge);
+                        }
+                    }
+                    existingRow.classList.add('under-moderation');
+                }
+                continue;
+            }
+
+            if (existingItemIds.has(String(item.id))) {
+                continue;
+            }
+
+            fragment.appendChild(buildHiddenItemPreviewRow(item));
+        }
+
+        if (fragment.childNodes.length > 0) {
+            itemTable.appendChild(fragment);
+        }
+    }
+    catch (error) {
+        console.error('renderHiddenItemsForEditors', error);
     }
 }
 
@@ -950,8 +1146,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         for (let l of links) { l.style.display = 'none'; }
     }
 
-    if (isSuperUser(role) || isListOwner(role)) {
-        console.debug(fn + ' | logged in and either isSuperUser or isListOwner');
+    if (isSuperUser(role)) {
+        console.debug(fn + ' | logged in and isSuperUser');
         showListSecrets();
         showDebuggingElements();
         showAdminSecrets();
@@ -963,6 +1159,10 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (hasModifyRightsOnList) {
         globalCanEditList = true;
         showListSecrets();
+    }
+
+    if (globalCanEditList) {
+        await renderHiddenItemsForEditors();
     }
 
 
@@ -1095,6 +1295,56 @@ async function importItems(sourceService, destLIst) {
     setTimeout(function () {
         location.reload();
     }, 3000);
+}
+
+async function purgeDeletedItems(listId) {
+    const fn = 'purgeDeletedItems';
+    console.debug(fn);
+
+    if (islocal()) {
+        d("Cannot call API from a local file!");
+        c(RC.BAD_REQUEST);
+        return;
+    }
+
+    let [id, username, role] = await amloggedin();
+    console.debug(fn + ' | username: ' + username);
+    console.debug(fn + ' | role: ' + role);
+
+    if (!isSuperUser(role) && !globalCanEditList) {
+        d("Only this list's creator/listowners (or SuperUser) can purge deleted items.");
+        c(RC.UNAUTHORIZED);
+        return;
+    }
+
+    const sure = confirm('Purge all soft-deleted items from this list? This cannot be undone.');
+    if (!sure) {
+        return;
+    }
+
+    const apiUrl = `/lists/${listId}/items`;
+    try {
+        const response = await fetch(apiUrl, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                "GeFeSLE-XMLHttpRequest": "true"
+            }
+        });
+
+        await handleResponse(response);
+
+        d('Deleted items purged. Refreshing page...');
+        c(RC.OK);
+        setTimeout(function () {
+            location.reload();
+        }, 400);
+    }
+    catch (error) {
+        console.error(error);
+        d(error);
+        c(RC.ERROR);
+    }
 }
 
 document.querySelectorAll('.item-body-pane').forEach(cell => {

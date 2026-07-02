@@ -10,6 +10,7 @@ using System.Text; // Add this directive for Encoding
 using GeFeSLE;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Primitives;
+using GeFeSLE.DTOs;
 
 
 public static class UserSessionService

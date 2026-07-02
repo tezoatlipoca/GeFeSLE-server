@@ -66,7 +66,7 @@ namespace GeFeSLE.DTOs
         }
 
         // List item mappings
-        public static GeListItemResponseDto ToResponseDto(this GeListItem item)
+        public static GeListItemResponseDto ToResponseDto(this GeListItem item, IEnumerable<int>? previousRedirectItemIds = null)
         {
             return new GeListItemResponseDto
             {
@@ -78,6 +78,9 @@ namespace GeFeSLE.DTOs
                 Visible = item.Visible,
                 IsDeleted = item.IsDeleted,
                 RedirectToItemId = item.RedirectToItemId,
+                ModerationItemId = item.ModerationItemId,
+                ModeratedItemId = item.ModeratedItemId,
+                PreviousRedirectItemIds = previousRedirectItemIds?.Distinct().OrderBy(v => v).ToList() ?? new List<int>(),
                 OriginatorActorIri = item.OriginatorActorIri,
                 SourceObjectIri = item.SourceObjectIri,
                 SourceAttributedToIri = item.SourceAttributedToIri,
@@ -93,6 +96,7 @@ namespace GeFeSLE.DTOs
             item.Comment = dto.Comment;
             item.IsComplete = dto.IsComplete;
             item.Visible = dto.Visible;
+            item.IsDeleted = dto.IsDeleted;
             item.Tags = new List<string>(dto.Tags);
         }
     }

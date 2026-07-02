@@ -138,6 +138,8 @@ function showListSecrets() {
     for (let l of links) { l.style.display = ''; }
     links = document.getElementsByClassName('googletaskslink');
     for (let l of links) { l.style.display = ''; }
+    links = document.getElementsByClassName('purgeitemslink');
+    for (let l of links) { l.style.display = ''; }
     links = document.getElementsByClassName('edituserslink');
     for (let l of links) { l.style.display = ''; }
     links = document.getElementsByClassName('regenlink');
@@ -150,7 +152,7 @@ function showListSecrets() {
 
 function isListOwner(r) {
     console.info('isListOwner');
-    if (r === 'listowner') {
+    if ((r || '').toString().toLowerCase() === 'listowner') {
         return true;
     }
     else {
@@ -160,7 +162,7 @@ function isListOwner(r) {
 
 function isContributor(r) {
     console.info('isContributor');
-    if (r === 'contributor') {
+    if ((r || '').toString().toLowerCase() === 'contributor') {
         return true;
     }
     else {
@@ -170,7 +172,7 @@ function isContributor(r) {
 
 function isSuperUser(r) {
     console.info('isSuperUser');
-    if (r === 'SuperUser') {
+    if ((r || '').toString().toLowerCase() === 'superuser') {
         return true;
     }
     else {
@@ -300,6 +302,12 @@ function make1stcelllinks() {
     let fn = 'make1stcelllinks'; console.debug(fn);
 
     document.querySelectorAll('.namecell').forEach(function (div) {
+        // If this cell already has an anchor, it has already been linkified.
+        // Reprocessing would duplicate the visible URL text.
+        if (div.querySelector('a')) {
+            return;
+        }
+
         var text = div.textContent;
         console.debug(fn + ' | div: ' + div.textContent);
         var urlPattern = /^\s*(http|https):\/\/[^ "]+\s*$/;
@@ -309,8 +317,8 @@ function make1stcelllinks() {
             var preservedElements = [];
             for (var i = 0; i < div.childNodes.length; i++) {
                 var node = div.childNodes[i];
-                // Preserve elements that are not text nodes or are img/button elements
-                if (node.nodeType !== Node.TEXT_NODE) {
+                // Preserve non-text non-anchor elements (for example bookmark icons).
+                if (node.nodeType !== Node.TEXT_NODE && node.nodeName !== 'A') {
                     preservedElements.push(node.cloneNode(true));
                 }
             }

@@ -1,5 +1,33 @@
 
 
+let canEditThisList = false;
+
+function applyListEditPermissions(canEdit) {
+    canEditThisList = !!canEdit;
+
+    const submitButton = document.querySelector('#editlistform input[type="submit"]');
+    if (submitButton) {
+        submitButton.style.display = canEditThisList ? '' : 'none';
+    }
+
+    const roleManagementSection = document.querySelector('.role-management-section');
+    if (roleManagementSection) {
+        roleManagementSection.style.display = canEditThisList ? '' : 'none';
+    }
+
+    const editableFieldIds = ['list.name', 'list.ActivityPubId', 'list.visibility'];
+    editableFieldIds.forEach((fieldId) => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+            field.disabled = !canEditThisList;
+        }
+    });
+
+    if (typeof easymde !== 'undefined' && easymde && easymde.codemirror) {
+        easymde.codemirror.setOption('readOnly', canEditThisList ? false : 'nocursor');
+    }
+}
+
 // Function to show temporary feedback popup messages
 function showFeedbackMessage(message, isSuccess = true, targetElement = null) {
     // Create feedback element
@@ -49,8 +77,8 @@ async function getList() {
     let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
-    
-    if (!isSuperUser(role) && !isListOwner(role)){
+
+    if (!id) {
         d("Not logged in!");
         c(RC.UNAUTHORIZED);
         return;
@@ -62,6 +90,7 @@ async function getList() {
     console.debug(' | listid: ' + listid);
     if (listid == null || listid == '') {
         // write any error to the span with id="result"
+        applyListEditPermissions(isSuperUser(role) || isListOwner(role));
         d('No List Id - creating new');
         c(RC.OK);
         return;
@@ -114,8 +143,10 @@ async function updateList(e) {
     let [userid, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
-    if (!isSuperUser(role) && !isListOwner(role)){
-        d("Not logged in!");
+
+    const listIdValue = document.getElementById('list.id').value;
+    if (listIdValue && !canEditThisList && !isSuperUser(role)) {
+        d("You are not a creator/listowner of this list.");
         c(RC.UNAUTHORIZED);
         return;
     }
@@ -305,6 +336,16 @@ async function getListUsers() {
                 return name + " (" + email + ")";
             };
 
+            const currentId = (id || '').toString();
+            const currentUserName = (username || '').toString().toLowerCase();
+            const userMatchesCurrent = (u) => {
+                if (!u) return false;
+                const candidateId = ((u.id || u.Id || '') + '').trim();
+                const candidateUser = ((u.userName || u.UserName || '') + '').toLowerCase().trim();
+                return (candidateId && currentId && candidateId === currentId)
+                    || (candidateUser && currentUserName && candidateUser === currentUserName);
+            };
+
             // json is a list of users. Put userName and email values into a dictionary
             // structure of json is: {creator, listowners[], contributors[]} and each of these is a user object
             // tolerate old/new DTO key casing
@@ -328,6 +369,14 @@ async function getListUsers() {
                 listownersVar = "No listowners yet!";
             }
             document.getElementById('listowners').innerText = listownersVar;
+
+            const isCreatorForList = userMatchesCurrent(creator);
+            const isListOwnerForList = listowners.some(userMatchesCurrent);
+            const canEdit = isSuperUser(role) || isCreatorForList || isListOwnerForList;
+            applyListEditPermissions(canEdit);
+            if (!canEdit) {
+                d("Read-only: only this list's creator/listowners can edit this list.");
+            }
             
             let contributors = json.contributors || json.Contributors || [];
             let contributorsVar = "";
@@ -362,8 +411,8 @@ async function assignUser2List(e) {
     let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
-    if (!isSuperUser(role) && !isListOwner(role)){
-        d("Not logged in!");
+    if (!canEditThisList && !isSuperUser(role)) {
+        d("Only this list's creator/listowners can assign users.");
         c(RC.UNAUTHORIZED);
         return;
     }
@@ -434,8 +483,8 @@ async function removeUserFromList(e) {
     let [id, username, role] = await amloggedin();
     console.debug(fn + ' | username: ' + username);
     console.debug(fn + ' | role: ' + role);
-    if (!isSuperUser(role) && !isListOwner(role)){
-        d("Not logged in!");
+    if (!canEditThisList && !isSuperUser(role)) {
+        d("Only this list's creator/listowners can remove users.");
         c(RC.UNAUTHORIZED);
         return;
     }
@@ -496,6 +545,7 @@ async function removeUserFromList(e) {
 
 document.addEventListener('DOMContentLoaded', getList);
 document.addEventListener('DOMContentLoaded', getAllUsers);
+document.addEventListener('DOMContentLoaded', () => applyListEditPermissions(false));
 
 // When the form is submitted, send it to the REST API
 document.getElementById('editlistform').addEventListener('submit', updateList);

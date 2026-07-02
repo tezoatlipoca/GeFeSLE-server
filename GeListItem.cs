@@ -21,6 +21,12 @@ public class GeListItem
     // the newest canonical item ID for 301 redirect behavior on AP item endpoints.
     public int? RedirectToItemId { get; set; }
 
+    // If this item is moderated, this points to the moderation ticket item.
+    public int? ModerationItemId { get; set; }
+
+    // If this item is a moderation ticket, this points back to the moderated item.
+    public int? ModeratedItemId { get; set; }
+
     // ActivityPub inbound suggestion metadata.
     public string? OriginatorActorIri { get; set; }
     public string? SourceObjectIri { get; set; }

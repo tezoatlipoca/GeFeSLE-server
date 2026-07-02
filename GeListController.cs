@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using Mastonet.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -61,7 +62,7 @@ namespace GeFeSLE.Controllers
             {
                 return NotFound();
             }
-            (bool canMod, string? whyNot) = modlist.IsUserAllowedToModify(user);
+            (bool canMod, string? whyNot) = modlist.IsUserAllowedToModifyList(user);
             if (!canMod && sessionUser.Role != "SuperUser")
             {
                 ContentResult cr = new ContentResult();
@@ -129,7 +130,7 @@ namespace GeFeSLE.Controllers
             // if check the role of the user; if they're superuser or creator of the list, they can modify it
             // if they're a listowner or contributor they can only modify the list if they're listed as
             // listowner or contributor ON the list itself. 
-            (bool canMod, string? whyNot) = modlist.IsUserAllowedToModify(user);
+            (bool canMod, string? whyNot) = modlist.IsUserAllowedToModifyList(user);
             if (!canMod && sessionUser.Role != "SuperUser")
             {
                 return Results.Text(whyNot ?? "Forbidden", statusCode: StatusCodes.Status403Forbidden);
@@ -448,125 +449,179 @@ namespace GeFeSLE.Controllers
             {
                 var scopedb = scope.ServiceProvider.GetRequiredService<GeFeSLEDb>();
 
-
-                // array of strings to hold the status IDs of the statuses to unbookmark
-                List<string> unbookmarkIDs = new List<string>();
-
-                // create httpClient
-                var client = new HttpClient();
-                bool stillMorePages = true;
-
-                int numGot = 0;
-                client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
-
-                var apiUrl = $"{appToken.instance}/api/v1/bookmarks";
-
-
-                // we need to improve this to handle exceptions etc. 
-
-
-                while (stillMorePages && (numGot < num2Get))
+                try
                 {
-                    DBg.d(LogLevel.Trace, $"apiUrl: {apiUrl}");
-                    var response = await client.GetAsync(apiUrl);
-                    var content = await response.Content.ReadAsStringAsync();
+                    // array of strings to hold the status IDs of the statuses to unbookmark
+                    List<string> unbookmarkIDs = new List<string>();
 
-                    // if the results are paged in the http response header we'll get a link header
-                    // that looks like this:
-                    // <https://mastodon.social/api/v1/bookmarks?max_id=123456>; rel="next"
-                    // get that next link and use it to get the next page of bookmarks
-                    var nextLink = response.Headers.GetValues("Link").FirstOrDefault();
-                    if (nextLink is not null)
+                    // create httpClient
+                    using var client = new HttpClient();
+                    bool stillMorePages = true;
+
+                    int numGot = 0;
+                    int numAttemptedCanonical = 0;
+                    client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
+
+                    var apiUrl = $"{appToken.instance}/api/v1/bookmarks";
+
+
+                    // we need to improve this to handle exceptions etc. 
+
+
+                    while (stillMorePages && (numAttemptedCanonical < num2Get))
                     {
-                        // parse the next link to get the url
-                        var nextUrl = nextLink.Split(';')[0].Trim('<', '>');
-                        apiUrl = nextUrl;
-                    }
-                    else
-                    {
-                        stillMorePages = false;
-                    }
-                    // back to processing THIS page. 
-                    // the content is going to be an array of Status class objects
-                    if (content is null)
-                    {
-                        //return Results.NotFound();
-                        ProcessTracker.UpdateProcess(processtoken, "End of statuses");
-                    }
-                    else
-                    {
-                        // there's a bug in the Newtonsoft JSON library, when it deserializes the statuses, 
-                        // it doesn't get the media_attachments. So we're going to use the System.Text.Json library
-                        // TODO: go log that bug w/ Newtonsoft. 2 reproduce just switch back to their deserializer and
-                        //  dump out the json - media attachments are missing. 
-                        Status[]? Systemstatuses = System.Text.Json.JsonSerializer.Deserialize<Status[]>(content);
+                        DBg.d(LogLevel.Trace, $"apiUrl: {apiUrl}");
+                        var response = await client.GetAsync(apiUrl);
+                        var content = await response.Content.ReadAsStringAsync();
 
-                        //Status[]? NewtonsoftStatuses = JsonConvert.DeserializeObject<Status[]>(content);
-                        //var sys = JsonConvert.SerializeObject(Systemstatuses[0], Formatting.Indented);
-                        //var newt = JsonConvert.SerializeObject(NewtonsoftStatuses[0], Formatting.Indented);
-
-                        //StringBuilder sb = new StringBuilder();
-                        //sb.AppendLine($"<!DOCTYPE html><html><body><table><tr><td style=\"vertical-align: top;\">Systemstatuses: <br><pre>{sys}</pre></td><td style=\"vertical-align: top;\">NewtonsoftStatuses:<br><pre>{newt}</pre></td></tr></table></body></html>");
-                        //return Results.Content(sb.ToString(), "text/html");
-
-
-                        if (Systemstatuses is null)
+                        // if the results are paged in the http response header we'll get a link header
+                        // that looks like this:
+                        // <https://mastodon.social/api/v1/bookmarks?max_id=123456>; rel="next"
+                        // get that next link and use it to get the next page of bookmarks
+                        string? nextLink = null;
+                        if (response.Headers.TryGetValues("Link", out var linkValues))
                         {
-                            //return Results.NotFound(); 
-                            ProcessTracker.UpdateProcess(processtoken, "End of statuses");
-
+                            nextLink = linkValues.FirstOrDefault();
+                        }
+                        if (nextLink is not null)
+                        {
+                            // parse the next link to get the url
+                            var nextUrl = nextLink.Split(';')[0].Trim('<', '>');
+                            apiUrl = nextUrl;
                         }
                         else
                         {
-                            DBg.d(LogLevel.Trace, $"statuses: {Systemstatuses.Length}");
-                            // iterate over the statuses and print them out
-                            foreach (Status status in Systemstatuses)
+                            stillMorePages = false;
+                        }
+                        // back to processing THIS page.
+                        // the content is going to be an array of Status class objects
+                        if (content is null)
+                        {
+                            //return Results.NotFound();
+                            ProcessTracker.UpdateProcess(processtoken, "End of statuses");
+                        }
+                        else
+                        {
+                            // there's a bug in the Newtonsoft JSON library, when it deserializes the statuses,
+                            // it doesn't get the media_attachments. So we're going to use the System.Text.Json library
+                            // TODO: go log that bug w/ Newtonsoft. 2 reproduce just switch back to their deserializer and
+                            //  dump out the json - media attachments are missing.
+                            Status[]? Systemstatuses = System.Text.Json.JsonSerializer.Deserialize<Status[]>(content);
+
+                            //Status[]? NewtonsoftStatuses = JsonConvert.DeserializeObject<Status[]>(content);
+                            //var sys = JsonConvert.SerializeObject(Systemstatuses[0], Formatting.Indented);
+                            //var newt = JsonConvert.SerializeObject(NewtonsoftStatuses[0], Formatting.Indented);
+
+                            //StringBuilder sb = new StringBuilder();
+                            //sb.AppendLine($"<!DOCTYPE html><html><body><table><tr><td style=\"vertical-align: top;\">Systemstatuses: <br><pre>{sys}</pre></td><td style=\"vertical-align: top;\">NewtonsoftStatuses:<br><pre>{newt}</pre></td></tr></table></body></html>");
+                            //return Results.Content(sb.ToString(), "text/html");
+
+
+                            if (Systemstatuses is null)
                             {
-                                // check to see the status's visibility
-                                // only import it if its public or unlisted
-
-                                if (status.Visibility != Mastonet.Visibility.Public &&
-                                    status.Visibility != Mastonet.Visibility.Unlisted)
-                                {
-                                    DBg.d(LogLevel.Trace, $"skipping {status.Id} because its visibility is {status.Visibility}");
-
-                                }
-                                else
-                                {
-                                    // add the bookmark status class to the list
-                                    var item = new GeListItem();
-                                    item.ParseMastoStatus(status, destList.Id);
-                                    item.Comment += GlobalStatic.ImportAttribution(user.UserName, $"Mastodon ({appToken.instance})", destList.Name);
-
-                                    scopedb.Items.Add(item);
-
-                                    // add the item.statusID to unbookmarkIDs
-                                    if (unbookmark == true)
-                                    {
-                                        DBg.d(LogLevel.Trace, $"unbookmarking {status.Id}");
-                                        unbookmarkIDs.Add(status.Id);
-                                    }
-                                    // only "count" the imported bookmarks
-                                    numGot++;
-                                    ProcessTracker.UpdateProcess(processtoken, $"Imported {numGot} of {num2Get} Mastodon Bookmarks");
-                                    if (numGot >= num2Get) break;
-
-                                }
+                                //return Results.NotFound();
+                                ProcessTracker.UpdateProcess(processtoken, "End of statuses");
 
                             }
-                            await scopedb.SaveChangesAsync();
+                            else
+                            {
+                                DBg.d(LogLevel.Trace, $"statuses: {Systemstatuses.Length}");
+                                // iterate over the statuses and print them out
+                                foreach (Status status in Systemstatuses)
+                                {
+                                    // check to see the status's visibility
+                                    // only import it if its public or unlisted
+
+                                    if (status.Visibility != Mastonet.Visibility.Public &&
+                                        status.Visibility != Mastonet.Visibility.Unlisted)
+                                    {
+                                        DBg.d(LogLevel.Trace, $"skipping {status.Id} because its visibility is {status.Visibility}");
+
+                                    }
+                                    else
+                                    {
+                                        numAttemptedCanonical++;
+
+                                        var (canonicalNote, canonicalActorIri, canonicalUnauthorized) = await TryFetchCanonicalActivityPubNoteFromStatusAsync(client, status);
+                                        if (canonicalUnauthorized)
+                                        {
+                                            DBg.d(LogLevel.Warning, $"Skipping bookmark {status.Id}: canonical source returned 401 Unauthorized from {status.Uri ?? status.Url}");
+                                            ProcessTracker.UpdateProcess(processtoken, $"Processed {numAttemptedCanonical} of {num2Get} Mastodon Bookmarks (Imported {numGot})");
+                                            if (numAttemptedCanonical >= num2Get) break;
+                                            continue;
+                                        }
+
+                                        if (canonicalNote is null)
+                                        {
+                                            DBg.d(LogLevel.Warning, $"Skipping bookmark {status.Id}: could not fetch/parse canonical ActivityPub note from {status.Uri ?? status.Url}");
+                                            ProcessTracker.UpdateProcess(processtoken, $"Processed {numAttemptedCanonical} of {num2Get} Mastodon Bookmarks (Imported {numGot})");
+                                            if (numAttemptedCanonical >= num2Get) break;
+                                            continue;
+                                        }
+
+                                        using var normalizedNote = canonicalNote;
+                                        string actorIri = canonicalActorIri
+                                            ?? status.Account?.ProfileUrl
+                                            ?? status.Account?.AccountName
+                                            ?? "mastodon-unknown-actor";
+
+                                        var item = ActivityPubInboxService.BuildSuggestedItemFromNote(
+                                            destList.Id,
+                                            normalizedNote.RootElement,
+                                            actorIri,
+                                            ActivityPubPayloadFactory.ReadIriFromActivityPubNode,
+                                            fallbackName: status.Url,
+                                            visible: true,
+                                            isComplete: false);
+
+                                        if (string.IsNullOrWhiteSpace(item.SourceObjectIri))
+                                        {
+                                            item.SourceObjectIri = status.Uri ?? status.Url;
+                                        }
+
+                                        if (string.IsNullOrWhiteSpace(item.SourceAttributedToIri))
+                                        {
+                                            item.SourceAttributedToIri = status.Account?.ProfileUrl;
+                                        }
+
+                                        item.Comment += GlobalStatic.ImportAttribution(user.UserName, $"Mastodon ({appToken.instance})", destList.Name);
+
+                                        scopedb.Items.Add(item);
+
+                                        // add the item.statusID to unbookmarkIDs
+                                        if (unbookmark == true)
+                                        {
+                                            DBg.d(LogLevel.Trace, $"unbookmarking {status.Id}");
+                                            unbookmarkIDs.Add(status.Id);
+                                        }
+                                        numGot++;
+                                        ProcessTracker.UpdateProcess(processtoken, $"Processed {numAttemptedCanonical} of {num2Get} Mastodon Bookmarks (Imported {numGot})");
+                                        if (numAttemptedCanonical >= num2Get) break;
+
+                                    }
+
+                                }
+                                await scopedb.SaveChangesAsync();
+                            }
                         }
-                    }
-                    DBg.d(LogLevel.Trace, $"numGot: {numGot}");
-                    if (numGot >= num2Get) break;
-                } // end of while loop!
-                  // we don't care about waiting for these tasks to complete. 
-                ProcessTracker.UpdateProcess(processtoken, "Generating HTML pages...");
-                await destList.RegenerateAllFiles(scopedb);
-                ProcessTracker.UpdateProcess(processtoken, "Unbookmarking Mastodon Items...");
-                await MastoController.unbookmarkMastoItems(token, appToken.instance, unbookmarkIDs);
-                //return Results.Redirect($"/{destList.Name}.html");
-                ProcessTracker.UpdateProcess(processtoken, "Completed");
+                        DBg.d(LogLevel.Trace, $"numGot: {numGot}");
+                        if (numAttemptedCanonical >= num2Get) break;
+                    } // end of while loop!
+                      // we don't care about waiting for these tasks to complete.
+                    ProcessTracker.UpdateProcess(processtoken, "Generating HTML pages...");
+                    await destList.RegenerateAllFiles(scopedb);
+                    ProcessTracker.UpdateProcess(processtoken, "Unbookmarking Mastodon Items...");
+                    await MastoController.unbookmarkMastoItems(token, appToken.instance, unbookmarkIDs);
+                    //return Results.Redirect($"/{destList.Name}.html");
+                }
+                catch (Exception ex)
+                {
+                    DBg.d(LogLevel.Error, $"BackgroundMastodonImport failed: {ex.Message}");
+                }
+                finally
+                {
+                    ProcessTracker.UpdateProcess(processtoken, "Completed");
+                }
 
             }
         }
@@ -615,6 +670,103 @@ namespace GeFeSLE.Controllers
 
 
             return;
+        }
+
+        private static async Task<(JsonDocument? noteObject, string? actorIri, bool unauthorized)> TryFetchCanonicalActivityPubNoteFromStatusAsync(HttpClient client, Status status)
+        {
+            string? sourceObjectIri = status.Uri ?? status.Url;
+            if (string.IsNullOrWhiteSpace(sourceObjectIri)
+                || !Uri.TryCreate(sourceObjectIri, UriKind.Absolute, out var sourceUri))
+            {
+                return (null, null, false);
+            }
+
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, sourceUri);
+                request.Headers.TryAddWithoutValidation(
+                    "Accept",
+                    "application/activity+json, application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\", application/json");
+
+                using var response = await client.SendAsync(request);
+                if (!response.IsSuccessStatusCode)
+                {
+                    DBg.d(LogLevel.Warning, $"TryFetchCanonicalActivityPubNoteFromStatusAsync -- {sourceUri} returned {(int)response.StatusCode} {response.StatusCode}");
+                    bool unauthorized = response.StatusCode == System.Net.HttpStatusCode.Unauthorized;
+                    return (null, null, unauthorized);
+                }
+
+                string payload = await response.Content.ReadAsStringAsync();
+                if (string.IsNullOrWhiteSpace(payload))
+                {
+                    return (null, null, false);
+                }
+
+                using var activityDoc = JsonDocument.Parse(payload);
+                if (activityDoc.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    return (null, null, false);
+                }
+
+                JsonElement root = activityDoc.RootElement;
+                string? rootType = ReadStringProperty(root, "type");
+                string? actorIri = ReadIriProperty(root, "actor");
+
+                if (string.Equals(rootType, "Note", StringComparison.OrdinalIgnoreCase))
+                {
+                    return (JsonSerializer.SerializeToDocument(root), actorIri ?? ReadIriProperty(root, "attributedTo"), false);
+                }
+
+                if ((string.Equals(rootType, "Create", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(rootType, "Update", StringComparison.OrdinalIgnoreCase))
+                    && root.TryGetProperty("object", out var objectProp)
+                    && objectProp.ValueKind == JsonValueKind.Object)
+                {
+                    string? nestedType = ReadStringProperty(objectProp, "type");
+                    if (string.Equals(nestedType, "Note", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string? nestedActor = ReadIriProperty(objectProp, "attributedTo");
+                        return (JsonSerializer.SerializeToDocument(objectProp), nestedActor ?? actorIri, false);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DBg.d(LogLevel.Warning, $"TryFetchCanonicalActivityPubNoteFromStatusAsync -- exception fetching {sourceObjectIri}: {ex.Message}");
+            }
+
+            return (null, null, false);
+        }
+
+        private static string? ReadStringProperty(JsonElement element, string propertyName)
+        {
+            return element.TryGetProperty(propertyName, out var property)
+                && property.ValueKind == JsonValueKind.String
+                ? property.GetString()
+                : null;
+        }
+
+        private static string? ReadIriProperty(JsonElement element, string propertyName)
+        {
+            if (!element.TryGetProperty(propertyName, out var property))
+            {
+                return null;
+            }
+
+            if (property.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var entry in property.EnumerateArray())
+                {
+                    string? iri = ActivityPubPayloadFactory.ReadIriFromActivityPubNode(entry);
+                    if (!string.IsNullOrWhiteSpace(iri))
+                    {
+                        return iri;
+                    }
+                }
+                return null;
+            }
+
+            return ActivityPubPayloadFactory.ReadIriFromActivityPubNode(property);
         }
     }
 }

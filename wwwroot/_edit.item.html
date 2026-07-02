@@ -38,11 +38,23 @@
           <label for="item.listid">List ID:</label>
           <input type="text" id="item.listid" name="item.listid" readonly disabled>
         </div>
-        
-        <div class="form-row">
-          <label for="item.visible">Visible:</label>
-          <input type="checkbox" id="item.visible" name="item.visible">
-        </div>
+
+        <fieldset class="visibility-federation-box">
+          <legend>Visibility/Federation</legend>
+          <div class="form-row">
+            <label for="item.visible">Visible:</label>
+            <input type="checkbox" id="item.visible" name="item.visible">
+          </div>
+          <div id="federation-visible-help" class="federation-help" style="display:none"></div>
+
+          <div class="form-row">
+            <label for="item.isdeleted">Is Deleted:</label>
+            <input type="checkbox" id="item.isdeleted" name="item.isdeleted">
+          </div>
+          <div id="federation-deleted-help" class="federation-help" style="display:none"></div>
+        </fieldset>
+
+        <div id="moderation-link-box" class="moderation-link-box" style="display:none"></div>
         
         <div class="form-row">
           <label for="item.name">Name:</label>
@@ -53,11 +65,12 @@
           <label for="item.tags">Tags:</label>
           <input type="text" id="item.tags" name="item.tags" class="full-width-input">
         </div>
+        <div id="tags-help" class="field-help">Tags are space separated. To include a tag with spaces, wrap it in quotation marks.</div>
       </div>
       
       <div id="rightcell" class="item-content-panel">
         <div class="content-section">
-          <input type="textarea" id="item.comment" name="item.comment">
+          <textarea id="item.comment" name="item.comment"></textarea>
         </div>
         
         <div class="file-upload-section">

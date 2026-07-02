@@ -314,6 +314,12 @@ namespace GeFeSLE.Migrations
                     b.Property<int?>("RedirectToItemId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("ModerationItemId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("ModeratedItemId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("SourceAttributedToIri")
                         .HasColumnType("TEXT");
 

@@ -49,6 +49,103 @@ function setupModeToggle(listid) {
 
 document.addEventListener('DOMContentLoaded', getItem);
 
+let currentListName = '';
+let currentListVisibility = '';
+let currentModerationItemId = null;
+let currentModeratedItemId = null;
+let currentItemId = null;
+let currentItemListId = null;
+
+function isListPublicVisibility(visibility) {
+    if (visibility == null) return false;
+    return String(visibility).toLowerCase() === 'public';
+}
+
+function updateFederationGuidance() {
+    const visibleHelp = document.getElementById('federation-visible-help');
+    const deletedHelp = document.getElementById('federation-deleted-help');
+    const visibleCheckbox = document.getElementById('item.visible');
+    const deletedCheckbox = document.getElementById('item.isdeleted');
+
+    if (!visibleHelp || !deletedHelp || !visibleCheckbox || !deletedCheckbox) {
+        return;
+    }
+
+    if (!isListPublicVisibility(currentListVisibility)) {
+        visibleHelp.style.display = 'none';
+        deletedHelp.style.display = 'none';
+        return;
+    }
+
+    const listName = currentListName || '(unnamed list)';
+    visibleHelp.textContent = visibleCheckbox.checked
+        ? `Making this item Invisible will federate a Delete, because list ${listName} is Public.`
+        : `Making this item Visible will federate this item again, because list ${listName} is Public.`;
+
+    deletedHelp.textContent = deletedCheckbox.checked
+        ? `Undeleting will federate this item again, because list ${listName} is Public.`
+        : `Marking this item as deleted will federate a Delete, because list ${listName} is Public.`;
+
+    visibleHelp.style.display = 'block';
+    deletedHelp.style.display = 'block';
+}
+
+function setListHoverMetadata(listid, listName) {
+    const listIdInput = document.getElementById('item.listid');
+    if (!listIdInput) {
+        return;
+    }
+
+    if (listName && listName.length > 0) {
+        listIdInput.title = `List ${listid}: ${listName}`;
+    } else {
+        listIdInput.title = `List ${listid}`;
+    }
+}
+
+function setupVisibilityFederationHandlers() {
+    const visibleCheckbox = document.getElementById('item.visible');
+    const deletedCheckbox = document.getElementById('item.isdeleted');
+
+    if (visibleCheckbox) {
+        visibleCheckbox.addEventListener('change', updateFederationGuidance);
+    }
+
+    if (deletedCheckbox) {
+        deletedCheckbox.addEventListener('change', updateFederationGuidance);
+    }
+}
+
+function updateModerationLinkBox() {
+    const moderationBox = document.getElementById('moderation-link-box');
+    if (!moderationBox) {
+        return;
+    }
+
+    moderationBox.className = 'moderation-link-box';
+    moderationBox.style.display = 'none';
+    moderationBox.textContent = '';
+
+    if (!Number.isFinite(currentItemId) || !Number.isFinite(currentItemListId)) {
+        return;
+    }
+
+    if (currentModerationItemId != null) {
+        const moderationUrl = `_edit.item.html?listid=${currentItemListId}&itemid=${currentModerationItemId}`;
+        moderationBox.classList.add('moderated-item');
+        moderationBox.innerHTML = `This item is under moderation. <a href="${moderationUrl}">Open moderation ticket #${currentModerationItemId}</a>.`;
+        moderationBox.style.display = 'block';
+        return;
+    }
+
+    if (currentModeratedItemId != null) {
+        const moderatedUrl = `_edit.item.html?listid=${currentItemListId}&itemid=${currentModeratedItemId}`;
+        moderationBox.classList.add('mod-ticket');
+        moderationBox.innerHTML = `This is a moderation ticket. <a href="${moderatedUrl}">Open moderated item #${currentModeratedItemId}</a>.`;
+        moderationBox.style.display = 'block';
+    }
+}
+
 
 
 // function that is called when _edit.item.html is called that
@@ -100,12 +197,14 @@ async function getItem() {
             document.getElementById('item.comment').readOnly = true;
             document.getElementById('item.tags').readOnly = true;
             document.getElementById('item.visible').disabled = true;
+            document.getElementById('item.isdeleted').disabled = true;
             return;
         } else {
 
 
             // populate the listid field in the form
             document.getElementById('item.listid').value = listid;
+            currentItemListId = Number(listid);
             if(isSuggestion) {
                 // get the first <h1> tag in the DOM
                 let h1 = document.querySelector('h1');
@@ -114,11 +213,14 @@ async function getItem() {
                 
                 document.getElementById('item.visible').disabled = true;
                 document.getElementById('item.visible').checked = false;
+                document.getElementById('item.isdeleted').disabled = true;
+                document.getElementById('item.isdeleted').checked = false;
                 
                 d('Creating SUGGESTION in list ' + listid + '.');
                 c(RC.OK);
             } else {
                 document.getElementById('item.visible').checked = true;
+                document.getElementById('item.isdeleted').checked = false;
                 d('Creating new item in list ' + listid + '.');
                 c(RC.OK);
             }
@@ -140,12 +242,15 @@ async function getItem() {
             document.getElementById('item.comment').readOnly = true;
             document.getElementById('item.tags').readOnly = true;
             document.getElemebtById('item.visible').disabled = true;
+            document.getElementById('item.isdeleted').disabled = true;
             return;
         } else {
             // populate the listid field in the form
             document.getElementById('item.listid').value = listid;
             // populate the itemid field in the form
             document.getElementById('item.id').value = itemid;
+            currentItemId = Number(itemid);
+            currentItemListId = Number(listid);
             d('Editing item ' + itemid + ' in list ' + listid + '.');
             c(RC.OK);
             // oh and set the radio button to "update"
@@ -185,9 +290,16 @@ async function getItem() {
                 document.getElementById('item.id').value = data.id;
                 document.getElementById('item.name').value = data.name;
                 document.getElementById('item.visible').checked = data.visible;
+                document.getElementById('item.isdeleted').checked = data.isDeleted === true;
+                currentItemId = Number(data.id);
+                currentItemListId = Number(data.listId);
+                currentModerationItemId = data.moderationItemId != null ? Number(data.moderationItemId) : null;
+                currentModeratedItemId = data.moderatedItemId != null ? Number(data.moderatedItemId) : null;
                 //document.getElementById('item.comment').value = data.comment;
                 easymde.value(data.comment);
                 document.getElementById('item.tags').value = formatTagsForDisplay(data.tags);
+                updateFederationGuidance();
+                updateModerationLinkBox();
             })
             .catch((error) => {
                 // write any error to the span with id="result"
@@ -202,9 +314,13 @@ async function getItem() {
         .then(response => response.json())
         .then(data => {
             console.log('Success:', data);
+            currentListName = data.name || '';
+            currentListVisibility = data.visibility || '';
             // Populate the form with the data from the API
             document.getElementById('back2list').href = apiUrl + '/' + data.name + '.html';
             console.log(' | back2list.href: ' + document.getElementById('back2list').href);
+            setListHoverMetadata(listid, currentListName);
+            updateFederationGuidance();
         })
         .catch((error) => {
             // write any error to the span with id="result"
@@ -217,6 +333,9 @@ async function getItem() {
 
     // Add event listeners for radio button mode selection
     setupModeToggle(listid);
+    setupVisibilityFederationHandlers();
+    updateFederationGuidance();
+    updateModerationLinkBox();
 
     // If the item ID was rotated on save, show a note after reload.
     if (urlParams.get('idrotated') === '1') {
@@ -263,6 +382,7 @@ async function updateItem(e) {
         let listid = document.getElementById('item.listid').value;
         let name = document.getElementById('item.name').value;
         let visible = document.getElementById('item.visible').checked; 
+        let isDeleted = document.getElementById('item.isdeleted').checked;
         //let comment = document.getElementById('item.comment').value;
         let comment = easymde.value();
         //alert(comment);
@@ -282,7 +402,7 @@ async function updateItem(e) {
             } else {
                 apiUrl = apiUrl + '/items';
             }
-            data = { listid, name, comment, tags: parseTagsFromInput(tags), visible };
+            data = { listid, name, comment, tags: parseTagsFromInput(tags), visible, isDeleted };
             apiMethod = 'POST';
         }
         else {
@@ -294,7 +414,7 @@ async function updateItem(e) {
                 // if id is not null or empty, then this is an existing item
                 // and we need to call the API to update the list
                 apiUrl = apiUrl + '/items/' + id;
-                data = { id, listid, name, comment, tags: parseTagsFromInput(tags), visible };
+                data = { id, listid, name, comment, tags: parseTagsFromInput(tags), visible, isDeleted };
                 apiMethod = 'PUT';
             }
         }

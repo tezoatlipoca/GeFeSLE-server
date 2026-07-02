@@ -27,10 +27,11 @@ if (!reportModal) {
   reportLabel.htmlFor = "reportreason";
   reportLabel.textContent = "Why report this item?";
 
-  reportreason = document.createElement("input");
+    reportreason = document.createElement("textarea");
   reportreason.id = "reportreason";
   reportreason.name = "reportreason";
   reportreason.placeholder = "Reason for reporting...";
+    reportreason.rows = 7;
 
   // Create the submit button
   reportbtn = document.createElement("button");
@@ -85,6 +86,7 @@ async function showModalReportForm() {
         }
 
         // Show the modal
+        reportreason.value = "";
         reportModal.style.display = "block";
 
         // When the user clicks the button, get the values and hide the modal

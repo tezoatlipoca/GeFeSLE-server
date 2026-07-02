@@ -13,6 +13,9 @@ namespace GeFeSLE.DTOs
         public bool Visible { get; set; } = true;
         public bool IsDeleted { get; set; } = false;
         public int? RedirectToItemId { get; set; }
+        public int? ModerationItemId { get; set; }
+        public int? ModeratedItemId { get; set; }
+        public IReadOnlyList<int> PreviousRedirectItemIds { get; set; } = Array.Empty<int>();
         public string? OriginatorActorIri { get; set; }
         public string? SourceObjectIri { get; set; }
         public string? SourceAttributedToIri { get; set; }

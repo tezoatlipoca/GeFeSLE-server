@@ -715,6 +715,38 @@ td {
     padding: 0px;
 }
 
+.supplementary-item-preview .namecell {
+    background-color: #f6f0d9;
+    border: 1px dashed #a08f52;
+}
+
+.supplementary-item-preview.under-moderation .namecell {
+    background-color: #ffd9a8;
+    border: 2px solid #d47a00;
+}
+
+.namecell.under-moderation {
+    background-color: #ffd9a8;
+    border: 2px solid #d47a00;
+}
+
+.supplementary-item-status {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 6px;
+    border: 1px solid #777;
+    border-radius: 999px;
+    font-size: 70%;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background-color: rgba(255, 255, 255, 0.8);
+}
+
+.supplementary-item-preview .item-body-pane {
+    max-height: 7em;
+    overflow: hidden;
+}
+
 /* Mobile responsive adjustments for list items */
 @media (max-width: 768px) {
     .itemrow {
@@ -1352,7 +1384,28 @@ select:disabled {
     transition: border-color 0.3s ease;
 }
 
+.reportModal-content textarea {
+    width: 100%;
+    min-height: 140px;
+    resize: vertical;
+    padding: 10px;
+    margin-bottom: 20px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+    line-height: 1.4;
+    box-sizing: border-box;
+    transition: border-color 0.3s ease;
+}
+
 .reportModal-content input:focus {
+    outline: none;
+    border-color: #4CAF50;
+    box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+}
+
+.reportModal-content textarea:focus {
     outline: none;
     border-color: #4CAF50;
     box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
@@ -1362,6 +1415,14 @@ select:disabled {
     background-color: #f9f9f9;
     color: #666;
     cursor: not-allowed;
+}
+
+.moderation-rationale-box {
+    margin: 10px 0 12px 0;
+    padding: 10px 12px;
+    border-left: 4px solid #d47a00;
+    border-radius: 6px;
+    background: #fff3df;
 }
 
 .reportModal-content button {
@@ -1542,6 +1603,50 @@ select:disabled {
 .item-mode-selection label {
     margin-left: 5px;
     margin-right: 15px;
+}
+
+.visibility-federation-box {
+    border: 2px solid #000;
+    border-radius: 5px;
+    padding: 10px;
+    margin: 12px 0;
+    background-color: rgba(255, 255, 255, 0.5);
+}
+
+.visibility-federation-box legend {
+    font-weight: bold;
+    padding: 0 6px;
+}
+
+.federation-help {
+    font-size: 12px;
+    line-height: 1.4;
+    margin: 2px 0 8px;
+}
+
+.field-help {
+    font-size: 12px;
+    line-height: 1.4;
+    margin-top: 6px;
+}
+
+.moderation-link-box {
+    margin: 12px 0;
+    padding: 10px 12px;
+    border-radius: 5px;
+    border: 2px solid #b36b00;
+    background-color: #fff2d6;
+    font-weight: bold;
+}
+
+.moderation-link-box.mod-ticket {
+    border-color: #1c63b6;
+    background-color: #ddebff;
+}
+
+.moderation-link-box a {
+    color: inherit;
+    text-decoration: underline;
 }
 
 .content-section {
@@ -1814,7 +1919,15 @@ select:disabled {
 .EasyMDEContainer .CodeMirror {
     min-height: 150px;
     max-height: 25vh;
-    overflow-y: auto;
+    height: auto;
+    overflow: hidden;
+}
+
+.EasyMDEContainer .CodeMirror-scroll {
+    min-height: 150px;
+    max-height: 25vh;
+    overflow-y: auto !important;
+    overflow-x: hidden;
 }
 
 .EasyMDEContainer .editor-toolbar {

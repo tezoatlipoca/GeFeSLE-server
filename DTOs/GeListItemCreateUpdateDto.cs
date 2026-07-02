@@ -18,6 +18,8 @@ namespace GeFeSLE.DTOs
 
         public bool Visible { get; set; } = true;
 
+        public bool IsDeleted { get; set; } = false;
+
         public List<string> Tags { get; set; } = new List<string>();
     }
 }
